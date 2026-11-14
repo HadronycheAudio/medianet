@@ -208,19 +208,29 @@ mod tests {
 
     #[test]
     fn decoder_detects_gaps_through_decoded_payloads() {
+        // AC 3: a hole is only observable when a later packet closes it.
+        // Sequence 99 must arrive, otherwise "sent 0..98 and stopped" and
+        // "sent 0..99 and 99 was lost" are the same observation stream.
         let mut tracker = SequenceTracker::new();
-        let sent = 0..100u64;
-        let lost: [u64; 3] = [17, 42, 99];
-        for sequence in sent {
+        let lost: [u64; 2] = [17, 42];
+        let mut reported_holes = Vec::new();
+        for sequence in 0..=99u64 {
             if lost.contains(&sequence) {
                 continue;
             }
             let buf = encode(sequence, 0, DEFAULT_UDP_PAYLOAD_LEN);
             let decoded = decode(&buf).expect("encoded payload decodes");
-            tracker.observe(decoded.sequence);
+            let observed = tracker.observe(decoded.sequence);
+            if observed.gap > 0 {
+                reported_holes.push(observed.sequence - observed.gap);
+            }
         }
-        assert_eq!(tracker.received(), 97);
-        assert_eq!(tracker.lost(), 3);
+        // Exactly the two holes that a later packet closed.
+        assert_eq!(reported_holes, vec![17, 42]);
+        assert_eq!(tracker.received(), 98);
+        assert_eq!(tracker.lost(), 2);
+        assert_eq!(tracker.duplicates(), 0);
+        assert_eq!(tracker.highest(), Some(99));
     }
 
     #[test]
