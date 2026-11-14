@@ -289,7 +289,7 @@
    "phase": "review",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
-  "status": "in-flight"
+  "status": "done"
  },
  "003-05": {
   "branch": "t/003-05",
