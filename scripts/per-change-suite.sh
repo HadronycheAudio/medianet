@@ -37,4 +37,18 @@ for d in probes/*/; do
   run_cargo "$d"
 done
 
+# document checks (one executable per ticket under checks/, until the
+# hadronyche-tools crate owns them; see swarm/README.md)
+if [ -d checks ]; then
+  for c in checks/*.sh checks/*.py; do
+    [ -e "$c" ] || continue
+    echo "== check $c =="
+    if [ "x${c##*.}" = xpy ]; then cmd="python3"; else cmd="bash"; fi
+    if ! $cmd "$c"; then
+      echo "FAIL: $c"
+      fail=1
+    fi
+  done
+fi
+
 exit $fail

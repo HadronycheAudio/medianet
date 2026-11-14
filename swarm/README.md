@@ -68,6 +68,19 @@ ticket stops and is escalated in `escalations.md`.
   `hardware-queue.md` with the exact command, equipment and pass result;
   status becomes `hardware-ready`, never `done`.
 
+### Where checks live
+
+- Code tickets: tests inside the crate the ticket names (unit tests are
+  unprivileged and fast; long runs, real-network runs and hardware runs are
+  demonstrated to the reviewer, not run per-change).
+- Document tickets: the tester writes an executable check under `checks/`
+  (`checks/<ticket-id>.sh` or `.py`) that validates the document against the
+  ticket's acceptance criteria. The per-change suite runs every file in
+  `checks/`. When `hadronyche-tools` exists (ticket 002-09), checks that
+  belong in the crate move there in that ticket.
+- Ticket 003-01's checks verify the POC repository's state from outside; no
+  check ever writes into the POC tree.
+
 ### Scheduling
 
 - A ticket runs when its ticket-line dependencies are `done` (or
