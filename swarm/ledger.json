@@ -725,7 +725,11 @@
   "class": "host",
   "epic": "006",
   "phase": "P1",
-  "status": "todo"
+  "role": {
+   "phase": "red",
+   "tester": "melious/deepseek-v4.1-flash-1017"
+  },
+  "status": "in-flight"
  },
  "006-03": {
   "branch": "t/006-03",
