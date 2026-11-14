@@ -49,3 +49,12 @@ still prints OK on the unchanged design set.
   "the others decided or derived", but 02-constants.md marks C-02, C-30,
   C-33, C-67 as `inherited` (C-65 `derived`). The document's table follows
   02-constants.md (which wins); the ticket preview is the bug.
+
+## Lead decisions (recorded for the design owner)
+
+- 003-02: the ticket says "Do not commit them yet" for the measurement notes.
+  Multi-agent hand-off (003-05, 003-08 need them) makes an uncommitted file
+  unusable, so the notes live at `swarm/notes/003-02.md` as committed WORKING
+  NOTES — not a design or baseline document; no figure enters doc/design/**
+  from this ticket. 003-08 writes BASELINE.md in the POC repository.
+- Scratch copy home (002-01): /home/dorian/workspace/hadronyche/poc-scratch.

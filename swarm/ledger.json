@@ -243,7 +243,11 @@
   "class": "host",
   "epic": "003",
   "phase": "P0",
-  "status": "todo"
+  "role": {
+   "phase": "red",
+   "tester": "melious/deepseek-v4.1-flash-1017"
+  },
+  "status": "in-flight"
  },
  "003-03": {
   "branch": "t/003-03",
@@ -855,7 +859,11 @@
   "class": "host",
   "epic": "007a",
   "phase": "P1",
-  "status": "todo"
+  "role": {
+   "phase": "red",
+   "tester": "melious/deepseek-v4.1-flash-1017"
+  },
+  "status": "in-flight"
  },
  "007a-02": {
   "branch": "t/007a-02",

@@ -19775,12 +19775,9 @@
   }
  },
  "frontier": [
-  "001-01",
   "001-11",
-  "002-01",
-  "003-01",
-  "004-01",
-  "006-01",
+  "003-02",
+  "003-03",
   "007a-01",
   "011-01",
   "016-01",
@@ -19793,14 +19790,11 @@
  ],
  "frontier_by_phase": {
   "P0": [
-   "001-01",
    "001-11",
-   "002-01",
-   "003-01"
+   "003-02",
+   "003-03"
   ],
   "P1": [
-   "004-01",
-   "006-01",
    "007a-01"
   ],
   "P3": [
@@ -19827,8 +19821,8 @@
  "epic_summary": {
   "001": {
    "phase": "P0",
-   "todo": 17,
-   "in-flight": 0,
+   "todo": 16,
+   "in-flight": 1,
    "done": 0,
    "hardware-ready": 0,
    "blocked": 0,
@@ -19836,8 +19830,8 @@
   },
   "002": {
    "phase": "P0",
-   "todo": 14,
-   "in-flight": 0,
+   "todo": 13,
+   "in-flight": 1,
    "done": 0,
    "hardware-ready": 0,
    "blocked": 0,
@@ -19845,17 +19839,17 @@
   },
   "003": {
    "phase": "P0",
-   "todo": 10,
+   "todo": 9,
    "in-flight": 0,
-   "done": 0,
+   "done": 1,
    "hardware-ready": 0,
    "blocked": 0,
    "total": 10
   },
   "004": {
    "phase": "P1",
-   "todo": 29,
-   "in-flight": 0,
+   "todo": 28,
+   "in-flight": 1,
    "done": 0,
    "hardware-ready": 0,
    "blocked": 0,
@@ -19872,8 +19866,8 @@
   },
   "006": {
    "phase": "P1",
-   "todo": 21,
-   "in-flight": 0,
+   "todo": 20,
+   "in-flight": 1,
    "done": 0,
    "hardware-ready": 0,
    "blocked": 0,
