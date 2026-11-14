@@ -141,7 +141,8 @@
   "epic": "002",
   "phase": "P0",
   "role": {
-   "phase": "red",
+   "coder": "melious/glm-5.3-flash",
+   "phase": "green",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
@@ -871,11 +872,12 @@
   "status": "done"
  },
  "007a-02": {
+  "blocked_reason": "cross-epic interface: needs the rejection reason enumeration from 004-03 (C-193); scheduled after it lands",
   "branch": "t/007a-02",
   "class": "host",
   "epic": "007a",
   "phase": "P1",
-  "status": "todo"
+  "status": "blocked"
  },
  "007a-03": {
   "branch": "t/007a-03",

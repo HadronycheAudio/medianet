@@ -66,3 +66,8 @@ still prints OK on the unchanged design set.
   end-of-stream hole (skipped seq 99, expecting lost == 3; only 2 holes
   observable). Ruling sent to the tester; fix expected: encode two observable
   holes, assert {17, 42}.
+- 007a-02 held until 004-03 lands: its invalid-vector `reason` field validates
+  against the wire specification's rejection enumeration (C-193), which
+  004-03 produces. The dep line names only 007a-01; the interface need is
+  real (kickoff: two leads agree the interface from the specification before
+  either codes against it).
