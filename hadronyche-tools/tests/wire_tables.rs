@@ -329,17 +329,33 @@ fn ac5_repository_file_checks_within_ten_seconds() {
     }
 }
 
-/// Work step 3, fourth bullet — SKIPPED until 004-03 lands.
+/// Work step 3, fourth bullet — enabled by 004-03.
 ///
-/// 004-03 (rejection-reason enumeration) owns the closed `Reject` set and adds
-/// it to the machine-readable file. Until it lands, the membership check is
-/// skipped visibly, never silently omitted (C-125). Enable this test in
-/// 004-03: it must then assert that every reason named above is a member of
-/// the closed enumeration.
+/// 004-03 (rejection-reason enumeration) added the closed `Reject` set to
+/// the machine-readable file as `[[reject]]` tables. The checker validates
+/// every `rejection_reasons` reference against that closed set (and rejects
+/// a `[[reject]]` declaration that differs from it), and reports the
+/// enumeration in `Report::rejects`. The test asserts the property end to
+/// end: the repository file's declaration is the closed enumeration, and
+/// every reason the fixture names is a member of it.
 #[test]
-#[ignore = "004-03: the closed Reject enumeration does not exist yet; enable after 004-03 lands"]
 fn rejection_reasons_referenced_are_members_of_the_closed_enumeration() {
     let report = accepted("schema_coverage.toml");
+    let closed = check_file(&repository_tables()).unwrap_or_else(|error| {
+        panic!(
+            "the repository tables must check clean with the closed Reject enumeration: {:?}: {}",
+            error.kind, error.message
+        )
+    });
+    let members: Vec<&str> = closed
+        .rejects
+        .iter()
+        .map(|reject| reject.name.as_str())
+        .collect();
+    assert!(
+        !members.is_empty(),
+        "004-03: the repository tables must declare the closed Reject enumeration"
+    );
     for message in &report.messages {
         assert!(
             !message.rejection_reasons.is_empty(),
@@ -352,7 +368,13 @@ fn rejection_reasons_referenced_are_members_of_the_closed_enumeration() {
                 "{}: an empty rejection reason would be skipped silently (C-125)",
                 message.name
             );
-            // 004-03: replace this placeholder with membership in `Reject`.
+            // 004-03: membership in `Reject`.
+            assert!(
+                members.contains(&reason.as_str()),
+                "{}: rejection reason {} is not a member of the closed Reject enumeration",
+                message.name,
+                reason
+            );
         }
     }
 }
