@@ -7,7 +7,7 @@ Last updated: 2026-11-14, by the orchestrator, at swarm start.
 | Phase | Epic | Topic | Done | In flight | Ready for hardware | Blocked | Total |
 |---|---|---|---|---|---|---|---|
 | P0 | 001 | Receive stamp probes | 1 | 0 | 0 | 0 | 17 |
-| P0 | 002 | POC archaeology | 3 | 1 | 0 | 0 | 14 |
+| P0 | 002 | POC archaeology | 4 | 0 | 0 | 0 | 14 |
 | P0 | 003 | POC smoke fixes | 3 | 1 | 0 | 0 | 10 |
 | P1 | 004–007b | Specification epics | 5 | 2 | 0 | 0 | 116 |
 
@@ -174,3 +174,13 @@ still prints OK on the unchanged design set.
   003-01's amended check) via its tester. Process change for the
   integrator: the push is chained AFTER a verified suite-green result, never
   before.
+
+## Incident log (continued)
+
+- 2026-11-14, merge of 002-04: the conflict exposed a leftover `<<<<<<< HEAD`
+  marker from the integrator's incomplete 002-23 resolution — it had been
+  merged AND pushed to main, undetected by the checks (they pattern-match
+  structure, not markers). Fixed in this merge; the per-change suite now
+  has a conflict-marker guard over doc/, checks/, swarm/*.md and scripts/.
+  The integrator's resolution procedure now includes a marker grep before
+  every commit of a resolved conflict.
