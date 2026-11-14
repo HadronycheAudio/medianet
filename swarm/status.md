@@ -86,3 +86,19 @@ still prints OK on the unchanged design set.
   carries its own empty `[workspace]` table (one-line post-merge repair by
   the integrator, no logic change; suite verified green including the
   probe's 32 tests and clippy).
+
+## Standing notes (re-applied from the stray branch commit 2f3cbfa; see 004-01 review finding 3)
+
+- **Network interpretation (for the design owner to veto):** rule 4's "no
+  external services beyond the model endpoints" is read as banning anything
+  that sends our work or data out (pushes, uploads). Read-only fetches of
+  published, unmodified artifacts (rustup target components, published
+  crates, published standards text from their issuing bodies) are treated
+  like model endpoints — input, not exfiltration. If this reading is wrong,
+  say so: offline mode is possible with the local cache for the POC and
+  dependency-free probes, but no_std targets and clause-verified citations
+  would be blocked and re-planned.
+- Fingerprint convention for epic 002 (lead decision, keeps 002-01
+  independent of 003-01): the frozen-tree fingerprint covers src/, tools/,
+  experiments/, Cargo.toml, Cargo.lock, README.md; excludes target/, .git/,
+  .gitignore.
