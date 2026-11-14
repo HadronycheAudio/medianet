@@ -1,0 +1,5 @@
+unix_ms,net_ns,offset_ns,name,holder,holding,forced,lock,err_ns,drift_ppb,delay_ns,desync,loadavg1,loadavg5,cores,machine_cpu,psi_cpu10,psi_cpu1,psi_io10,psi_mem10,running,blocked,ctxt_s,intr_s,proc_cpu,late_clock_us,late_rt_us,peak_us,turn_mean_us,turn_max_us,served,rtt_mean_us,rtt_min_us,asked,datagrams,connections,band,points
+1794580304581,160716660147743,0,sender,00000000,0,0,0,0,0,0,0,66,49,12,1.0,1,0.10,0,0,2,0,5096,4666,98,0,1,5,0.0,0.0,0,0.0,0.0,0,0,0,1,26
+1794580305589,160717668155912,0,sender,
+1794580305617,971815580184082,0,mixer,00000000,0,0,0,0,0,0,0,94,95,12,6.0,0,0.40,0,0,1,0,18849,26067,103,0,10,58,0.0,0.0,0,0.0,0.0,0,6180,4,1,100
+1794580306621,16071870011794580305617,971815580184082,0,mixer,00000000,0,0,0,0,0,0,0,94,95,12,6.0,0,0.40,0,0,1,0,18849,26067,103,0,10,58,0.0,0.0,0,0.0,0.0,0,6180,4,1,100

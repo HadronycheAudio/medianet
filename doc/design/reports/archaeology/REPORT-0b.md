@@ -75,9 +75,36 @@ To be filled by ticket 002-08 and successors.
 
 ## (c) Experiment metrics integrity
 
-To be filled by ticket 002-09 and successors.
+Filled by ticket 002-09. The single-writer rule, restated (settled by the epic's Background; also in the checker's documentation, `hadronyche-tools/src/metrics_check.rs`): a metrics file is **single-writer** exactly when the metrics header (`module.rs:1292`) appears exactly once, as the first line; every line after it parses against the header (38 comma-separated fields, each of the type the POC writes — integers, decimals and the two names at the columns defined by the fixed row format at module.rs:1408) [code]; `unix_ms` never decreases from one parseable line to the next; and no line is interleaved [decision].
 
-**verdict: pending**
+The checker is the `metrics-check` binary of the `hadronyche-tools` crate (C-133; not in the frozen tree). It is read-only: it walks `experiments/` recursively and reports every regular file whose first line is the metrics header, so the `runs.csv`, log and analysis files in the same directories are not reported. Its output line format (fixed by the checker's documentation, C-206) is `<path>: single-writer <yes|no> (lines <total>, parseable <parseable>, unix_ms violations <count>)` [decision]. It found **16 metrics files** under `experiments/` (`pilot`, `run1`, `run2`, `run3`, four processes each); the run (2026-11-14, unprivileged, `cargo run --release --bin metrics-check -- /home/dorian/workspace/hadropoc/experiments`) reported [measured]:
+
+```text
+/home/dorian/workspace/hadropoc/experiments/pilot/mixer.1.csv: single-writer yes (lines 295, parseable 294, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/pilot/sender.1.csv: single-writer yes (lines 315, parseable 314, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/pilot/synth1.1.csv: single-writer yes (lines 315, parseable 314, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/pilot/synth2.1.csv: single-writer yes (lines 295, parseable 294, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run1/mixer.1.csv: single-writer yes (lines 10752, parseable 10751, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run1/sender.1.csv: single-writer yes (lines 10893, parseable 10892, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run1/synth1.1.csv: single-writer yes (lines 10893, parseable 10892, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run1/synth2.1.csv: single-writer yes (lines 10758, parseable 10757, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run2/mixer.1.csv: single-writer yes (lines 10873, parseable 10872, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run2/sender.1.csv: single-writer yes (lines 10871, parseable 10870, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run2/synth1.1.csv: single-writer yes (lines 10873, parseable 10872, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run2/synth2.1.csv: single-writer yes (lines 10873, parseable 10872, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run3/mixer.1.csv: single-writer yes (lines 1841, parseable 1840, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run3/sender.1.csv: single-writer yes (lines 1840, parseable 1839, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run3/synth1.1.csv: single-writer yes (lines 1840, parseable 1839, unix_ms violations 0)
+/home/dorian/workspace/hadropoc/experiments/run3/synth2.1.csv: single-writer yes (lines 1841, parseable 1840, unix_ms violations 0)
+```
+
+Every one of the 16 files shows parseable lines = total lines − 1 (the header), so every data line parses against the header; 0 `unix_ms` violations; the single-writer verdict is yes for 16 of 16 [measured].
+
+**I/O-pressure finding: survives.** The rule "a machine under I/O pressure cannot hold the clock" rests on the experiment metrics, and its basis holds: all 16 metrics files, up to 10 893 lines each, are intact single-writer files — every line parses, `unix_ms` is monotonic with zero violations across `pilot` and the three multi-machine runs [measured]. The reason these files are intact where the loopback metrics file was not (only about 6 parseable lines out of about 80, measured during the epic's investigation, ticket 002-09's context) is the write topology: `tools/metric_experiment.py` gives each of the four processes its own `--metrics` path — `synth1.{g}.csv`, `synth2.{g}.csv`, `mixer.{g}.csv`, `sender.{g}.csv` — so no experiment file is ever opened by two writers [code], while `hadropoc loopback` clones one `--metrics` path into all four modules (`main.rs:317`), each of whose housekeeping threads `File::create`s it with its own writer thread, truncating from its own offset 0 (`module.rs:1354`) [code]. The loopback clobbering is an instrument bug of the loopback harness (the fix is task 003's), not corruption of the experiment data and not a property of the machines.
+
+Sub-question "Does the I/O-pressure finding survive?" (Open sub-questions): answered — yes; the falsifier (experiment files corrupt or multi-writer) did not hold [measured].
+
+**verdict: I/O-pressure finding survives — mechanism: the experiment harness writes one metrics file per process (`metric_experiment.py:51-56`), so no file has two writers, and all 16 metrics files under `experiments/` check single-writer with every data line parsing and zero `unix_ms` violations; the multi-writer truncation seen in loopback (one `--metrics` path cloned into four modules, main.rs:317, each truncating from its own offset 0, module.rs:1354) never touches these files [measured]**
 
 ## (d) Reading notes
 
@@ -178,6 +205,6 @@ Copied from the Notes of ticket 002-01 (`doc/design/tickets/002/002-01-Scratch-c
 | Question | Owner | Falsifier |
 |---|---|---|
 | Is the voice comparison bit-level? | This epic (ticket 002-02) | answered: **yes** — the replica-vs-returned voice/click comparison is exact bit equality (audio.rs:808-813), so the "exact tier for voices" description stands; the falsifier ("compares within tolerance only") did not hold [code] |
-| Does the I/O-pressure finding survive? | This epic (ticket 002-09) | Experiment files are corrupt or multi-writer; the eligibility rule loses its basis |
+| Does the I/O-pressure finding survive? | This epic (ticket 002-09) | answered: **yes** — all 16 metrics files under `experiments/` check single-writer (every data line parses, `unix_ms` monotonic, zero violations, REPORT-0b section (c)), so the eligibility rule's basis holds; the falsifier (experiment files corrupt or multi-writer) did not hold [measured] |
 | Is the 21.7 M value a decoding error or a display error? | This epic (ticket 002-08) | Neither; the value is a real counter and the loss accounting is wrong |
 | Why does a 5 ms timeout behave as about 13 ms? | This epic (ticket 002-12; informational only) | None needed; the runtime paces by deadline |
