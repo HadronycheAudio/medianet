@@ -39,7 +39,7 @@ top = ["README.md", "00-context.md", "01-architecture.md", "02-constants.md",
 for f in top:
     if not os.path.exists(os.path.join(ROOT, f)):
         problems.append(f"missing top-level file {f}")
-extra = [f for f in os.listdir(ROOT) if f not in top + ["adr", "implementation", "tickets"]]
+extra = [f for f in os.listdir(ROOT) if f not in top + ["adr", "implementation", "tickets", "spec", "reports"]]
 if extra:
     problems.append(f"unexpected entries at root: {extra}")
 adr = sorted(os.listdir(os.path.join(ROOT, "adr"))) if os.path.isdir(os.path.join(ROOT, "adr")) else []

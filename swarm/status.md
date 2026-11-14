@@ -34,3 +34,11 @@ Phases P2 to P7: not started (dependency order; P1 drafting runs alongside P0).
 ## Blockers and findings for the design owner
 
 None so far.
+
+## Tooling note (for the design owner)
+
+`doc/kickoff/check-design.py` rejected any root entry in `doc/design/` beyond
+the original set, but the design itself mandates `doc/design/spec/` and
+`doc/design/reports/` as deliverable locations (C-130). The root allowlist was
+extended by exactly those two names (no other check weakened); the checker
+still prints OK on the unchanged design set.
