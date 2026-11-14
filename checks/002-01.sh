@@ -6,6 +6,13 @@
 # plus the evidence it records. This script never writes anywhere; it reads the
 # frozen POC repository at /home/dorian/workspace/hadropoc only.
 #
+# Sections (a)-(e) may hold either the skeleton-time placeholder
+# `**verdict: pending**` or the final verdict line for that section
+# ("instrument bug, mechanism: …", "not a bug, explanation: …", or the prefixed
+# variant "verdict: <finding> — mechanism: …"). The skeleton state is pending;
+# final verdicts arrive per ticket. Each section must always carry exactly one
+# verdict line.
+#
 # Frozen-tree fingerprint convention (fixed by the team lead so that 002-01 and
 # 003-01 stay independent). The original recorded value documents the
 # 002-01-time working tree (55 files). 003-01's .gitignore later left 27 of
@@ -265,7 +272,8 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# The five sections, each with exactly one pending verdict (AC 3)
+# The five sections, each with exactly one verdict line (pending at skeleton
+# time, final as the epic's tickets complete) (AC 3)
 # ---------------------------------------------------------------------------
 
 titles=(
@@ -295,11 +303,24 @@ for title in "${titles[@]}"; do
   previous_line=$line
 
   sec=$(section_text "$REPORT" "$title")
-  pending=$(printf '%s\n' "$sec" | grep -Fc '**verdict: pending**')
-  if [ "$pending" -eq 1 ]; then
-    ok "section '$title' has exactly one pending verdict"
+  verdict_count=$(printf '%s\n' "$sec" |
+    grep -Ec '^[[:space:]]*(\*\*)?verdict:')
+  if [ "$verdict_count" -ne 1 ]; then
+    bad "section '$title' has $verdict_count verdict line(s), expected exactly 1"
+    continue
+  fi
+  verdict_line=$(printf '%s\n' "$sec" |
+    grep -E '^[[:space:]]*(\*\*)?verdict:' | head -n 1)
+  verdict_body=$(printf '%s\n' "$verdict_line" |
+    sed -E 's/^[[:space:]]*(\*\*)?verdict:[[:space:]]*//; s/[[:space:]]*\*\*[[:space:]]*$//')
+  if printf '%s' "$verdict_body" | grep -Eqi '^pending$'; then
+    ok "section '$title' has exactly one verdict line (pending)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'mechanism:'; then
+    ok "section '$title' has exactly one verdict line (instrument bug, mechanism)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'explanation:'; then
+    ok "section '$title' has exactly one verdict line (not a bug, explanation)"
   else
-    bad "section '$title' has $pending '**verdict: pending**' placeholders, expected exactly 1"
+    bad "section '$title' has one verdict line but it is not in an allowed form: $verdict_line"
   fi
 done
 if [ "$order_ok" -eq 1 ]; then
