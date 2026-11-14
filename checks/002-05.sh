@@ -80,9 +80,13 @@
 #    read-only). Merely quoting a log line as evidence does not trigger this
 #    rule: the ticket asks where added logging lived, not whether output is
 #    quoted.
-#  * (Section marker) Section (a) keeps exactly one "verdict:" line and it
-#    still says "pending": the verdict itself belongs to 002-06/002-13, not
-#    to this ticket.
+#  * (Section marker) Section (a) always carries exactly one verdict line,
+#    in one of the allowed forms: the placeholder "pending" (the state at
+#    002-05's time) or the final verdict — an instrument-bug finding with
+#    "mechanism:", or a not-a-bug finding with "explanation:". The final
+#    verdict arrives with 002-06, so the check accepts all three forms and
+#    later sanctioned completion does not break it (the same pattern as the
+#    amended checks/002-01.sh).
 #  * "The frozen POC is not modified" is not checkable from the report; it is
 #    covered by checks/002-01.sh and checks/003-01.sh.
 #
@@ -696,20 +700,28 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Section marker — exactly one pending verdict in (a)
+# Section marker — exactly one verdict line, in an allowed form
 # ---------------------------------------------------------------------------
 
 verdict_count=$(printf '%s\n' "$SECTION" \
-  | grep -Eci '(^|[^[:alnum:]])[*_]*verdict:' || true)
+  | grep -Ec '^[[:space:]]*(\*\*)?verdict:' || true)
 if [ "$verdict_count" -eq 0 ]; then
   bad "section (a) lost its 'verdict:' line"
 elif [ "$verdict_count" -gt 1 ]; then
   bad "section (a) has $verdict_count 'verdict:' lines; exactly one section-level verdict is required"
 else
-  if printf '%s\n' "$SECTION" | grep -Eqi '(^|[^[:alnum:]])[*_]*verdict:[^A-Za-z]*pending'; then
-    ok "section (a) still carries its one pending verdict marker"
+  verdict_line=$(printf '%s\n' "$SECTION" \
+    | grep -E '^[[:space:]]*(\*\*)?verdict:' | head -n 1)
+  verdict_body=$(printf '%s\n' "$verdict_line" \
+    | sed -E 's/^[[:space:]]*(\*\*)?verdict:[[:space:]]*//; s/[[:space:]]*\*\*[[:space:]]*$//')
+  if printf '%s' "$verdict_body" | grep -Eqi '^pending$'; then
+    ok "section (a) has exactly one verdict line (pending)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'mechanism:'; then
+    ok "section (a) has exactly one verdict line (instrument bug, mechanism)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'explanation:'; then
+    ok "section (a) has exactly one verdict line (not a bug, explanation)"
   else
-    bad "section (a)'s verdict marker no longer says 'pending' (the verdict belongs to 002-06/002-13)"
+    bad "section (a) has one verdict line but it is not in an allowed form: $verdict_line"
   fi
 fi
 
