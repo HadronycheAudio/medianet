@@ -1,0 +1,31 @@
+# 004-02 fixture schema, revision 1 (tester's contract; see tests/wire_tables.rs).
+schema = 1
+offset_unit = "bits"
+width_unit = "bits"
+size_unit = "bytes"
+
+# AC 2 negative fixture 5 of 5: the declared maximum size differs from the
+# computed one. The fields are contiguous and cover exactly 16 bits (2 bytes),
+# but the message declares 3 bytes.
+[[message]]
+name = "max_size_mismatch"
+layer = "control"
+dscp = 40
+max_size = 3
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "header"
+offset = 0
+width = 8
+type = "u8"
+meaning = "tester fixture field"
+valid = "0 to 255"
+
+[[message.field]]
+name = "body"
+offset = 8
+width = 8
+type = "u8"
+meaning = "tester fixture field"
+valid = "0 to 255"

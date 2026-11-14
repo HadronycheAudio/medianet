@@ -1,0 +1,12 @@
+# 004-02 fixture schema, revision 1 (tester's contract; see tests/wire_tables.rs).
+# Units are stated in the file itself: offsets and widths in bits, sizes in bytes.
+schema = 1
+offset_unit = "bits"
+width_unit = "bits"
+size_unit = "bytes"
+
+# AC 2 negative fixture 1 of 5: a parse error.
+# This file is not TOML at all: the table header is unterminated. The checker
+# must return FailureKind::Parse with a message, never panic.
+[[message]
+name = "broken"

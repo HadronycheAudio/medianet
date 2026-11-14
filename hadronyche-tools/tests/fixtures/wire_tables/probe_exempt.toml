@@ -1,0 +1,40 @@
+# 004-02 fixture schema, revision 1 (tester's contract; see tests/wire_tables.rs).
+schema = 1
+offset_unit = "bits"
+width_unit = "bits"
+size_unit = "bytes"
+
+# AC 6 positive fixture: the path-MTU probe pair is exempt from the 1 252-byte
+# control bound (C-116) and is sent at the intended media packet size: 1 472
+# bytes of UDP payload at a 1 500-byte path MTU. It must be accepted.
+[[message]]
+name = "path_mtu_probe_pair"
+layer = "control"
+dscp = 40
+max_size = 1472
+exempt_from_control_bound = "C-116"
+rejection_reasons = ["OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "probe_id"
+offset = 0
+width = 32
+type = "u32"
+meaning = "probe identifier (placeholder for 004-27)"
+valid = "0 to 4294967295"
+
+[[message.field]]
+name = "intended_media_packet_size"
+offset = 32
+width = 16
+type = "u16"
+meaning = "the media packet size this probe tests (C-116)"
+valid = "0 to 65535"
+
+[[message.field]]
+name = "padding"
+offset = 48
+width = 11728
+type = "pad"
+meaning = "zero padding to the intended media packet size"
+valid = "0"
