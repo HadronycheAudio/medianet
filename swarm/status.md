@@ -143,3 +143,21 @@ still prints OK on the unchanged design set.
   `fn` items, >100 = violation) runs in the per-change suite over the repo's
   Rust code; the frozen POC is out of scope (epic 003's fixes must stay
   minimal). All coder briefs carry the rule from now on.
+
+## Lead notes (hand-offs, continued)
+
+- 003-02's recorded method has a systematic ~2.5 % inflation: metrics rows
+  cover ~1.02 s of housekeeping, not 1 s, so mean-served ÷ 3 overstates the
+  rate. 003-04's check gates on the duration-corrected figure (sum served ÷
+  covered span ÷ followers). 003-05 must use the same correction (or a
+  stated tolerance); 002-12's clean-baseline figures must record the same
+  caveat (its pre/post comparisons against P-02 are unaffected within
+  tolerance).
+- Ticket 003-04 (and 003-02's notes) locate the 5 ms timeout in
+  `spawn_clock`; it is actually set in `Node::start` (module.rs:1126). The
+  check encodes the real location. Ticket-text bug, not a design change.
+- POC runs by different agents contaminate each other via the default
+  multicast group (reproduced: an 8-12-module run). Agents that RUN the POC
+  use an isolated `--group 239.72.68.44:<pid-port>` (an address, not a
+  timing parameter); documented as a deviation where a ticket's command line
+  is otherwise fixed.

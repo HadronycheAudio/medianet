@@ -141,3 +141,11 @@ Kickoff rule 4 ("nothing leaves the machine") is amended: the integrator
 pushes `main` to `origin` (github.com:HadronycheAudio/medianet) immediately
 after every merge and after swarm-state commits that follow it. In-flight
 ticket branches are not pushed. Agents never push; the integrator does.
+
+### POC runs (isolation)
+
+Agents that run POC instances (frozen tree or scratch copy) use an isolated
+multicast group per run (`--group 239.72.68.44:<pid-port>`-style) so
+concurrent swarm runs do not contaminate each other's module maps; where a
+ticket's recorded command line is fixed, the orchestrator serialises those
+runs instead. Epic-003 writes stay serialised regardless.
