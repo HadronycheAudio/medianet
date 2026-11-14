@@ -184,3 +184,13 @@ still prints OK on the unchanged design set.
   has a conflict-marker guard over doc/, checks/, swarm/*.md and scripts/.
   The integrator's resolution procedure now includes a marker grep before
   every commit of a resolved conflict.
+
+## Recorded rule-2 differences (ticket vs landed decisions, continued)
+
+- 004-04: the ticket lists "new reason value in a reserved range" as a MINOR
+  change example, but the landed 004-03 enumeration reserves 13..=255 for a
+  future major version. The landed decision wins: a new rejection reason is
+  a major change; the section states this explicitly [decision].
+- 004-04: the ticket's "rule 12" is untraceable in doc/design outside the
+  ticket; the section cites AC-23 (as the landed Rejection reasons section
+  does). Ticket-text bug, not a design change.
