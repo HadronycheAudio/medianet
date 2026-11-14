@@ -17,3 +17,7 @@ path = "src/bin/linux-peer.rs"
 [[bin]]
 name = "fuzz-decode"
 path = "src/bin/fuzz-decode.rs"
+
+# standalone throwaway probe (C-133): own workspace so the repository
+# workspace never claims it
+[workspace]

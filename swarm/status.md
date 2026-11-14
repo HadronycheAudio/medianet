@@ -80,3 +80,9 @@ still prints OK on the unchanged design set.
   `cargo clippy --all-targets -- -D warnings` in the workspace and every
   top-level crate on every change; merged code verified clean; the 001-01
   branch verified clean in review; all coder briefs carry the requirement.
+- CI repair after 001-01 merge: the suite's crate auto-discovery missed
+  nested probe dirs, and cargo's workspace `exclude` globs do not free them.
+  Fixed: the suite walks `probes/*/` explicitly; `probes/linux-peer` now
+  carries its own empty `[workspace]` table (one-line post-merge repair by
+  the integrator, no logic change; suite verified green including the
+  probe's 32 tests and clippy).

@@ -108,3 +108,11 @@ ticket stops and is escalated in `escalations.md`.
 - At most three tickets in flight per team, raised only while `main` stays
   green.
 - Tester and coder on one ticket are always different model families.
+
+### Probe crates (C-133)
+
+Every crate under `probes/` is standalone: its Cargo.toml carries an empty
+`[workspace]` table so the repository workspace never claims it (cargo's
+root `exclude` globs do not free nested packages on this toolchain; the
+per-crate table does, verified empirically). The per-change suite runs
+`cargo test` and clippy in every `probes/*/`.

@@ -44,6 +44,10 @@ for d in */; do
   # relies on the workspace excluding probes and listing its crates.
   run_cargo "$d"
 done
+# probes are nested one level deeper: probes/<name>/Cargo.toml
+for d in probes/*/; do
+  run_cargo "$d"
+done
 
 # document checks (one executable per ticket under checks/, until the
 # hadronyche-tools crate owns them; see swarm/README.md)
