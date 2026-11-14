@@ -26,6 +26,11 @@ run_cargo() {
       echo "FAIL: cargo test in $dir"
       fail=1
     fi
+    echo "== cargo clippy in $dir =="
+    if ! (cd "$dir" && cargo clippy --all-targets --quiet -- -D warnings); then
+      echo "FAIL: cargo clippy in $dir"
+      fail=1
+    fi
   fi
 }
 

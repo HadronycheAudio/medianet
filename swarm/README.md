@@ -36,6 +36,13 @@ committed so the work can resume after an interruption (kickoff section 4).
 6. After any change to `doc/design/`, `python3 doc/kickoff/check-design.py
    doc/design` must print `OK`.
 
+### Code quality (standing condition from the design owner)
+
+Every crate must be clippy-clean: `cargo clippy --all-targets -- -D
+warnings` passes in every crate, and the per-change suite enforces it. Coders
+deliver clippy-clean code or the review fails; reviewers run it as part of
+the suite. `cargo fmt --check` is not currently required.
+
 ### One ticket, in five steps (kickoff section 6)
 
 Every agent works in its own git worktree, never in the shared checkout at

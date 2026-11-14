@@ -71,3 +71,12 @@ still prints OK on the unchanged design set.
   004-03 produces. The dep line names only 007a-01; the interface need is
   real (kickoff: two leads agree the interface from the specification before
   either codes against it).
+
+## Standing conditions from the design owner
+
+- 2026-11-14: "Send the agents that I want the code the cleanest. So make
+  full use of clippy and enforce it in the CI." — Done:
+  `scripts/per-change-suite.sh` now runs
+  `cargo clippy --all-targets -- -D warnings` in the workspace and every
+  top-level crate on every change; merged code verified clean; the 001-01
+  branch verified clean in review; all coder briefs carry the requirement.
