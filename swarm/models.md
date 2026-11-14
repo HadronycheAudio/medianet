@@ -22,7 +22,7 @@ is moved out of a role where it fails clearly more often than another would.
 
 | Team | Tester (`deepseek-v4.1-flash-1017`) | Coder (`glm-5.3-flash`) | Coder (`glm-5.3`) | Reviewer (`glm-5.3`) |
 |---|---|---|---|---|
-| Baseline | 0/0 | 1/2 | 0/0 | — |
+| Baseline | 0/0 | 2/3 | 0/0 | — |
 | Specification | 0/0 | 1/1 | 2/3 | — |
 | Clocking | 0/0 | 0/0 | 0/0 | — |
 | Datagramming | 0/0 | 0/0 | 0/0 | — |
