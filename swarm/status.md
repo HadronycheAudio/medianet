@@ -134,3 +134,12 @@ still prints OK on the unchanged design set.
   NOT produced by the map have no explicit no-fit rule. 006-08's brief must
   carry this: it should raise the gap rather than inherit silence (either
   specify in 006-08's tests or escalate to the lead).
+
+## Standing conditions from the design owner (continued)
+
+- 2026-11-14: "Add a new coding rule for the agents: Every function that's
+  over 100 lines of code must be split." — Being wired in: a CI check
+  (scripts/function-length.py, counting non-blank non-comment body lines of
+  `fn` items, >100 = violation) runs in the per-change suite over the repo's
+  Rust code; the frozen POC is out of scope (epic 003's fixes must stay
+  minimal). All coder briefs carry the rule from now on.
