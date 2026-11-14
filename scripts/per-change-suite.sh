@@ -29,11 +29,14 @@ run_cargo() {
   fi
 }
 
-# the workspace, once it exists
-run_cargo .
-
+# the root workspace (once it exists), then every top-level crate and
 # every throwaway probe (C-133)
-for d in probes/*/; do
+run_cargo .
+for d in */; do
+  [ -f "$d/Cargo.toml" ] || continue
+  # skip members already covered by the root workspace run to save time:
+  # cargo in a member dir errors if the workspace does not own it, so this
+  # relies on the workspace excluding probes and listing its crates.
   run_cargo "$d"
 done
 
