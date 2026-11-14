@@ -396,14 +396,22 @@
   "class": "host",
   "epic": "004",
   "phase": "P1",
-  "status": "todo"
+  "role": {
+   "phase": "red",
+   "tester": "melious/deepseek-v4.1-flash-1017"
+  },
+  "status": "in-flight"
  },
  "004-05": {
   "branch": "t/004-05",
   "class": "host",
   "epic": "004",
   "phase": "P1",
-  "status": "todo"
+  "role": {
+   "phase": "red",
+   "tester": "melious/deepseek-v4.1-flash-1017"
+  },
+  "status": "in-flight"
  },
  "004-06": {
   "branch": "t/004-06",
@@ -932,12 +940,16 @@
   "status": "done"
  },
  "007a-02": {
-  "blocked_reason": "cross-epic interface: needs the rejection reason enumeration from 004-03 (C-193); scheduled after it lands",
+  "blocked_reason": "",
   "branch": "t/007a-02",
   "class": "host",
   "epic": "007a",
   "phase": "P1",
-  "status": "blocked"
+  "role": {
+   "phase": "red",
+   "tester": "melious/deepseek-v4.1-flash-1017"
+  },
+  "status": "in-flight"
  },
  "007a-03": {
   "branch": "t/007a-03",
