@@ -1,0 +1,11 @@
+{
+  "spec_version": "1",
+  "id": "negative-bad-reason",
+  "message": "Hello",
+  "bin": "example.bin",
+  "length_bytes": 4,
+  "reason": "TooBig",
+  "expected": {
+    "no_state_change": true
+  }
+}

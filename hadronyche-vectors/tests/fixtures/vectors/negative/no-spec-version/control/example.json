@@ -1,0 +1,15 @@
+{
+  "id": "negative-no-spec-version",
+  "machine": "Connection",
+  "steps": [
+    {
+      "time_ns": 0,
+      "input": { "kind": "tick" },
+      "expected": {
+        "outputs": [],
+        "events": [],
+        "state": { "health": "Live" }
+      }
+    }
+  ]
+}

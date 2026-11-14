@@ -1,0 +1,16 @@
+{
+  "spec_version": "1",
+  "id": "negative-duplicate-id",
+  "machine": "Connection",
+  "steps": [
+    {
+      "time_ns": 0,
+      "input": { "kind": "tick" },
+      "expected": {
+        "outputs": [],
+        "events": [],
+        "state": { "health": "Live" }
+      }
+    }
+  ]
+}
