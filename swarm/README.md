@@ -156,3 +156,13 @@ Commit `swarm/poc-write-in-flight` (empty file) when an epic-003 coder is
 spawned; remove it in the same commit that records the ticket done. Every
 check that asserts POC working-tree state must honour it with a loud,
 single-assertion skip (003-01's amended check is the pattern).
+
+### Scratch copy state
+
+/home/dorian/workspace/hadronyche/poc-scratch is a git repository: its first
+commit (ed96b5c) is the pristine poc-untouched-identical state; 002-07's
+hoplog instrumentation lives as uncommitted work on top. Agents needing a
+PRISTINE run either `git -C poc-scratch stash` first (and restore after)
+or build from a fresh `git -C <frozen> archive poc-untouched` extraction —
+never assume the scratch tree is pristine. Reviewers verify provenance from
+run timelines or pristine re-runs.
