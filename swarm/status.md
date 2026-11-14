@@ -42,3 +42,10 @@ the original set, but the design itself mandates `doc/design/spec/` and
 `doc/design/reports/` as deliverable locations (C-130). The root allowlist was
 extended by exactly those two names (no other check weakened); the checker
 still prints OK on the unchanged design set.
+
+## Recorded rule-2 differences (ticket vs 02-constants.md)
+
+- 006-01: the ticket's constants preview paraphrases 36 of 47 rows and says
+  "the others decided or derived", but 02-constants.md marks C-02, C-30,
+  C-33, C-67 as `inherited` (C-65 `derived`). The document's table follows
+  02-constants.md (which wins); the ticket preview is the bug.
