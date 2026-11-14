@@ -125,3 +125,12 @@ still prints OK on the unchanged design set.
   a loud orchestrated skip (`swarm/poc-write-in-flight`) during an epic-003
   green phase. No merge lands again until the suite is green (gate
   re-asserted).
+
+## Lead notes (hand-offs)
+
+- 006-08's AC-3 says a no-fit result is handled "as 006-02 specifies", but
+  006-02's work items never asked for a no-fit rule; the author added the
+  true sentence that map-produced round trips cannot overflow, but positions
+  NOT produced by the map have no explicit no-fit rule. 006-08's brief must
+  carry this: it should raise the gap rather than inherit silence (either
+  specify in 006-08's tests or escalate to the lead).
