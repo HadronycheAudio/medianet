@@ -1,0 +1,13 @@
+{
+  "spec_version": "1",
+  "id": "example-transport",
+  "script": [
+    { "at_ns": 0, "kind": "tempo", "args": { "bpm": 120 } },
+    { "at_ns": 500000000, "kind": "start" }
+  ],
+  "expected": {
+    "result": "two clicks a quarter note apart at 120 bpm",
+    "clicks": [0, 250],
+    "events": []
+  }
+}

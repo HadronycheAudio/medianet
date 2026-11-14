@@ -1,0 +1,16 @@
+{
+  "spec_version": "1",
+  "id": "example-wire-invalid",
+  "message": "example",
+  "bin": "example.bin",
+  "length_bytes": 2,
+  "reason": "TooShort",
+  "expected": {
+    "no_state_change": true,
+    "counter_increments": [
+      { "input": "example.bin", "reason": "TooShort", "count": 1 }
+    ],
+    "events": [],
+    "time_bound": { "per_packet_us": 10, "linear_in_length": true }
+  }
+}

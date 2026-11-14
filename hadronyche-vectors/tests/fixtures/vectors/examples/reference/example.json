@@ -1,0 +1,11 @@
+{
+  "spec_version": "1",
+  "id": "example-reference",
+  "reference": "echo",
+  "sample_format": "f32",
+  "input_script": [
+    { "at_ns": 0, "kind": "samples", "args": { "values": [0.0, 0.5, -0.5] } }
+  ],
+  "expected_output_hash": "placeholder-sha3-256-000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "gap_counts": { "excluded_windows": 0, "degraded_slices": 0 }
+}

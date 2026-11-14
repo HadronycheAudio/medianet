@@ -1,0 +1,19 @@
+{
+  "spec_version": "1",
+  "id": "example-control",
+  "machine": "Connection",
+  "steps": [
+    {
+      "time_ns": 0,
+      "input": { "kind": "packet", "args": { "late_by_ns": 1500 } },
+      "expected": {
+        "outputs": [],
+        "events": [{ "name": "connection_demoted" }],
+        "state": {
+          "counters": { "received": 3, "late": 2 },
+          "health": "Demoted"
+        }
+      }
+    }
+  ]
+}

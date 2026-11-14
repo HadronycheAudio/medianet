@@ -1,0 +1,12 @@
+{
+  "spec_version": "1",
+  "id": "example-wire-valid",
+  "message": "example",
+  "case": "minimal",
+  "bin": "example.bin",
+  "length_bytes": 4,
+  "decoded": {
+    "flags": 1,
+    "sequence": 1
+  }
+}
