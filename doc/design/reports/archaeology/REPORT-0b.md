@@ -102,6 +102,39 @@ Voice comparison bit-level: yes
 
 The yes refers to the replica-vs-returned comparison of the voice and click channels (audio.rs:808-813); the tolerance measurement against `music::expected` (audio.rs:823-846) is a separate check family and does not weaken the exact tier. No instrument bug was found in this reading [code].
 
+### sender.rs — deadlines, wire encoding and the return path
+
+- Purpose: the sender owns the media clock, sends musical events, transport and the audio feed to the synths and the mixer on absolute deadlines, and measures everything the mixer sends back (sender.rs:1-3) [code].
+- Main types: `Sender` (sender.rs:105) holds the send buffers, phrase and queue, the sender's own replica of the instruments (`voices`, sender.rs:124) and one `Path` per synth; `MasterShared` (sender.rs:26) carries the atomic counters the display reads (`sent` sender.rs:29, `dropped` sender.rs:53); `SumTaps`/`SynthTaps` (sender.rs:65-79) are the rtrb queues feeding the reference-vs-returned comparison [code].
+- Wiring: `module` (sender.rs:146) declares the single input "return", handled by `Sender::returned` (sender.rs:202), and a block timer running `prepare` then `fire` (sender.rs:203) [code].
+- `prepare` (sender.rs:209) renders block n ahead of its deadline: the audio message (sender.rs:215), the controller values in the same datagram (sender.rs:219-224), the transport scenario while conducting — `ctx.is_reference()` gates it (sender.rs:229) — queued musical events (sender.rs:256-262), and the reference sum, computed with the mixer's own mixing code (sender.rs:271-284) [code].
+- `fire` (sender.rs:290) stamps the `Header` (sender.rs:297-312) and sends two datagrams with that same header: events to the synths, the feed to the mixer (sender.rs:316-317) [code].
+- TX pacing lateness: `fire` receives the block's scheduling lateness as `late: i64` in ns and clamps it into the header field `tx_late` (i32) at sender.rs:308; the value rides every outgoing header and is read back per returned record (sender.rs:430) [code].
+- The return path `returned` (sender.rs:368) classifies each datagram by reusing a header field as a direction marker: `direct = h.ack_seq == ctx.id` (sender.rs:371) decides feed-echo vs synth reply, and otherwise `h.ack_seq` selects the synth path (sender.rs:378); reordering is inferred from `h.seq` against the per-stream highest sequence (sender.rs:381-382) [code].
+- Loss hop: the echo header field `rx_lost` — a u32, 4-byte count of packets, no unit — is copied unconverted from the returned datagram's header into the sender's `Record` at sender.rs:435 (`rx_lost: h.rx_lost`), next to the timing fields derived from the header timestamps (fwd = t2k−t1, turn = t3−t2k, ret = recv−t3, sender.rs:422-427) [code].
+- Flagged as input to 002-08 (field reuse by direction, factual only): `ack_seq` doubles as stream discriminator (sender.rs:371) and sender identity (sender.rs:307); `h.ack_t4` carries the mixer's starved-sample count back (sender.rs:397, field comment sender.rs:38-40); `path_delay` is filled with the sample rate, rather than a delay (sender.rs:309) [code].
+- Offset symmetry, checked for the flag above: the header's `rx_lost` (u32, proto.rs:177) is written at bytes 72..76 and read back at the same offset (proto.rs:205, proto.rs:233), so sender-side encode and decode agree on it [code].
+- Open question for 002-08: could a return stream's `rx_lost` value have been computed by the echo against a different direction's counters? Owner: ticket 002-08. Falsifier: showing that each echo handler fills `rx_lost` from the per-input counters matching the stream the record identifies [code].
+
+### stats.rs — record ingestion and the snapshot
+
+- Purpose: drains per-packet `Record`s from the real-time threads and turns them into a `Snapshot` for the display (stats.rs:1-2) [code].
+- `Record` (stats.rs:20-50) carries all durations in ns (stats.rs:18): the send-lateness field ("master send time minus its deadline", stats.rs:42-43) and `rx_lost` as u32 (stats.rs:48); `stream` (stats.rs:21) tags the return path a record came from — 0 for the primary, `DIRECT` = 100 for the feed's direct path (sender.rs:24) [code].
+- The `Aggregator` (stats.rs:189) polls its rtrb consumers and calls `ingest` per record (stats.rs:287-299) [code].
+- Loss hop: at stats.rs:324 (`self.lost_fwd = r.rx_lost as u64`) the value is widened to a u64 counter of packets — no unit conversion — and stored by plain overwrite, so the latest record wins: it is one pooled value across all return streams with no per-stream separation, regardless of the stream that delivered the record; which streams update it is decided by the gate above (synth-path records always do, the feed's direct path only until a synth answers, stats.rs:303-312) [code].
+- `snapshot` (stats.rs:392) assembles the display: the latency rows are ns summaries (stats.rs:400-418), and the row labelled "TX pacing lateness" at stats.rs:416 is fed from the TX_LATE metric (stats.rs:343, pushed from the record's `tx_late` in ns); the lateness is computed at the sender, sender.rs:308, in ns, and converted to ms only for display (`ms` divides by 1e6, stats.rs:357, tui.rs:36-38), never in the stored value [code].
+- `lost_total` is computed independently of `lost_fwd`, from first/highest sequence numbers and `received` (stats.rs:444-449); `Snapshot.lost_fwd` is u64 (stats.rs:168) [code].
+- The CSV export writes the lateness raw, in ns, as `tx_late_ns` (stats.rs:241, stats.rs:377), straight from the value stamped at sender.rs:308 [code].
+
+### tui.rs — the one-line status and the dashboard
+
+- Purpose: the live display — a full-screen ratatui dashboard, or one line per second with `--no-tui` (tui.rs:1) [code].
+- `run_headless` (tui.rs:52) polls the aggregator, snapshots every 100 ms and prints `headless_line` once per second (tui.rs:71-74); `run_tui`/`draw` (tui.rs:248, tui.rs:285) render the dashboard [code].
+- Loss hop, one-line status: the branch at tui.rs:107-114 matches on (`sent`, `lost_total`) — on the sender side it prints "sent … lost … (fwd …) dropped-at-sender …", otherwise "received … lost …"; both branches print `s.lost_fwd`, the u64 packet count stored at stats.rs:324, as a raw integer with no unit conversion, so a printed value near 21.7 × 10^6 is that counter as displayed — a magnitude that also fits u32 (max 4 294 967 295), so the width of the printed number alone does not decide its type [code].
+- Dashboard loss panel: `draw_loss` (tui.rs:450) shows the same numbers; in the sender branch it splits the pooled `lost_fwd` against `lost_total` — "forward" is `s.lost_fwd.min(lost)`, "return" is `lost.saturating_sub(s.lost_fwd)` (tui.rs:458-463) [code].
+- The row "TX pacing lateness" appears in the dashboard's latency table, in ms (`draw_table`, tui.rs:393-423); it is computed at sender.rs:308 in ns [code].
+- `ms` (tui.rs:36-38) divides ns by 1e6 for display only; the one-line status omits the sender's lateness row (its row list, tui.rs:95, covers only rtt/fwd/ret/inside/turnaround) [code].
+
 **verdict: pending**
 
 ## (e) Run confirmations
