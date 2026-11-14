@@ -5,9 +5,12 @@
 # Deliverable: the measurement WORKING NOTES at swarm/notes/003-02.md
 # (lead decision recorded in swarm/status.md: the ticket says "do not commit
 # them yet", but 003-05 and 003-08 need them across agent hand-offs, so they
-# are committed working notes; they are not a design or baseline document and
+# are working notes; they are not a design or baseline document and
 # no figure enters doc/design/** from this ticket).  003-08 writes BASELINE.md
-# in the POC repository.
+# in the POC repository.  The notes live at swarm/notes/003-02.md on this
+# machine's disk; the swarm directory is untracked by the design owner's
+# directive (2026-11-14), so tracked-ness is no longer required — existence
+# and content are.
 #
 # The check is READ-ONLY: it never writes into the POC and never runs it.
 # Override the notes path with NOTES=/path (only sensible for self-testing)
@@ -65,11 +68,15 @@
 #      unprivileged).  The notes must contain the commit that `poc-untouched`
 #      resolves to in the POC (full hash, or an unambiguous 12-hex prefix).
 #
-# L1   Lead decision (swarm/status.md): the notes are committed WORKING NOTES
-#      clearly marked as pending BASELINE.md.  Encoding: the text says
+# L1   Lead decision (swarm/status.md): the notes are WORKING NOTES clearly
+#      marked as pending BASELINE.md.  Encoding: the text says
 #      "working notes" and pairs `BASELINE.md` with a pending marker on one
-#      line; when the default notes path is used, the file must be tracked by
-#      git.  (Skipped for a NOTES override.)
+#      line; when the default notes path is used, the file must EXIST at
+#      swarm/notes/003-02.md with the working-notes form.  The notes live at
+#      swarm/notes/003-02.md on this machine's disk; the swarm directory is
+#      untracked by the design owner's directive (2026-11-14), so
+#      tracked-ness is no longer required — existence and content are.
+#      (Skipped for a NOTES override.)
 #
 # AC4  The POC working tree is unchanged by this ticket: `git status
 #      --porcelain` in the POC is empty (ignored paths such as target/ are
@@ -449,13 +456,13 @@ if [ "$notes_present" -eq 1 ]; then
     bad "L1 notes do not mark the figures as pending BASELINE.md (003-08 writes it in the POC repository)"
   fi
   if [ "$NOTES" = "swarm/notes/003-02.md" ]; then
-    if git ls-files --error-unmatch -- "$NOTES" >/dev/null 2>&1; then
-      pass "L1 notes are committed (tracked by git)"
+    if [ -f "$NOTES" ]; then
+      pass "L1 notes exist at the default path swarm/notes/003-02.md (on this machine's disk; swarm/ is untracked by the design owner's directive 2026-11-14)"
     else
-      bad "L1 notes exist but are not committed (git does not track them)"
+      bad "L1 notes file missing at the default path swarm/notes/003-02.md (existence is required)"
     fi
   else
-    note "L1 tracking check skipped (NOTES override: $NOTES)"
+    note "L1 default-path existence check skipped (NOTES override: $NOTES)"
   fi
 
 fi
