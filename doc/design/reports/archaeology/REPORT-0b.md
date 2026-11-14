@@ -117,9 +117,112 @@ Interim conclusion — where transport state stops: the chain is reference claim
 
 ## (b) The 21.7 M counter
 
-To be filled by ticket 002-08 and successors.
+<!-- Filled by ticket 002-07 (instrumented per-hop logging run, log and diff); the analysis and the verdict belong to 002-08, so the verdict line stays pending. -->
+
+Run source and scratch-copy state: the instrumented 25 s loopback run recorded here was made from the scratch copy at `/home/dorian/workspace/hadronyche/poc-scratch` — the frozen POC at `/home/dorian/workspace/hadropoc` was neither run nor written by this ticket [measured]. Following the team-lead decision, a git repository was initialised inside the scratch copy and the pristine state was committed before instrumenting (commit `ed96b5c`, "pristine scratch copy (002-07 baseline, content-identical to the frozen tree at creation)"; this also preserves the pre-logging state for the next tickets, and the scratch copy's at-creation fingerprint is the one already recorded in the Environment section) [measured], then the logging patch `doc/design/reports/archaeology/002-07-scratch.diff` was applied on top — so that committed diff is exactly the logging change [decision]. Exact command as run, unprivileged (uid 1000), exit status 0 [measured]:
+
+```console
+$ cd /home/dorian/workspace/hadronyche/poc-scratch
+$ ./target/release/hadropoc loopback --duration 25 --no-tui --group 239.72.68.44:44307
+$ echo $?
+0
+```
+[measured]
+
+The patch `doc/design/reports/archaeology/002-07-scratch.diff` (197 lines, 8 files) is logging-only: it adds the helper `src/hoplog.rs`, one `crate::hoplog::emit…` call per hop of the chain, the module-name handoff to the real-time threads (module.rs:1625-1627 of the instrumented scratch copy), and the `pub mod hoplog;` registration in `src/lib.rs`; it touches no counter computation, no constant and no control flow — no behaviour change [code]. One line per hop, at the chain positions of the ticket's Context (pristine line numbers, identical to the frozen tree); emission sites in the instrumented scratch copy: hop 1, the per-input counter (pristine mixer.rs:78 / synth.rs:88) — synth.rs:89-91 and mixer.rs:79-81 [code]; hop 2, `rx_lost` written into the echo header (pristine synth.rs:168, mixer.rs:167) — synth.rs:177-180 and mixer.rs:176-179 [code]; hop 3, the copy into the sender's record (pristine sender.rs:435) — sender.rs:416-419 [code]; hop 4, the `lost_fwd` store (pristine stats.rs:324) — stats.rs:325-327 [code]; hop 5, the one-line display (pristine tui.rs:107-114) — tui.rs:110-111 [code]. Every record line carries the hop number, the module name, the input / return-stream id (`stream=`), the sequence number (`seq=`) and the raw value (`lost=` / `rx_lost=` / `lost_fwd=`), and at hops 2 and 3 additionally the raw little-endian bytes of the header field (`rx_lost_bytes=`, header offset 72..76, proto.rs:205) [code]. Logging goes to stderr (an `eprintln!` in src/hoplog.rs), so it works with `--no-tui` and plain text reaches the log [code]. Logging is rate-limited to at most 10 lines per second per hop and module — a last-emit-time check with `MIN_INTERVAL = 0.1` s (src/hoplog.rs:17-18) [code].
+
+The frozen tree is untouched and its recorded fingerprint is unchanged: this ticket wrote nothing outside the scratch copy, and the frozen-tree guards recompute green today, 2026-11-14 — the poc-untouched tag-tree fingerprint recomputed from git still matches the recorded `ac24375d…6ea7675`, the 27 frozen experiment-data files still match `checks/002-01-frozen-data.sha256`, and `bash checks/002-01.sh` passes all 24 of its checks [measured]. (The `.git` directory the lead decision adds to the scratch copy is pruned by the fingerprint convention, and the pristine commit is content-identical to the scratch copy's recorded at-creation state [decision].)
+
+The committed log `doc/design/reports/archaeology/002-07-hop.log` holds 1964 hop-tagged records from the 25 s run: hop 1 — 750 records (250 each from mixer, synth1 and synth2), hop 2 — 750 records (250 each from mixer, synth1 and synth2), hop 3 — 250 records, hop 4 — 189 records, hop 5 — 25 records [measured]. The file is the run's stderr (the per-hop records, then the POC's own end-of-run warnings about memlock and real-time scheduling), followed by the run's stdout display lines after a marker line [decision].
+
+Captured display line of the instrumented 25 s run — the final `[25s]` line, verbatim, with the loss figures in its `sent … lost … (fwd …)` segment:
+```text
+[  25s] clock LOCKED drift -104.96 ppm err 0.2 µs | rtt mean 0.088 p99 0.122 max 2.912 ms | fwd mean 0.009 p99 0.018 max 0.098 ms | ret mean 0.017 p99 0.042 max 0.415 ms | inside mean 0.061 p99 0.091 max 2.894 ms | Round trip: synth 2 mean 0.092 p99 0.132 max 2.944 ms | Round trip: feed only mean 0.083 p99 0.111 max 2.374 ms | playable(99.9%) 0.524 ms | sent 49955 lost 0 (fwd 0) dropped-at-sender 0 | audio 48 ch: mixer-vs-sender identical (2337/2337 windows exact, 0 lost, 1 sender gaps), vs ideal: mixer -145.4 dB sender -145.4 dB | volume controller: PASS (0 of 2337 windows over epsilon 1e-4), 49955 messages, sent 0.9647 measured 0.9647, range 0.002..0.997, max error 2.5e-8 | music 32 voices on synth1: PASS (steady: 0 of 48029 over epsilon, max level error 2.3e-5; moving: 0 of 13155 over, max 2.5e-2), voice channels 1912/1912 windows exact, max pitch error 2.0e-3 Hz (1912 windows) | parts sent 19540 (637 notes started, 14 replaced while waiting), refreshed 380660, deepest queue 160, longest wait 9.50 ms, samples without controller values at the mixer 0 | transport: PASS (9 changes, 55 pulses, 789 repeats sent; synth playhead identical for 40826/40826 datagrams, 0 changes arrived late; metronome: 47/47 clicks on the right sample, 0 wrong (furthest 0 samples), channel exact in 1912/1912 windows) | least accurate voice 0 (23 % of epsilon), now: pitch 1068.25 Hz (silent), level 0.0000/0.0000, timbre 0.0000/0.0000, articulation 0.0000/0.0000 | also synth2: music PASS (0 of 48081 steady and 0 of 13167 moving measurements over epsilon), voice channels 1914/1914 windows exact, 0 lost, transport PASS (playhead identical for 40854/40854 datagrams, 47/47 clicks right) | mix peak 4.395 | playhead: PLAYING  bar 4 beat 6 (19.297)  6/8  240.000 BPM  time code 01:00:07:24 @ 25
+```
+[measured]
+
+Reproduction status: the anomaly **did not reproduce** in this run [measured]. All 25 periodic display lines of the 25 s run show `lost 0 (fwd 0)` [measured], and every one of the 1964 hop records logs the raw value 0 — `lost=0` at hop 1, `rx_lost=0` at hops 2 and 3 (raw header bytes `00 00 00 00` in every record), `lost_fwd=0` at hop 4, `lost=0` in the hop 5 display records [measured]. The instrumented chain, as observed end to end in this run, never carried a non-zero loss figure from the per-input counters to the display. Why the counter showed about 21.7 million in the original observation but 0 here is 002-08's question; the section verdict belongs to 002-08.
+
+Excerpts from `002-07-hop.log`, at least 5 records per hop [measured]. The six hop/module emitters interleave in time (each emits at most 10 lines per second), so two shown records of one hop are rarely adjacent in the raw log; between two shown records, the lines of other hops and modules are replaced by an elision line that names the number of elided lines and carries the hop tag of the records it stands between — every shown record line is copied verbatim from the log [decision].
+
+Hop 1 — the per-input counter; here the mixer's three inputs (`stream 0` = the feed, `stream 1`/`stream 2` = the two synth returns; mixer.rs:59, mixer.rs:78 of the pristine source) [measured]:
+```text
+[  10.0s] hop=1 module=mixer stream=1 seq=20020 first=1 highest=20020 rx_count=20020 lost=0
+… 7 lines elided (other hops/modules); the next hop=1 record follows …
+[  10.1s] hop=1 module=mixer stream=1 seq=20220 first=1 highest=20220 rx_count=20220 lost=0
+… 7 lines elided (other hops/modules); the next hop=1 record follows …
+[  10.2s] hop=1 module=mixer stream=0 seq=20421 first=0 highest=20421 rx_count=20422 lost=0
+… 6 lines elided (other hops/modules); the next hop=1 record follows …
+[  10.3s] hop=1 module=mixer stream=2 seq=20621 first=1 highest=20621 rx_count=20621 lost=0
+… 7 lines elided (other hops/modules); the next hop=1 record follows …
+[  10.4s] hop=1 module=mixer stream=2 seq=20821 first=1 highest=20821 rx_count=20821 lost=0
+… 7 lines elided (other hops/modules); the next hop=1 record follows …
+[  10.5s] hop=1 module=mixer stream=1 seq=21021 first=1 highest=21021 rx_count=21021 lost=0
+```
+[measured]
+
+Hop 2 — the echo-header write; here synth1's records (`stream 0` = its events input), each with the raw little-endian `rx_lost` header bytes [measured]:
+```text
+[  10.0s] hop=2 module=synth1 stream=0 seq=20060 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 8 lines elided (other hops/modules); the next hop=2 record follows …
+[  10.1s] hop=2 module=synth1 stream=0 seq=20261 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 6 lines elided (other hops/modules); the next hop=2 record follows …
+[  10.2s] hop=2 module=synth1 stream=0 seq=20462 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 6 lines elided (other hops/modules); the next hop=2 record follows …
+[  10.3s] hop=2 module=synth1 stream=0 seq=20663 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 7 lines elided (other hops/modules); the next hop=2 record follows …
+[  10.4s] hop=2 module=synth1 stream=0 seq=20863 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 5 lines elided (other hops/modules); the next hop=2 record follows …
+[  10.5s] hop=2 module=synth1 stream=0 seq=21063 rx_lost=0 rx_lost_bytes=00 00 00 00
+```
+[measured]
+
+Hop 3 — the copy into the sender's record; here the sender's return streams (`stream 0`/`stream 1` = the two synth return paths, `stream 100` = `DIRECT`, the feed's direct path, sender.rs:24), each with the raw `rx_lost` header bytes of the received header [measured]:
+```text
+[  10.0s] hop=3 module=sender stream=0 seq=20032 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 7 lines elided (other hops/modules); the next hop=3 record follows …
+[  10.1s] hop=3 module=sender stream=100 seq=20232 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 7 lines elided (other hops/modules); the next hop=3 record follows …
+[  10.2s] hop=3 module=sender stream=100 seq=20432 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 6 lines elided (other hops/modules); the next hop=3 record follows …
+[  10.3s] hop=3 module=sender stream=0 seq=20632 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 7 lines elided (other hops/modules); the next hop=3 record follows …
+[  10.4s] hop=3 module=sender stream=1 seq=20832 rx_lost=0 rx_lost_bytes=00 00 00 00
+… 7 lines elided (other hops/modules); the next hop=3 record follows …
+[  10.5s] hop=3 module=sender stream=100 seq=21032 rx_lost=0 rx_lost_bytes=00 00 00 00
+```
+[measured]
+
+Hop 4 — the `lost_fwd` store in the statistics; here the primary synth path (`stream 0`, the path whose records reach the overwrite, stats.rs:303-314) [measured]:
+```text
+[  10.1s] hop=4 module=stats stream=0 seq=19838 rx_lost=0 lost_fwd=0
+… 7 lines elided (other hops/modules); the next hop=4 record follows …
+[  10.2s] hop=4 module=stats stream=0 seq=20117 rx_lost=0 lost_fwd=0
+… 14 lines elided (other hops/modules); the next hop=4 record follows …
+[  10.3s] hop=4 module=stats stream=0 seq=20392 rx_lost=0 lost_fwd=0
+… 7 lines elided (other hops/modules); the next hop=4 record follows …
+[  10.5s] hop=4 module=stats stream=0 seq=20668 rx_lost=0 lost_fwd=0
+… 9 lines elided (other hops/modules); the next hop=4 record follows …
+[  10.6s] hop=4 module=stats stream=0 seq=20947 rx_lost=0 lost_fwd=0
+```
+[measured]
+
+Hop 5 — the one-line display's loss figures, one record per display line over the 25 s run [measured]:
+```text
+[   1.0s] hop=5 module=tui display sent=1998 lost=0 (fwd=0) dropped-at-sender=0
+… 405 lines elided (other hops/modules); the next hop=5 record follows …
+[   6.1s] hop=5 module=tui display sent=12118 lost=0 (fwd=0) dropped-at-sender=0
+… 390 lines elided (other hops/modules); the next hop=5 record follows …
+[  11.1s] hop=5 module=tui display sent=22128 lost=0 (fwd=0) dropped-at-sender=0
+… 390 lines elided (other hops/modules); the next hop=5 record follows …
+[  16.1s] hop=5 module=tui display sent=32179 lost=0 (fwd=0) dropped-at-sender=0
+… 384 lines elided (other hops/modules); the next hop=5 record follows …
+[  21.0s] hop=5 module=tui display sent=42072 lost=0 (fwd=0) dropped-at-sender=0
+```
+[measured]
 
 **verdict: pending**
+
 
 ## (c) Experiment metrics integrity
 
