@@ -267,7 +267,7 @@
   "phase": "P0",
   "role": {
    "coder": "melious/glm-5.3-flash",
-   "phase": "red-confirmed, coder held: POC write waits for the 003-02 review run to finish",
+   "phase": "green",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
