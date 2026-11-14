@@ -41,6 +41,24 @@
 # closed, so a file cannot redefine it — and every entry of a message's
 # `rejection_reasons` must name a member.
 #
+# The protocol version fields (ticket 004-04), one `[versioning]` table: the
+# machine-readable copy of wire.md's "Versioning" section, which states the
+# rules; the two must agree value for value. The checker does not model this
+# table (versioning rules are wire.md's to state; the fields belong to the
+# per-message tables that 004-06 onward add), but the conformance task 007
+# generates from it:
+#
+#   magic         = 0x4d4e  the 2-byte magic of every message, at offset 0;
+#                           distinct in both bytes from the retired POC's
+#                           0x4844 [decision].
+#   magic_width   = 2       the magic's width in bytes.
+#   version_width = 2       the version field's width in bytes, at offset 2.
+#   major         = 1       v1's major: the high byte of the version u16
+#                           (bits 15..8) [decision].
+#   minor         = 0       v1's minor: the low byte of the version u16
+#                           (bits 7..0) [decision].
+#   version       = 0x0100  v1's packed value, major << 8 | minor.
+
 # Per message, one `[[message]]` table; `name` is unique and non-empty:
 #
 #   name         = "..."    unique, non-empty message name.
@@ -191,6 +209,17 @@ meaning = "a control message exceeds the 1 252-byte UDP-payload bound (C-17)"
 name = "ReservedNonZero"
 value = 12
 meaning = "a field this specification fixes at zero carries a non-zero value; the fields and their required zeros are fixed by 004-05"
+
+# The protocol version fields (ticket 004-04): see the [versioning] schema
+# documentation above. wire.md's "Versioning" section is the authority.
+
+[versioning]
+magic = 0x4d4e
+magic_width = 2
+version_width = 2
+major = 1
+minor = 0
+version = 0x0100
 
 # The one example message (ticket 004-02 Work step 4): a placeholder with two
 # fields, so the checker has something to verify. Later tickets (004-06 to
