@@ -4,19 +4,29 @@
 # Scope: the deliverable of 002-01 is the document
 #   doc/design/reports/archaeology/REPORT-0b.md
 # plus the evidence it records. This script never writes anywhere; it reads the
-# frozen POC tree at /home/dorian/workspace/hadropoc only.
+# frozen POC repository at /home/dorian/workspace/hadropoc only.
 #
 # Frozen-tree fingerprint convention (fixed by the team lead so that 002-01 and
-# 003-01 stay independent). The fingerprint is the sha256 of the following byte
-# stream, in LC_ALL=C sorted relative-path order:
+# 003-01 stay independent). The original recorded value documents the
+# 002-01-time working tree (55 files). 003-01's .gitignore later left 27 of
+# those files untracked (the experiment data under experiments/{pilot,run1,
+# run2,run3}/), so the state has two permanent guards:
+#   - the 28 tracked files are recoverable forever from the poc-untouched tag
+#     tree (the git-reproducible tracked baseline; 003-01 guards the working
+#     tree and the 003-XX-only commit rule, 002-01 does not duplicate that);
+#   - the 27 untracked experiment-data files are frozen instrument data and
+#     are guarded by checks/002-01-frozen-data.sha256.
+# The tag-tree fingerprint is the sha256 of the following byte stream, in
+# LC_ALL=C sorted relative-path order:
 #
 #   for each regular file under src/, tools/, experiments/ (excluding target/,
 #   .git/, build/ and .gitignore) and the files Cargo.toml, Cargo.lock,
-#   README.md:
+#   README.md, as recorded in the poc-untouched tag:
 #       "path:" <relative-path> NUL <file-contents> NUL
 #
 # i.e. sorted concatenation of the relative paths and contents. The helper
-# below implements exactly that and is used for the AC 5 recomputation.
+# below reads the blobs through git from the tag; it never looks at the working
+# tree. The recorded 002-01-time (55-file) value is not recomputed here.
 
 set -u
 
@@ -24,6 +34,7 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 REPORT_REL="doc/design/reports/archaeology/REPORT-0b.md"
 REPORT="$REPO_ROOT/$REPORT_REL"
 POC_ROOT="/home/dorian/workspace/hadropoc"
+FROZEN_DATA_MANIFEST="$REPO_ROOT/checks/002-01-frozen-data.sha256"
 
 pass=0
 fail=0
@@ -35,28 +46,32 @@ bad() { printf 'FAIL: %s\n' "$*"; fail=$((fail + 1)); }
 # Helpers
 # ---------------------------------------------------------------------------
 
-# sha256 over the sorted (path, contents) concatenation described above.
-compute_fingerprint() {
-  local root="$1"
+# sha256 over the sorted (path, contents) concatenation described above, read
+# from the named tag's tree through git. Independent of the working tree.
+compute_tag_fingerprint() {
+  local root="$1" tag="$2"
   (
-    cd "$root" || exit 1
-    {
-      find src tools experiments \
-        \( -type d \( -name target -o -name .git -o -name build \) -prune \) -o \
-        \( -type f ! -name '.gitignore' -print \)
-      printf '%s\n' Cargo.toml Cargo.lock README.md
-    } \
-      | LC_ALL=C sort -u \
-      | while IFS= read -r rel; do
-          if [ ! -f "$rel" ]; then
-            printf 'missing file: %s\n' "$rel" >&2
-            exit 1
-          fi
-          printf 'path:%s\0' "$rel"
-          cat -- "$rel"
-          printf '\0'
-        done \
-      | sha256sum | cut -d' ' -f1
+    git -C "$root" ls-tree -r "$tag" |
+      awk -F'\t' '
+        {
+          split($1, meta, " ");
+          if (meta[2] != "blob") next;
+          path = $2;
+          if (path ~ /(^|\/)(target|build|\.git)(\/|$)/) next;
+          if (path ~ /(^|\/)\.gitignore$/) next;
+          if (path ~ /^src\// || path ~ /^tools\// || path ~ /^experiments\// ||
+              path == "Cargo.toml" || path == "Cargo.lock" || path == "README.md") {
+            print path "\t" meta[3];
+          }
+        }
+      ' |
+      LC_ALL=C sort |
+      while IFS=$'\t' read -r path oid; do
+        printf 'path:%s\0' "$path"
+        git -C "$root" cat-file blob "$oid"
+        printf '\0'
+      done |
+      sha256sum | cut -d' ' -f1
   )
 }
 
@@ -389,7 +404,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# AC 2 + AC 5 — two recorded fingerprints, identical; frozen tree unchanged
+# AC 2 + AC 5 — the historical (55-file) recorded fingerprints are identical;
+# the tracked baseline is guarded by the poc-untouched tag, and the 27 untracked
+# experiment-data files by the committed per-file manifest
 # ---------------------------------------------------------------------------
 
 frozen_hash=$(hash_for_regex "$REPORT" 'frozen[- ]tree fingerprint, taken' || true)
@@ -415,19 +432,79 @@ if [ -n "$frozen_hash" ] && [ -n "$scratch_hash" ]; then
   fi
 fi
 
-if [ -d "$POC_ROOT" ]; then
-  computed=$(compute_fingerprint "$POC_ROOT" || true)
-  if [ -z "$computed" ]; then
-    bad "could not recompute the frozen-tree fingerprint of $POC_ROOT"
-  elif [ -z "$frozen_hash" ]; then
-    bad "cannot compare: no frozen-tree fingerprint recorded"
-  elif [ "${computed,,}" = "${frozen_hash,,}" ]; then
-    ok "recomputed frozen-tree fingerprint matches the recorded value"
-  else
-    bad "recomputed frozen-tree fingerprint differs from the recorded value (recorded=$frozen_hash computed=$computed); the frozen tree was modified or the fingerprint convention differs"
-  fi
+# (b) The 27 untracked experiment-data files are frozen instrument data. They
+# are not in git (003-01's .gitignore), so guard them by their committed hashes.
+if [ ! -f "$FROZEN_DATA_MANIFEST" ]; then
+  bad "frozen-data manifest missing: checks/002-01-frozen-data.sha256"
 else
-  bad "frozen POC tree not found at $POC_ROOT"
+  manifest_entries=0
+  manifest_unexpected=0
+  manifest_mismatch=0
+  while read -r expected path; do
+    [ -n "${expected:-}" ] || continue
+    case "$expected" in \#*) continue ;; esac
+    manifest_entries=$((manifest_entries + 1))
+    case "${path:-}" in
+      experiments/pilot/*|experiments/run1/*|experiments/run2/*|experiments/run3/*) ;;
+      *)
+        bad "manifest entry outside the frozen experiment-data dirs: ${path:-<missing>}"
+        manifest_unexpected=$((manifest_unexpected + 1))
+        continue
+        ;;
+    esac
+    if [ ! -f "$POC_ROOT/$path" ]; then
+      bad "frozen experiment data missing: $path"
+      manifest_mismatch=$((manifest_mismatch + 1))
+      continue
+    fi
+    actual=$(sha256sum -- "$POC_ROOT/$path" | cut -d' ' -f1)
+    if [ "$actual" != "$expected" ]; then
+      bad "frozen experiment data changed: $path (expected=$expected actual=$actual)"
+      manifest_mismatch=$((manifest_mismatch + 1))
+    fi
+  done < "$FROZEN_DATA_MANIFEST"
+
+  if [ "$manifest_entries" -ne 27 ]; then
+    bad "frozen-data manifest has $manifest_entries entries, expected 27"
+  fi
+
+  # An added file under the four frozen dirs is a modification too: the
+  # manifest must cover exactly the files present there.
+  manifest_paths=$(grep -v '^#' "$FROZEN_DATA_MANIFEST" | awk '{ print $2 }' | LC_ALL=C sort)
+  present_paths=$(cd "$POC_ROOT" &&
+    find experiments/pilot experiments/run1 experiments/run2 experiments/run3 -type f |
+    LC_ALL=C sort)
+  if [ "$manifest_paths" != "$present_paths" ]; then
+    added=$(LC_ALL=C comm -13 <(printf '%s\n' "$manifest_paths") <(printf '%s\n' "$present_paths") || true)
+    gone=$(LC_ALL=C comm -23 <(printf '%s\n' "$manifest_paths") <(printf '%s\n' "$present_paths") || true)
+    [ -z "$added" ] || bad "files added under the frozen experiment-data dirs: $(printf '%s' "$added" | tr '\n' ' ')"
+    [ -z "$gone" ] || bad "frozen experiment-data files missing from the working tree: $(printf '%s' "$gone" | tr '\n' ' ')"
+  fi
+
+  if [ "$manifest_entries" -eq 27 ] && [ "$manifest_unexpected" -eq 0 ] &&
+     [ "$manifest_mismatch" -eq 0 ] && [ "$manifest_paths" = "$present_paths" ]; then
+    ok "27 frozen untracked experiment-data files match checks/002-01-frozen-data.sha256"
+  fi
+fi
+
+# (c) The third report line: the tracked baseline, recomputed from the tag.
+tag_hash=$(hash_for_regex "$REPORT" 'poc-untouched tag-tree fingerprint' || true)
+if ! printf '%s\n' "$env_sec" |
+     grep -Eqi 'poc-untouched tag-tree fingerprint[^|]*taken[^|]*[0-9]'; then
+  bad "Environment is missing the dated 'poc-untouched tag-tree fingerprint ... taken <date>' line"
+elif [ -z "$tag_hash" ]; then
+  bad "the 'poc-untouched tag-tree fingerprint' line has no 64-hex value"
+elif ! git -C "$POC_ROOT" rev-parse --verify --quiet 'refs/tags/poc-untouched^{commit}' >/dev/null 2>&1; then
+  bad "tag 'poc-untouched' not found in the POC repository at $POC_ROOT (cannot recompute the tracked baseline)"
+else
+  computed_tag=$(compute_tag_fingerprint "$POC_ROOT" 'poc-untouched' || true)
+  if [ -z "$computed_tag" ]; then
+    bad "could not compute the 'poc-untouched' tag tree fingerprint in $POC_ROOT"
+  elif [ "${computed_tag,,}" = "${tag_hash,,}" ]; then
+    ok "poc-untouched tag-tree fingerprint recomputed from git matches the recorded value: $computed_tag"
+  else
+    bad "poc-untouched tag-tree fingerprint differs (recorded=$tag_hash computed=$computed_tag)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
