@@ -286,7 +286,7 @@
   "phase": "P0",
   "role": {
    "coder": "melious/glm-5.3-flash",
-   "phase": "green",
+   "phase": "review",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
