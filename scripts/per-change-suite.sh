@@ -75,4 +75,12 @@ if [ -d checks ]; then
   done
 fi
 
+# conflict-marker guard: no merge resolution may leave markers behind
+# (added after a leftover marker reached main in the 002-23 resolution)
+echo "== conflict-marker guard =="
+if grep -rlE '^(<<<<<<< |>>>>>>> |=======$)' doc/ checks/ swarm/*.md scripts/ 2>/dev/null | grep -v "^$"; then
+  echo "FAIL: conflict markers present in the files above"
+  fail=1
+fi
+
 exit $fail
