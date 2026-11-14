@@ -239,21 +239,21 @@ meaning = "0 (none) in v1 (C-115): wire space for a later authentication scheme"
 outcome = "a non-zero scheme is dropped and counted as ReservedNonZero"
 
 [[reserved]]
-name = "authentication_tag"
-message = "control messages (C-12, placed by 004-16 to 004-18)"
-width = 128
-value = "zero"
-meaning = "128 zero bits in v1 (C-115)"
-outcome = "a non-zero tag is dropped and counted as ReservedNonZero"
-
-[[reserved]]
 name = "message_counter"
 message = "control messages (C-12, placed by 004-16 to 004-18)"
 width = 64
 value = "live"
 live = true
 meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message and is not a reserved zero field"
-outcome = "any value is conforming in v1; the message counter is never a reserved field"
+outcome = "any value is conforming in v1; the counter is not a reserved zero field and never produces ReservedNonZero"
+
+[[reserved]]
+name = "authentication_tag"
+message = "control messages (C-12, placed by 004-16 to 004-18)"
+width = 128
+value = "zero"
+meaning = "128 zero bits in v1 (C-115)"
+outcome = "a non-zero tag is dropped and counted as ReservedNonZero"
 
 # The one example message (ticket 004-02 Work step 4): a placeholder with two
 # fields, so the checker has something to verify. Later tickets (004-06 to
