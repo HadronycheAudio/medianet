@@ -142,7 +142,7 @@
   "phase": "P0",
   "role": {
    "coder": "melious/glm-5.3-flash",
-   "phase": "green",
+   "phase": "review",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
@@ -249,7 +249,8 @@
   "epic": "003",
   "phase": "P0",
   "role": {
-   "phase": "red",
+   "coder": "melious/glm-5.3-flash",
+   "phase": "green",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
@@ -317,7 +318,7 @@
   "phase": "P1",
   "role": {
    "coder": "melious/glm-5.3",
-   "phase": "green",
+   "phase": "review",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
