@@ -194,7 +194,7 @@
    "phase": "approved; merge queued behind the 002-05 checkfix",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
-  "status": "in-flight"
+  "status": "done"
  },
  "002-07": {
   "branch": "t/002-07",
