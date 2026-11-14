@@ -58,3 +58,11 @@ still prints OK on the unchanged design set.
   NOTES — not a design or baseline document; no figure enters doc/design/**
   from this ticket. 003-08 writes BASELINE.md in the POC repository.
 - Scratch copy home (002-01): /home/dorian/workspace/hadronyche/poc-scratch.
+
+## Test disputes (kickoff section 6, step 3)
+
+- 001-01 (2026-11-14): coder stopped 31/32 — test
+  `decoder_detects_gaps_through_decoded_payloads` asserted an unobservable
+  end-of-stream hole (skipped seq 99, expecting lost == 3; only 2 holes
+  observable). Ruling sent to the tester; fix expected: encode two observable
+  holes, assert {17, 42}.
