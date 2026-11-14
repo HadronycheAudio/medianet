@@ -230,13 +230,13 @@
   "branch": "t/003-01",
   "class": "host",
   "epic": "003",
+  "merged": "main, merge commit after 9fd4ae4",
   "phase": "P0",
   "role": {
    "coder": "melious/glm-5.3-flash",
-   "phase": "green",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
-  "status": "in-flight"
+  "status": "done"
  },
  "003-02": {
   "branch": "t/003-02",
