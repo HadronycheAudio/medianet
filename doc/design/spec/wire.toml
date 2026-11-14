@@ -7,13 +7,16 @@
 # CI, unprivileged: parse, round-trip, field coverage, declared versus
 # computed maximum size, the 1 252-byte control bound (C-17, C-116), and —
 # from ticket 004-03 — that every `rejection_reasons` entry is a member of
-# the closed `Reject` enumeration declared below.
+# the closed `Reject` enumeration declared below. From ticket 004-05 the
+# `[[reserved]]` entries below carry the reserved fields' required v1
+# values, which the checker parses and round-trips.
 #
 # # Schema, revision 1
 #
 # Top level (the four unit keys are required, exactly these units; the
 # optional `reject` array of tables, from ticket 004-03, is the fifth
-# top-level key):
+# top-level key, and the optional `reserved` array of tables, from ticket
+# 004-05, is the sixth):
 #
 #   schema       = 1        integer schema revision; this file is revision 1.
 #   offset_unit  = "bits"   every field `offset` is a bit position counted
@@ -40,6 +43,28 @@
 # the checker, name-for-name and value-for-value — the enumeration is
 # closed, so a file cannot redefine it — and every entry of a message's
 # `rejection_reasons` must name a member.
+#
+# Per reserved field, one `[[reserved]]` table (ticket 004-05), in wire.md's
+# "Reserved fields" order; together the entries are that section, which is
+# the human-readable authority the file must agree with:
+#
+#   name    = "..."   unique, non-empty field name, as in wire.md.
+#   message = "..."   where the field lives (message and the ticket that
+#                     places it).
+#   width   = N       bit count.
+#   value   = ...     the required v1 value: an integer (e.g. 0) or free
+#                     text ("zero", "live").
+#   live    = true     optional, only for a live field (C-115): the field is
+#                     live in v1, not a reserved zero field, so it carries
+#                     any value and never produces ReservedNonZero. A live
+#                     field cannot also be fixed at 0.
+#   meaning = "..."   the required v1 value, as in wire.md.
+#   outcome = "..."   the receiver outcome on a non-conforming value.
+#
+# The array is optional; the canonical file declares it. The general rule of
+# wire.md's section is stated here once for the file too: senders zero every
+# padding and reserved bit a later ticket adds, and receivers drop and count
+# a non-zero value as ReservedNonZero.
 #
 # Per message, one `[[message]]` table; `name` is unique and non-empty:
 #
@@ -111,10 +136,11 @@
 #
 # The checker runs the rules in this order: parse (from ticket 004-03 this
 # includes rejecting any `rejection_reasons` entry that is not a member of
-# the `[[reject]]` enumeration); round-trip (re-serialise, re-parse, compare
-# models); field coverage (overlap, then gap); declared versus computed
-# maximum size; and the 1 252-byte control bound for control messages and
-# regime stamp sections, with the C-116 exemption.
+# the `[[reject]]` enumeration; from ticket 004-05 it also parses the
+# `[[reserved]]` entries); round-trip (re-serialise, re-parse, compare
+# models, reserved entries included); field coverage (overlap, then gap);
+# declared versus computed maximum size; and the 1 252-byte control bound
+# for control messages and regime stamp sections, with the C-116 exemption.
 
 schema = 1
 offset_unit = "bits"
@@ -191,6 +217,43 @@ meaning = "a control message exceeds the 1 252-byte UDP-payload bound (C-17)"
 name = "ReservedNonZero"
 value = 12
 meaning = "a field this specification fixes at zero carries a non-zero value; the fields and their required zeros are fixed by 004-05"
+
+# Reserved values (ticket 004-05): the machine-readable copy of wire.md's
+# "Reserved fields" section, which is the human-readable authority; the two
+# must agree. One [[reserved]] entry per reserved field, in wire.md order.
+
+[[reserved]]
+name = "copy_index"
+message = "media packet header (C-07, placed by 004-06)"
+width = 2
+value = 0
+meaning = "wire space kept for the deferred duplication feature: v1 senders emit 0 only, and v1 receivers accept all four values 0 to 3 [decision]"
+outcome = "no value is non-conforming in v1 (receivers accept 0 to 3); dedup is by stream, position and packet index, first valid copy wins, with no separate sequence number"
+
+[[reserved]]
+name = "authentication_scheme"
+message = "control messages (C-12, placed by 004-16 to 004-18)"
+width = 8
+value = 0
+meaning = "0 (none) in v1 (C-115): wire space for a later authentication scheme"
+outcome = "a non-zero scheme is dropped and counted as ReservedNonZero"
+
+[[reserved]]
+name = "authentication_tag"
+message = "control messages (C-12, placed by 004-16 to 004-18)"
+width = 128
+value = "zero"
+meaning = "128 zero bits in v1 (C-115)"
+outcome = "a non-zero tag is dropped and counted as ReservedNonZero"
+
+[[reserved]]
+name = "message_counter"
+message = "control messages (C-12, placed by 004-16 to 004-18)"
+width = 64
+value = "live"
+live = true
+meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message and is not a reserved zero field"
+outcome = "any value is conforming in v1; the message counter is never a reserved field"
 
 # The one example message (ticket 004-02 Work step 4): a placeholder with two
 # fields, so the checker has something to verify. Later tickets (004-06 to

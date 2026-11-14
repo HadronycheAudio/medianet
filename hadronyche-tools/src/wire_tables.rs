@@ -9,7 +9,10 @@
 //! probe exemption (C-116). From ticket 004-03 it also verifies that every
 //! `rejection_reasons` entry is a member of the closed `Reject` enumeration,
 //! which the file declares in `[[reject]]` tables and which the checker pins
-//! (the enumeration is closed within a major version).
+//! (the enumeration is closed within a major version). From ticket 004-05 it
+//! also parses and round-trips the `[[reserved]]` entries, the machine-
+//! readable copy of wire.md's "Reserved fields" section (reserved values and
+//! receiver outcomes, C-07, C-12, C-115).
 //!
 //! The file parser is the standard TOML library (the ticket's default), not a
 //! hand-written parser, so it needs no fuzzing under C-95. The checker's own
@@ -72,6 +75,11 @@ pub struct Report {
     /// declares none, as the 004-02 fixtures do; the membership check always
     /// runs against the closed set pinned in the checker.
     pub rejects: Vec<RejectReport>,
+    /// One entry per `[[reserved]]`, in file order (ticket 004-05): the
+    /// reserved fields' required v1 values, the machine-readable copy of
+    /// wire.md's "Reserved fields" section. Empty when the file declares
+    /// none, as the earlier fixtures do.
+    pub reserves: Vec<ReservedReport>,
     /// One entry per `[[message]]`, in file order.
     pub messages: Vec<MessageReport>,
 }
@@ -86,6 +94,29 @@ pub struct RejectReport {
     pub value: u8,
     /// The one-line meaning (`meaning`), as in wire.md.
     pub meaning: String,
+}
+
+/// What the checker learned about one `[[reserved]]` entry (ticket 004-05):
+/// one reserved field's required v1 value, the machine-readable copy of a row
+/// of wire.md's "Reserved fields" section, in file order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReservedReport {
+    /// The field name (`name`), as in wire.md.
+    pub name: String,
+    /// Where the field lives (`message`).
+    pub message: String,
+    /// The bit count (`width`).
+    pub width: u64,
+    /// The required v1 value (`value`), rendered as text: `0` for the
+    /// integer zero, the string otherwise ("zero", "live").
+    pub value: String,
+    /// Whether the field is live in v1 (`live`, C-115): live fields carry
+    /// any value and never produce `ReservedNonZero`.
+    pub live: bool,
+    /// The one-line meaning (`meaning`), as in wire.md.
+    pub meaning: String,
+    /// The receiver outcome on a non-conforming value (`outcome`).
+    pub outcome: String,
 }
 
 /// What the checker learned about one message. The tests use this to prove
@@ -215,6 +246,43 @@ struct Reject {
     meaning: String,
 }
 
+/// The required v1 value of a reserved field (ticket 004-05): an integer
+/// (e.g. `value = 0`) or free text (e.g. `value = "zero"`, `value = "live"`).
+/// The split keeps the canonical writer format-stable, so the entry
+/// round-trips.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReservedValue {
+    /// An integer value.
+    Int(i64),
+    /// A free-text value.
+    Text(String),
+}
+
+impl ReservedValue {
+    /// The value rendered as report text: the integer as decimal, the text
+    /// as written.
+    fn as_text(&self) -> String {
+        match self {
+            ReservedValue::Int(n) => n.to_string(),
+            ReservedValue::Text(text) => text.clone(),
+        }
+    }
+}
+
+/// One `[[reserved]]` entry (ticket 004-05): a reserved field's required v1
+/// value and receiver outcome, one row of wire.md's "Reserved fields"
+/// section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Reserved {
+    name: String,
+    message: String,
+    width: u64,
+    value: ReservedValue,
+    live: Option<bool>,
+    meaning: String,
+    outcome: String,
+}
+
 /// The whole parsed file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Model {
@@ -223,6 +291,7 @@ struct Model {
     width_unit: String,
     size_unit: String,
     rejects: Vec<Reject>,
+    reserves: Vec<Reserved>,
     messages: Vec<Message>,
 }
 
@@ -313,6 +382,7 @@ fn parse_model(src: &str) -> Result<Model, Error> {
     check_unit(&root, "width_unit", "bits")?;
     check_unit(&root, "size_unit", "bytes")?;
     let rejects = parse_rejects(&root)?;
+    let reserves = parse_reserved(&root)?;
     let entries = root
         .get("message")
         .ok_or_else(|| parse_error("missing [[message]] array"))?
@@ -332,6 +402,7 @@ fn parse_model(src: &str) -> Result<Model, Error> {
         width_unit: "bits".to_owned(),
         size_unit: "bytes".to_owned(),
         rejects,
+        reserves,
         messages,
     })
 }
@@ -392,6 +463,96 @@ fn parse_rejects(root: &toml::Table) -> Result<Vec<Reject>, Error> {
         ));
     }
     Ok(rejects)
+}
+
+/// Parse the optional `[[reserved]]` array (ticket 004-05): the reserved
+/// fields' required v1 values, the machine-readable copy of wire.md's
+/// "Reserved fields" section. The array is optional — the earlier fixtures
+/// predate it — but an entry, once present, must be complete: a non-empty
+/// unique `name`, a `message` location, a `width` of at least one bit, a
+/// `value` (integer or string), a non-empty `meaning` and `outcome`, and an
+/// optional `live` flag. A live field (C-115) carries any value, so it
+/// cannot also be fixed at 0.
+fn parse_reserved(root: &toml::Table) -> Result<Vec<Reserved>, Error> {
+    let entries = match root.get("reserved") {
+        None => return Ok(Vec::new()),
+        Some(value) => value
+            .as_array()
+            .ok_or_else(|| parse_error("`reserved` must be an array of tables"))?,
+    };
+    let mut reserved = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let context = format!("reserved {index}");
+        let table = entry
+            .as_table()
+            .ok_or_else(|| parse_error(format!("{context} is not a table")))?;
+        let name = require_str(table, "name", &context)?;
+        if name.is_empty() {
+            return Err(parse_error(format!("{context}: `name` must be non-empty")));
+        }
+        let field_context = format!("reserved {name}");
+        let message = require_str(table, "message", &field_context)?;
+        if message.is_empty() {
+            return Err(parse_error(format!("{field_context}: `message` must be non-empty")));
+        }
+        let width = require_u64(table, "width", &field_context)?;
+        if width == 0 {
+            return Err(parse_error(format!("{field_context}: `width` must be at least 1 bit")));
+        }
+        let value = match table.get("value") {
+            None => {
+                return Err(parse_error(format!(
+                    "{field_context}: missing `value` (the required v1 value)"
+                )))
+            }
+            Some(value) => {
+                if let Some(n) = value.as_integer() {
+                    ReservedValue::Int(n)
+                } else if let Some(text) = value.as_str() {
+                    ReservedValue::Text(text.to_owned())
+                } else {
+                    return Err(parse_error(format!(
+                        "{field_context}: `value` must be an integer or a string, got {value:?}"
+                    )));
+                }
+            }
+        };
+        let live = match table.get("live") {
+            None => None,
+            Some(value) => value.as_bool().map(Some).ok_or_else(|| {
+                parse_error(format!("{field_context}: `live` must be a boolean"))
+            })?,
+        };
+        let meaning = require_str(table, "meaning", &field_context)?;
+        if meaning.is_empty() {
+            return Err(parse_error(format!("{field_context}: `meaning` must be non-empty")));
+        }
+        let outcome = require_str(table, "outcome", &field_context)?;
+        if outcome.is_empty() {
+            return Err(parse_error(format!("{field_context}: `outcome` must be non-empty")));
+        }
+        if live == Some(true) && value == ReservedValue::Int(0) {
+            return Err(parse_error(format!(
+                "{field_context}: a live field carries any value in v1 (C-115); it cannot also be fixed at 0"
+            )));
+        }
+        reserved.push(Reserved {
+            name,
+            message,
+            width,
+            value,
+            live,
+            meaning,
+            outcome,
+        });
+    }
+    let mut names: Vec<&str> = reserved.iter().map(|entry| entry.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup_by(|a, b| a == b);
+    if names.len() != reserved.len() {
+        return Err(parse_error("duplicate reserved name; names must be unique"));
+    }
+    Ok(reserved)
 }
 
 /// Message names must be unique (the schema's `name` identifies the message).
@@ -607,6 +768,23 @@ fn write_canonical(model: &Model) -> String {
         let _ = writeln!(out, "value = {}", reject.value);
         write_quoted(&mut out, "meaning", &reject.meaning);
     }
+    for reserved in &model.reserves {
+        out.push_str("\n[[reserved]]\n");
+        write_quoted(&mut out, "name", &reserved.name);
+        write_quoted(&mut out, "message", &reserved.message);
+        let _ = writeln!(out, "width = {}", reserved.width);
+        match &reserved.value {
+            ReservedValue::Int(n) => {
+                let _ = writeln!(out, "value = {n}");
+            }
+            ReservedValue::Text(text) => write_quoted(&mut out, "value", text),
+        }
+        if let Some(live) = reserved.live {
+            let _ = writeln!(out, "live = {live}");
+        }
+        write_quoted(&mut out, "meaning", &reserved.meaning);
+        write_quoted(&mut out, "outcome", &reserved.outcome);
+    }
     for message in &model.messages {
         out.push_str("\n[[message]]\n");
         write_quoted(&mut out, "name", &message.name);
@@ -760,6 +938,19 @@ fn build_report(model: &Model) -> Report {
             meaning: reject.meaning.clone(),
         })
         .collect();
+    let reserves = model
+        .reserves
+        .iter()
+        .map(|reserved| ReservedReport {
+            name: reserved.name.clone(),
+            message: reserved.message.clone(),
+            width: reserved.width,
+            value: reserved.value.as_text(),
+            live: reserved.live.unwrap_or(false),
+            meaning: reserved.meaning.clone(),
+            outcome: reserved.outcome.clone(),
+        })
+        .collect();
     let messages = model
         .messages
         .iter()
@@ -773,7 +964,11 @@ fn build_report(model: &Model) -> Report {
             rejection_reasons: message.rejection_reasons.clone(),
         })
         .collect();
-    Report { rejects, messages }
+    Report {
+        rejects,
+        reserves,
+        messages,
+    }
 }
 
 /// Parse, round-trip and check one machine-readable tables file.
@@ -781,9 +976,10 @@ fn build_report(model: &Model) -> Report {
 /// The checks run in this order: parse (from ticket 004-03 this includes
 /// rejecting any `rejection_reasons` entry that is not a member of the closed
 /// `Reject` enumeration, and any `[[reject]]` declaration that differs from
-/// it), round-trip (re-serialise the model, re-parse, compare), per-message
-/// field coverage (overlap, then gap), the declared-versus-computed maximum
-/// size, and the 1 252-byte control bound.
+/// it; from ticket 004-05 the `[[reserved]]` entries are parsed and validated
+/// too), round-trip (re-serialise the model, re-parse, compare, reserved
+/// entries included), per-message field coverage (overlap, then gap), the
+/// declared-versus-computed maximum size, and the 1 252-byte control bound.
 ///
 /// # Errors
 ///

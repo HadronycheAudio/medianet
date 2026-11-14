@@ -134,7 +134,38 @@ To be filled by 004-04 (versioning rules, magic and version fields).
 
 ## Reserved fields
 
-To be filled by 004-05 (reserved fields and their required values, including the copy index C-07 and the authentication reservation C-12 with the v1 zeroing of scheme and tag, C-115).
+A reserved field is wire space of a fixed width that this specification fixes at a required value, so a later version can give the space a meaning without moving any other field: reserved space is a named field with a required value, never alignment filler (Alignment and padding). Two reserved fields are fixed now — the copy index of the media packet header (C-07) and the authentication reservation of the control messages (C-12) — and the general rule below covers every padding or reserved field a later ticket adds. A reserved value that does not conform is a malformed case like any other: the receiver drops the packet and counts it under `ReservedNonZero` (Rejection reasons, value 12), the reason that enumeration reserves for exactly this case `[decision]`.
+
+| Field | Location | Width | Required value in v1 | Receiver outcome |
+|---|---|---|---|---|
+| Copy index (C-07) | media packet header (004-06 places it) | 2 bits | 0 — v1 senders emit 0 only | v1 receivers accept all four values 0 to 3 [decision]; no copy-index value is a malformed case in v1 |
+| Authentication scheme (C-12) | control messages (004-16 to 004-18 place it) | 8 bits | 0 (none) | a non-zero scheme: drop and count as ReservedNonZero |
+| Message counter (C-12) | control messages | 64 bits | live — the liveness counter (C-115); any value | never ReservedNonZero: the counter is not a reserved zero field |
+| Authentication tag (C-12) | control messages | 128 bits | 128 zero bits | a non-zero tag: drop and count as ReservedNonZero |
+
+### Copy index (C-07)
+
+The copy index is 2 bits in the media packet header (C-07), placed by 004-06. It is wire space kept for the deferred duplication feature — retransmitting a slice as numbered copies — not a flag, not a count and not alignment filler `[decision]`.
+
+Required value in v1: senders emit only the value 0. The three non-zero values stay unused until duplication assigns them a meaning `[decision]`.
+
+Receiver rule `[decision]`: v1 receivers accept all four copy-index values, 0 to 3. Accepting every value is the deliberate choice: the copy index exists so a later version can send duplicated copies without a major version, and a v1 receiver that rejected non-zero values would force exactly that bump; no copy-index value is a malformed case in v1.
+
+Dedup rule (media rule 9, restated): copies are deduplicated by stream, position and packet index — the first valid copy wins; there is no separate sequence number, and nothing about a copy's content depends on its index `[decision]`.
+
+When duplication arrives — a later version retransmitting a slice as copies 1 to 3 — v1 receivers already accept all four copy-index values, so the feature ships as a minor version with no new wire value: no value that version needs is rejected today, and no major version is forced `[decision]`.
+
+### Authentication reservation (C-12)
+
+Every control message carries the authentication reservation (C-12): scheme 8 bits (0 = none) + message counter 64 bits + tag 128 bits — 200 bits in all — placed by 004-16 to 004-18. The reservation is wire space for an authentication scheme a later version may define; v1 defines none `[decision]`.
+
+In v1 (C-115) the scheme is 0 and the tag is 128 zero bits, while the 64-bit message counter is live: it is the liveness counter, it increments with every control message a source sends, and it carries any value — it is not a reserved zero field, so no rule of this section applies to it `[decision]`.
+
+Receiver outcomes: a scheme other than 0 is a malformed case — the receiver drops the packet and counts it under ReservedNonZero (12); a non-zero tag arriving with scheme 0 is likewise dropped and counted under ReservedNonZero. The counter never produces ReservedNonZero: it is not fixed at zero `[decision]`.
+
+### General rule for later tickets
+
+Any padding or reserved bits a later ticket adds to any message follow one rule: the sender sets them to 0 — every reserved bit is written zero on transmit, whatever meaning a later version gives it — and a receiver that sees a non-zero value drops the packet and counts it under ReservedNonZero, exactly as for the named reserved fields above. No ticket may give a reserved field a non-zero v1 value; assigning one a meaning is a version change, never a silent reinterpretation `[decision]`.
 
 ## Media packet header
 
