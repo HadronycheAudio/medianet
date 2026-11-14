@@ -383,7 +383,7 @@ fn parse_rejects(root: &toml::Table) -> Result<Vec<Reject>, Error> {
     let mut declared: Vec<(&str, u8)> =
         rejects.iter().map(|reject| (reject.name.as_str(), reject.value)).collect();
     declared.sort_unstable();
-    let mut closed: Vec<(&str, u8)> = REJECT.iter().copied().collect();
+    let mut closed: Vec<(&str, u8)> = REJECT.to_vec();
     closed.sort_unstable();
     if declared != closed {
         return Err(parse_error(
