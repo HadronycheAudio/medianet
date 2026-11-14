@@ -38,6 +38,18 @@ committed so the work can resume after an interruption (kickoff section 4).
 
 ### One ticket, in five steps (kickoff section 6)
 
+Every agent works in its own git worktree, never in the shared checkout at
+the repository root (concurrent agents race there):
+
+```
+git worktree add /tmp/opencode/wt/<ticket-id> t/<ticket-id>   # green/review
+git worktree add /tmp/opencode/wt/<ticket-id> -b t/<ticket-id> main  # red
+```
+
+The orchestrator merges from a dedicated mainline worktree
+(`/tmp/opencode/wt/mainline`); worktrees are removed after the merge. Stage
+only the ticket's own files — never `git add -A` in a shared checkout.
+
 1. **Brief.** The lead gives the worker the brief from `python3
    swarm/brief.py <ticket-id>`: the ticket file plus the cited constants rows.
    Nothing else.
