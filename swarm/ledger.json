@@ -327,7 +327,7 @@
   "phase": "P1",
   "role": {
    "coder": "melious/glm-5.3",
-   "phase": "review",
+   "phase": "rework",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
