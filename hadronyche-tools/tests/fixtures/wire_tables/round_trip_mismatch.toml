@@ -1,0 +1,33 @@
+# 004-02 fixture schema, revision 1 (tester's contract; see tests/wire_tables.rs).
+schema = 1
+offset_unit = "bits"
+width_unit = "bits"
+size_unit = "bytes"
+
+# AC 2 negative fixture 2 of 5: a round-trip mismatch.
+#
+# `maximum_size` is the accepted, deprecated spelling of `max_size`. The parser
+# records which spelling it saw (it reports the deprecation), while the
+# canonical writer always emits `max_size`. So:
+#
+#   parse -> model{ size_key = MaximumSize }
+#   write -> "max_size = 1"
+#   parse -> model{ size_key = MaxSize }
+#
+# The two models are not identical, and the checker must report
+# FailureKind::RoundTrip. Every other rule holds: the one field covers the
+# whole byte, and 1 byte is below the 1 252-byte control bound.
+[[message]]
+name = "round_trip"
+layer = "control"
+dscp = 40
+maximum_size = 1
+rejection_reasons = ["TooShort"]
+
+[[message.field]]
+name = "flags"
+offset = 0
+width = 8
+type = "u8"
+meaning = "one flags byte"
+valid = "0 to 255"

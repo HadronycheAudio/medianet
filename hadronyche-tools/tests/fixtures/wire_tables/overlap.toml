@@ -1,0 +1,32 @@
+# 004-02 fixture schema, revision 1 (tester's contract; see tests/wire_tables.rs).
+schema = 1
+offset_unit = "bits"
+width_unit = "bits"
+size_unit = "bytes"
+
+# AC 2 negative fixture 3 of 5: overlapping fields.
+# `header` covers bits 0..16 and `body` covers bits 8..24: bits 8..16 are
+# claimed twice. The union reaches byte 3, so the declared maximum size is
+# consistent and no gap exists; only the overlap must fire.
+[[message]]
+name = "overlap"
+layer = "control"
+dscp = 40
+max_size = 3
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "header"
+offset = 0
+width = 16
+type = "u16"
+meaning = "tester fixture field"
+valid = "0 to 65535"
+
+[[message.field]]
+name = "body"
+offset = 8
+width = 16
+type = "u16"
+meaning = "tester fixture field, deliberately overlapping header"
+valid = "0 to 65535"

@@ -1,0 +1,48 @@
+# 004-02 fixture schema, revision 1 (tester's contract; see tests/wire_tables.rs).
+schema = 1
+offset_unit = "bits"
+width_unit = "bits"
+size_unit = "bytes"
+
+# AC 6 negative fixture: a regime stamp section whose maximum size exceeds
+# 1 252 bytes (C-17) and which carries no probe exemption. The section is
+# 1 300 bytes: the declared size matches the computed size, so only the
+# control bound must fire (FailureKind::OversizedControl).
+[[message]]
+name = "regime_stamp"
+layer = "control"
+dscp = 40
+max_size = 3
+rejection_reasons = ["TooShort"]
+
+[[message.field]]
+name = "version"
+offset = 0
+width = 16
+type = "u16"
+meaning = "stamp version (placeholder for 004-24)"
+valid = "0 to 65535"
+
+[[message.field]]
+name = "section_count"
+offset = 16
+width = 8
+type = "u8"
+meaning = "number of sections (placeholder for 004-24)"
+valid = "0 to 255"
+
+[[message]]
+name = "regime_stamp_section_huge"
+layer = "control"
+dscp = 40
+max_size = 1300
+section_of = "regime_stamp"
+rejection_reasons = ["OversizeControl"]
+
+[[message.field]]
+name = "section_body"
+offset = 0
+width = 10400
+type = "u8"
+meaning = "1 300-byte section body, one byte over the 1 252-byte bound"
+valid = "0 to 255"
