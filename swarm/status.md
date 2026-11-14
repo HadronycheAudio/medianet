@@ -7,7 +7,7 @@ Last updated: 2026-11-14, by the orchestrator, at swarm start.
 | Phase | Epic | Topic | Done | In flight | Ready for hardware | Blocked | Total |
 |---|---|---|---|---|---|---|---|
 | P0 | 001 | Receive stamp probes | 1 | 0 | 0 | 0 | 17 |
-| P0 | 002 | POC archaeology | 1 | 3 | 0 | 0 | 14 |
+| P0 | 002 | POC archaeology | 2 | 2 | 0 | 0 | 14 |
 | P0 | 003 | POC smoke fixes | 1 | 2 | 0 | 0 | 10 |
 | P1 | 004–007b | Specification epics | 2 | 4 | 0 | 0 | 116 |
 
