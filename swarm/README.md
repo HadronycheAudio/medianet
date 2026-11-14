@@ -149,3 +149,10 @@ multicast group per run (`--group 239.72.68.44:<pid-port>`-style) so
 concurrent swarm runs do not contaminate each other's module maps; where a
 ticket's recorded command line is fixed, the orchestrator serialises those
 runs instead. Epic-003 writes stay serialised regardless.
+
+### In-flight marker procedure (orchestrator)
+
+Commit `swarm/poc-write-in-flight` (empty file) when an epic-003 coder is
+spawned; remove it in the same commit that records the ticket done. Every
+check that asserts POC working-tree state must honour it with a loud,
+single-assertion skip (003-01's amended check is the pattern).

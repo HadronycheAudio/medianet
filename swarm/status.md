@@ -161,3 +161,16 @@ still prints OK on the unchanged design set.
   use an isolated `--group 239.72.68.44:<pid-port>` (an address, not a
   timing parameter); documented as a deviation where a ticket's command line
   is otherwise fixed.
+
+## Incident log (continued)
+
+- 2026-11-14, merge of 004-02: the integrator again pushed a red suite
+  (second occurrence; the first was the 004-01 merge). Root cause this time:
+  the orchestrator did not commit `swarm/poc-write-in-flight` when spawning
+  the 003-04 coder, so the POC tree-clean assertions in checks/003-01.sh and
+  checks/003-02.sh failed on the sanctioned in-flight write. Fixes: the
+  marker is now committed whenever an epic-003 coder is spawned (procedure
+  below); checks/003-02.sh gains marker awareness (same loud-skip pattern as
+  003-01's amended check) via its tester. Process change for the
+  integrator: the push is chained AFTER a verified suite-green result, never
+  before.
