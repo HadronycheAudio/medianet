@@ -718,7 +718,7 @@
    "phase": "green",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
-  "status": "in-flight"
+  "status": "done"
  },
  "006-02": {
   "branch": "t/006-02",
