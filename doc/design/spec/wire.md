@@ -130,7 +130,48 @@ Changes from the starting shape: all twelve starting names are kept; the one cha
 
 ## Versioning
 
-To be filled by 004-04 (versioning rules, magic and version fields).
+Every message — media, control, sync and measurement — starts with the same two leading fields, a magic and a version, and the version also travels in the hello, so a peer's version is known before any connection exists [decision]. This section fixes the two fields and their offsets, the version scheme, what a minor and a major change are, and what a receiver does with every case; the media packet header's remaining fields arrive with 004-06 and the hello's layout with 004-16.
+
+### The magic and the version fields
+
+Every message of this protocol starts with the 2-byte magic 0x4d4e, the ASCII letters M and N, a value a receiver compares without knowing anything else about the packet [decision]. The retired POC used the 16-bit magic 0x4844 ('HD'), which v1 does not reuse; the two values differ in both bytes, so no packet of the old protocol satisfies this magic and no v1 packet satisfies the old one [code].
+
+The magic is followed immediately by the version, a u16 (2 bytes) whose major is the high byte, bits 15..8, and whose minor is the low byte, bits 7..0 [decision]. The first version is v1: 1.0, packed in the u16 field as the value 0x0100 [decision]. A receiver reads the major first and treats it as the whole compatibility question: the major says which wire layout follows, the minor says which optional additions that layout may carry [decision].
+
+The magic and the version sit at fixed offsets — the magic at offset 0 and the version at offset 2 — that no future version may move: offsets 0 and 2 are fixed for every later version, whatever else changes [decision].
+
+The magic and the version are checked before any other field is read — no length, no type, no other constant — so those leading bytes classify every message, whatever its version [decision]. A future major version may therefore change every field after the version, because no parser of this protocol reads those fields to classify the packet [decision]. This is the ticket's falsifier answered: a receiver can tell a POC packet or a future-major packet from a v1 packet on the magic and the version alone, before it reads any other field — the old magic differs in both bytes and a different major sits in the version's high byte, so no packet of another version is mistaken for v1 [decision].
+
+### Minor and major changes
+
+A minor change adds to the wire without moving or reinterpreting anything an existing receiver already parses; it never changes an existing field's offset, width or meaning, and an older receiver either knows the new part or can skip it by its length [decision]. A minor change adds, for example:
+
+- a new optional in-band announcement type (announcements are optional and are skipped by length by a consumer that does not know them, C-43);
+- a new content message kind for a new controller or transport-state payload (004-11, 004-12), skipped by its length by a receiver that does not know it;
+- a new regime stamp section type (C-18): the regime stamp is extended by other epics as they stamp new state, and a consumer that does not know a section type skips the section by its length [decision];
+- a new optional measurement-extension entry (the extension fits inside the header cap or is omitted, C-137).
+
+A major change is any change to an existing field's offset, width or meaning; every major change breaks every receiver of the previous major, because the old parser can no longer find or interpret the fields it knows [decision]. A major change is, for example:
+
+- moving an existing field: the stream number (C-10) leaving its offset would shift every later field for a receiver of the previous major;
+- widening an existing field: the session number (C-10) growing from 32 bits to 64 would make a previous parser read a different value;
+- changing an existing field's meaning: the 2-bit copy index (C-07) reinterpreted as a hop limit would make a previous parser apply the wrong rules.
+
+The ticket's example list names one more minor candidate, a new reason value in a reserved range; this section does not adopt it, because the rejection enumeration is closed within a major version and its values 13..=255 are reserved for a future major version (Rejection reasons, Closed enumeration), so a new rejection reason arrives only with a major version bump [decision].
+
+### Receiver behaviour
+
+A receiver reads the magic and the version first and classifies every packet on them alone; the five cases below cover every classification, and each row's outcome is the required one [decision]. The same rules apply at every layer, because every message starts with the same two fields [decision].
+
+| Case | Outcome |
+|---|---|
+| same version | accept: parse the message normally |
+| same major, higher minor | accept: parse the known parts, and skip any unknown optional part by its length |
+| same major, lower minor | accept: an older minor's packet uses only parts this receiver already knows |
+| different major | drop, count under VersionMismatch, and raise the VersionMismatch event (AC-23: a version mismatch is never a silent drop) |
+| bad magic | drop and count under BadMagic |
+
+The lower-minor row is this section's choice: a minor change only adds optional parts, so a packet of an older minor carries nothing a newer receiver misreads, and accepting it is the correct outcome [decision]. The hello carries the protocol version as well, so the check runs at the first message of discovery: a hello whose major differs raises the VersionMismatch event before any connection exists, and a wrong-version module is never admitted to a bundle on a silent path (AC-23) [decision].
 
 ## Reserved fields
 
