@@ -2,6 +2,8 @@
 
 use std::net::SocketAddr;
 
+use crate::payload::DEFAULT_UDP_PAYLOAD_LEN;
+
 /// 2 000 packets/s, one stream at the default slice (C-02).
 pub const DEFAULT_RATE_PPS: u64 = 2_000;
 
@@ -26,7 +28,12 @@ pub struct PeerConfig {
 
 impl Default for PeerConfig {
     fn default() -> Self {
-        todo!("defaults: loopback, 2 000 pps, 100 000 packets, 1 252-byte payload")
+        Self {
+            dest: DEFAULT_DEST.parse().expect("default dest is a valid SocketAddr"),
+            rate_pps: DEFAULT_RATE_PPS,
+            count: DEFAULT_COUNT,
+            udp_payload_len: DEFAULT_UDP_PAYLOAD_LEN,
+        }
     }
 }
 
@@ -37,8 +44,90 @@ impl PeerConfig {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let _ = args;
-        todo!("parse the sender command line")
+        use crate::payload::HEADER_LEN;
+
+        let mut config = PeerConfig {
+            dest: "0.0.0.0:0".parse().expect("placeholder socket address"),
+            rate_pps: DEFAULT_RATE_PPS,
+            count: DEFAULT_COUNT,
+            udp_payload_len: DEFAULT_UDP_PAYLOAD_LEN,
+        };
+        let mut dest: Option<SocketAddr> = None;
+
+        let mut args = args.into_iter();
+        while let Some(arg) = args.next() {
+            let arg = arg.as_ref();
+            match arg {
+                "--rate" => {
+                    let value = args.next().ok_or(ConfigError::MissingValue { flag: "--rate" })?;
+                    let value = value.as_ref();
+                    config.rate_pps = value
+                        .parse()
+                        .map_err(|_| ConfigError::InvalidValue {
+                            flag: "--rate",
+                            value: value.to_string(),
+                        })?;
+                }
+                "--count" => {
+                    let value = args.next().ok_or(ConfigError::MissingValue { flag: "--count" })?;
+                    let value = value.as_ref();
+                    config.count = value
+                        .parse()
+                        .map_err(|_| ConfigError::InvalidValue {
+                            flag: "--count",
+                            value: value.to_string(),
+                        })?;
+                }
+                "--payload-len" => {
+                    let value = args.next().ok_or(ConfigError::MissingValue { flag: "--payload-len" })?;
+                    let value = value.as_ref();
+                    config.udp_payload_len = value
+                        .parse()
+                        .map_err(|_| ConfigError::InvalidValue {
+                            flag: "--payload-len",
+                            value: value.to_string(),
+                        })?;
+                }
+                _ if arg.starts_with("--") => return Err(ConfigError::UnknownFlag(arg.to_string())),
+                _ if dest.is_none() => {
+                    let addr: SocketAddr = arg
+                        .parse()
+                        .map_err(|_| ConfigError::InvalidValue {
+                            flag: "dest",
+                            value: arg.to_string(),
+                        })?;
+                    if !addr.is_ipv4() {
+                        // C-100: IPv4 only in v1.
+                        return Err(ConfigError::InvalidValue {
+                            flag: "dest",
+                            value: arg.to_string(),
+                        });
+                    }
+                    dest = Some(addr);
+                }
+                _ => {
+                    return Err(ConfigError::InvalidValue {
+                        flag: "dest",
+                        value: arg.to_string(),
+                    })
+                }
+            }
+        }
+
+        config.dest = dest.ok_or(ConfigError::MissingDestination)?;
+        if config.rate_pps == 0 {
+            return Err(ConfigError::RateZero);
+        }
+        if config.count == 0 {
+            return Err(ConfigError::CountZero);
+        }
+        if config.udp_payload_len < HEADER_LEN {
+            return Err(ConfigError::PayloadTooShort {
+                len: config.udp_payload_len,
+                min: HEADER_LEN,
+            });
+        }
+        Ok(config)
     }
 }
 
@@ -49,6 +138,8 @@ pub enum ConfigError {
     MissingDestination,
     /// A flag was not recognised.
     UnknownFlag(String),
+    /// A flag that takes a value was given none.
+    MissingValue { flag: &'static str },
     /// A flag's value is not a number.
     InvalidValue { flag: &'static str, value: String },
     /// The rate must be at least 1 packet/s.

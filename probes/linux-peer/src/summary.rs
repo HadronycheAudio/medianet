@@ -23,41 +23,70 @@ impl RunSummary {
     /// [`crate::pacer::RatePacer::schedule_ns`]. The run starts at t = 0 and
     /// the elapsed time is the last deadline.
     pub fn from_schedule(schedule: &[u64], udp_payload_len: usize) -> Self {
-        let _ = (schedule, udp_payload_len);
-        todo!("derive count, elapsed and wire size from the schedule")
+        let elapsed_ns = schedule.last().copied().unwrap_or(0);
+        Self::new(schedule.len() as u64, udp_payload_len, elapsed_ns)
     }
 
     /// Build a summary from measured values.
     pub fn new(count: u64, udp_payload_len: usize, elapsed_ns: u64) -> Self {
-        let _ = (count, udp_payload_len, elapsed_ns);
-        todo!("build a run summary and derive the assumed wire size")
+        Self {
+            count,
+            udp_payload_len,
+            wire_size: estimated_wire_size(udp_payload_len),
+            elapsed_ns,
+        }
     }
 
     /// Achieved packet rate in packets per second.
     pub fn achieved_rate_pps(&self) -> f64 {
-        todo!("count divided by elapsed seconds")
+        // Aggregate rate over the whole run: every packet counted, elapsed
+        // wall-clock time.
+        self.count as f64 / (self.elapsed_ns as f64 / NS_PER_SEC_F64)
     }
 
     /// Whether the achieved rate is within `tolerance` (a fraction, 0.02 for
     /// ±2 %) of `target_pps`.
     pub fn achieved_rate_in_tolerance(&self, target_pps: f64, tolerance: f64) -> bool {
-        let _ = (target_pps, tolerance);
-        todo!("compare achieved rate with the target within tolerance")
+        // Compare packet intervals, not aggregate rates: the run spaced
+        // `count` packets over `elapsed_ns`, i.e. `count − 1` intervals. The
+        // aggregate rate (above) dilutes a pacing error across one extra
+        // packet; the interval shows it in full.
+        if target_pps <= 0.0 || self.count < 2 {
+            return false;
+        }
+        let measured_interval_ns = self.elapsed_ns as f64 / (self.count - 1) as f64;
+        let target_interval_ns = NS_PER_SEC_F64 / target_pps;
+        (measured_interval_ns - target_interval_ns).abs() <= target_interval_ns * tolerance
     }
 
     /// The text the sender prints at the end of a run: achieved rate, count,
     /// UDP payload length and assumed wire size (ticket 001-01, Work).
     pub fn render(&self) -> String {
-        todo!("render the run summary")
+        let elapsed_s = self.elapsed_ns as f64 / NS_PER_SEC_F64;
+        format!(
+            "sent {} datagrams in {:.6} s: achieved rate {:.1} pps, \
+             UDP payload {} bytes, assumed wire size {} bytes",
+            self.count, elapsed_s, self.achieved_rate_pps(), self.udp_payload_len, self.wire_size,
+        )
     }
 }
+
+/// Nanoseconds per second, as a float for the rate arithmetic.
+const NS_PER_SEC_F64: f64 = 1_000_000_000.0;
 
 /// Assumed on-the-wire size for a UDP payload of `udp_payload_len` bytes:
 /// the payload plus IPv4, UDP and all Ethernet overhead (C-20). At the
 /// 1 252-byte default this is about 1 320 bytes.
 pub fn estimated_wire_size(udp_payload_len: usize) -> usize {
-    let _ = udp_payload_len;
-    todo!("assumed wire size for a UDP payload")
+    // Per-packet overhead, all included in the C-20 figure:
+    //   12  inter-frame gap
+    //    8  preamble
+    //   14  Ethernet header (MACs + EtherType)
+    //   20  IPv4 header (C-100: no IPv6, no options)
+    //    8  UDP header
+    //    4  FCS
+    //  = 66 bytes on top of the UDP payload.
+    udp_payload_len + 66
 }
 
 #[cfg(test)]

@@ -18,53 +18,57 @@ pub struct PacerConfig {
 impl PacerConfig {
     /// Configure a pacer. The rate must be non-zero.
     pub fn new(rate_pps: u64) -> Self {
-        let _ = rate_pps;
-        todo!("validate rate and build the pacer configuration")
+        assert!(rate_pps > 0, "packet rate must be at least 1 pps");
+        Self { rate_pps }
     }
 }
 
 /// Produces absolute send times relative to the start of a run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RatePacer {
-    // Skeleton: fields are the coder's choice.
     config: PacerConfig,
+    sent: u64,
 }
 
 impl RatePacer {
     /// A pacer for `rate_pps` packets per second.
     pub fn new(rate_pps: u64) -> Self {
-        let _ = rate_pps;
-        todo!("create a rate pacer")
+        Self {
+            config: PacerConfig::new(rate_pps),
+            sent: 0,
+        }
     }
 
     /// The configured rate.
     pub fn rate_pps(&self) -> u64 {
-        todo!("configured packets per second")
+        self.config.rate_pps
     }
 
     /// Absolute send time, in ns since the run start, for packet `index`
     /// (0-based). Packet 0 is due at t = 0.
     pub fn deadline_ns(&self, index: u64) -> u64 {
-        let _ = index;
-        todo!("send deadline for a 0-based packet index")
+        // index * 1e9 / rate, rounded to the nearest nanosecond.
+        let ns = (index as u128) * (NS_PER_SEC as u128);
+        (ns / self.config.rate_pps as u128) as u64
     }
 
     /// The virtual-clock schedule for `count` packets: exactly `count`
     /// deadlines, strictly increasing.
     pub fn schedule_ns(&self, count: u64) -> Vec<u64> {
-        let _ = count;
-        todo!("schedule count deadlines on the virtual clock")
+        (0..count).map(|index| self.deadline_ns(index)).collect()
     }
 
     /// Advance the virtual clock: return the next deadline and count one more
     /// packet as sent.
     pub fn next_deadline_ns(&mut self) -> u64 {
-        todo!("next deadline on the virtual clock")
+        let deadline = self.deadline_ns(self.sent);
+        self.sent += 1;
+        deadline
     }
 
     /// How many deadlines [`RatePacer::next_deadline_ns`] has returned.
     pub fn packets_sent(&self) -> u64 {
-        todo!("number of packets sent so far")
+        self.sent
     }
 }
 

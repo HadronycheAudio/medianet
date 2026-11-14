@@ -35,14 +35,34 @@ pub enum DecodeError {
 /// 64-bit send time; the rest is padding up to the configured UDP payload
 /// length. `len` must be at least [`HEADER_LEN`].
 pub fn encode(sequence: u64, send_time_ns: u64, len: usize) -> Vec<u8> {
-    let _ = (sequence, send_time_ns, len);
-    todo!("encode sequence + send time into a len-byte UDP payload")
+    assert!(
+        len >= HEADER_LEN,
+        "payload length {len} is shorter than the {HEADER_LEN}-byte header"
+    );
+    let mut buf = vec![0u8; len];
+    buf[..8].copy_from_slice(&sequence.to_be_bytes());
+    buf[8..HEADER_LEN].copy_from_slice(&send_time_ns.to_be_bytes());
+    buf
 }
 
 /// Decode a received UDP payload. Trailing padding is ignored.
 pub fn decode(buf: &[u8]) -> Result<DecodedPayload, DecodeError> {
-    let _ = buf;
-    todo!("decode the 64-bit sequence number and send time")
+    if buf.len() < HEADER_LEN {
+        return Err(DecodeError::TooShort {
+            len: buf.len(),
+            min: HEADER_LEN,
+        });
+    }
+    let sequence = u64::from_be_bytes(buf[..8].try_into().expect("8 bytes checked above"));
+    let send_time_ns = u64::from_be_bytes(
+        buf[8..HEADER_LEN]
+            .try_into()
+            .expect("8 bytes checked above"),
+    );
+    Ok(DecodedPayload {
+        sequence,
+        send_time_ns,
+    })
 }
 
 /// What one observation meant to the gap detector.
@@ -62,40 +82,68 @@ pub struct SequenceObservation {
 /// (AC 3). Pure logic: it takes decoded sequence numbers, no network.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SequenceTracker {
-    // Skeleton: fields are the coder's choice; keep the accessors below.
-    _skeleton: (),
+    seen: std::collections::HashSet<u64>,
+    next_expected: u64,
+    highest_seen: Option<u64>,
+    received_distinct: u64,
+    lost_total: u64,
+    duplicates: u64,
 }
 
 impl SequenceTracker {
     /// A tracker that expects the stream to start at sequence number 0.
     pub fn new() -> Self {
-        todo!("new gap detector")
+        Self::default()
     }
 
     /// Feed one decoded sequence number and learn what it means.
     pub fn observe(&mut self, sequence: u64) -> SequenceObservation {
-        let _ = sequence;
-        todo!("observe a sequence number and report gap/duplicate")
+        let out_of_order = matches!(self.highest_seen, Some(h) if sequence <= h);
+        if !self.seen.insert(sequence) {
+            // Already counted: a re-delivery, not a new packet.
+            self.duplicates += 1;
+            return SequenceObservation {
+                sequence,
+                gap: 0,
+                duplicate: true,
+                out_of_order: true,
+            };
+        }
+        // A distinct sequence number: count the gap if it jumps ahead of the
+        // contiguity watermark, then raise the watermarks.
+        let gap = sequence.saturating_sub(self.next_expected);
+        self.lost_total += gap;
+        self.next_expected = sequence.saturating_add(1);
+        if !out_of_order {
+            self.highest_seen = Some(sequence);
+        }
+        self.received_distinct += 1;
+        SequenceObservation {
+            sequence,
+            gap,
+            duplicate: false,
+            out_of_order,
+        }
     }
 
     /// Total sequence numbers missing so far.
     pub fn lost(&self) -> u64 {
-        todo!("total lost sequence numbers")
+        self.lost_total
     }
 
     /// Number of distinct sequence numbers received.
     pub fn received(&self) -> u64 {
-        todo!("number of packets received")
+        self.received_distinct
     }
 
     /// Number of duplicate sequence numbers seen.
     pub fn duplicates(&self) -> u64 {
-        todo!("number of duplicate sequence numbers")
+        self.duplicates
     }
 
     /// Highest sequence number seen, if any.
     pub fn highest(&self) -> Option<u64> {
-        todo!("highest sequence number seen")
+        self.highest_seen
     }
 }
 
