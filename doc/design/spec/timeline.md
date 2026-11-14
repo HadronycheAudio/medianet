@@ -97,7 +97,7 @@ The reduced fractions equal the unreduced ones, so either form may be implemente
 
 Both identities are exact properties of the rule above and hold everywhere on the line, not only on slice boundaries `[decision]`:
 
-- For every position `p >= 0`: `position_at(time_of(p)) == p`.
+- For every position `p >= 0` whose time is representable (`time_of` returns `Some`): `position_at(time_of(p)) == p`. With a non-negative `origin_ns` that is every position up to about 2^49.7 — `p × 31 250 / 3` below 2^63 — and above it `time_of` returns `None` by the no-fit rule below.
 - For every network time `t >= origin_ns`: `time_of(position_at(t)) <= t`, with equality whenever `t` is a time the map itself names, in particular on every slice boundary.
 
 By bound: for a whole `n`, `ceil(x) <= n` exactly when `x <= n`, so `time_of(p) <= t` exactly when `p <= (t - origin_ns) × 12 / 125 000`; `position_at(t)` is therefore the largest position whose `time_of` is at most `t`. `time_of` is strictly increasing (one sample is 10 416⅔ ns, far more than a nanosecond), so the largest position whose `time_of` is at most `time_of(p)` is `p` itself — that is the first identity — and the second identity is the definition of largest, read at `t`. A round trip cannot overflow the results either: `position_at` returns below (2^64 - 1) × 12 / 125 000 < 2^51 positions, and the time of a position `position_at` produced is at most the original `t`.
@@ -106,21 +106,23 @@ Slice boundaries are exact without rounding, which is what 006-AC-1 asserts. A s
 
 ### Off a slice boundary (Q-1)
 
-One sample is `31 250 / 3 ns = 10 416⅔ ns`, so a position off a slice boundary — a sample inside a slice, the positions a capture edge stamps — maps to a fraction of a nanosecond. The rounding rule `[decision]`: `time_of` rounds such a position up, with ceil, to the next whole nanosecond, and `position_at` in the other direction rounds down, with floor, to the position of the sample that contains the time. What forces the rounding is divisibility by 3, not the boundary: a position `p` is a whole number of nanoseconds exactly when `p` is divisible by 3 (31 250 shares no factor with 3). A position not divisible by 3 leaves a fractional nanosecond — ⅔ ns when `p ≡ 1 (mod 3)`, ⅓ ns when `p ≡ 2 (mod 3)` — and the ceil lifts it to the next whole nanosecond: `p = 1` gives 10 416⅔ rounded up to 10 417, `p = 2` gives 20 833⅓ rounded up to 20 834, `p = 4` gives 41 666⅔ rounded up to 41 667. A position off a slice boundary but divisible by 3 is not rounded at all: `p = 3` is exactly 31 250 ns. And every slice boundary is divisible by 3 because 48 is, so a boundary position is never rounded: 48 samples = 500 000 ns exactly. This closes Q-1: the falsifier, a `p` whose round trip differs from `p`, is excluded by the first identity, which holds for every `p >= 0` and not only at slice boundaries.
+One sample is `31 250 / 3 ns = 10 416⅔ ns`, so a position off a slice boundary — a sample inside a slice, the positions a capture edge stamps — maps to a fraction of a nanosecond. The rounding rule `[decision]`: `time_of` rounds such a position up, with ceil, to the next whole nanosecond, and `position_at` in the other direction rounds down, with floor, to the position of the sample that contains the time. What forces the rounding is divisibility by 3, not the boundary: a position `p` is a whole number of nanoseconds exactly when `p` is divisible by 3 (31 250 shares no factor with 3). A position not divisible by 3 leaves a fractional nanosecond — ⅔ ns when `p ≡ 1 (mod 3)`, ⅓ ns when `p ≡ 2 (mod 3)` — and the ceil lifts it to the next whole nanosecond: `p = 1` gives 10 416⅔ rounded up to 10 417, `p = 2` gives 20 833⅓ rounded up to 20 834, `p = 4` gives 41 666⅔ rounded up to 41 667. A position off a slice boundary but divisible by 3 is not rounded at all: `p = 3` is exactly 31 250 ns. And every slice boundary is divisible by 3 because 48 is, so a boundary position is never rounded: 48 samples = 500 000 ns exactly. This closes Q-1: the falsifier, a `p` whose round trip differs from `p`, is excluded by the first identity, which holds for every `p >= 0` with a representable time and not only at slice boundaries.
 
 ### Before the origin (Q-2)
 
 `position_at` may be asked for a network time before the origin, `t < origin_ns`, where the position would be negative and positions are unsigned. Such a time has no position on this line: the map is not extrapolated backwards, exactly as it is never extrapolated across epochs, and the times before a line's origin belong to earlier lines where a position is meaningless. Clamping to 0 would misreport the instant as the origin's own. `position_at` therefore returns `None` — the Option branch, not a clamp `[decision]`. Two implementations of this section return the same `None` for the same time before the origin, which closes Q-2 (falsifier: two implementations disagreeing on a pre-origin time).
 
-The Rust shape that ticket 006-08 implements is reconciled with this rule: `position_at` returns an `Option<u64>`, and 006-08 implements the reconciled signature.
+The no-fit rule for `time_of` is symmetric `[decision]`: a position whose time does not fit i64 has no time to misreport, exactly as a time before the origin has no position, so `time_of` returns `None` when `origin_ns + ceil(p × 31 250 / 3)` is outside the i64 range. The case is reachable — an `origin_ns` near i64::MAX overflows with `p` as small as 1, well inside 006-08's tested `p < 2^40` — but never for a position the map itself produced, whose time is at most the original `t`. 006-08's acceptance criterion 3 defers to this section for results that do not fit i64/u64; this rule and the before-origin rule are that specification.
+
+The Rust shape that ticket 006-08 implements is reconciled with both rules: `position_at` returns an `Option<u64>` and `time_of` an `Option<i64>`, and 006-08 implements the reconciled signatures.
 
 ```rust
 pub const DOMAIN_RATE_HZ: u32 = 96_000; // C-01: the only rate on the wire
 pub struct Line { pub epoch: TimelineEpoch, pub origin_ns: i64 }
 impl Line {
-    // Reconciled with the before-origin rule: Option, not a clamped u64.
+    // Reconciled with the before-origin and no-fit rules: Options, not clamps.
     pub fn position_at(&self, network_ns: i64) -> Option<u64>;
-    pub fn time_of(&self, position: u64) -> i64;
+    pub fn time_of(&self, position: u64) -> Option<i64>;
 }
 ```
 
