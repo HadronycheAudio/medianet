@@ -9,7 +9,7 @@ Last updated: 2026-11-14, by the orchestrator, at swarm start.
 | P0 | 001 | Receive stamp probes | 1 | 0 | 0 | 0 | 17 |
 | P0 | 002 | POC archaeology | 2 | 2 | 0 | 0 | 14 |
 | P0 | 003 | POC smoke fixes | 1 | 2 | 0 | 0 | 10 |
-| P1 | 004–007b | Specification epics | 2 | 4 | 0 | 0 | 116 |
+| P1 | 004–007b | Specification epics | 3 | 4 | 0 | 0 | 116 |
 
 Phases P2 to P7: not started (dependency order; P1 drafting runs alongside P0).
 
