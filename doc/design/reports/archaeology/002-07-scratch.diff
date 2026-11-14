@@ -1,0 +1,197 @@
+diff --git a/src/hoplog.rs b/src/hoplog.rs
+new file mode 100644
+index 0000000..0df71a7
+--- /dev/null
++++ b/src/hoplog.rs
+@@ -0,0 +1,73 @@
++//! Ticket 002-07 diagnostic logging: one rate-limited line per hop of the
++//! loss-counter chain (hop 1 per-input counter, hop 2 echo-header write,
++//! hop 3 sender-side copy, hop 4 stats store, hop 5 display). Logging only:
++//! nothing here changes any POC behaviour, it only emits lines on stderr.
++//!
++//! Every line has the shape
++//!
++//! ```text
++//! [<elapsed s>] hop=<1..5> module=<name> <fields ...>
++//! ```
++//!
++//! and is rate-limited to at most 10 lines per second per hop and module
++//! (a simple last-emit-time check), so the instrument can follow datagram
++//! rates of thousands per second without flooding the log.
++
++use std::cell::RefCell;
++use std::collections::HashMap;
++use std::fmt;
++use std::sync::{Mutex, OnceLock};
++use std::time::Instant;
++
++/// Minimum spacing between two log lines of the same hop and module:
++/// 0.1 s = at most 10 lines per second.
++const MIN_INTERVAL: f64 = 0.1;
++
++thread_local! {
++    /// Name of the module running on the current (real-time) thread, set
++    /// once when the thread starts. Both synth instances therefore log as
++    /// `synth1` / `synth2` from the same code path.
++    static MODULE: RefCell<String> = RefCell::new(String::new());
++}
++
++fn slots() -> &'static Mutex<HashMap<(u8, String), Instant>> {
++    static SLOTS: OnceLock<Mutex<HashMap<(u8, String), Instant>>> = OnceLock::new();
++    SLOTS.get_or_init(|| Mutex::new(HashMap::new()))
++}
++
++fn epoch() -> &'static Instant {
++    static EPOCH: OnceLock<Instant> = OnceLock::new();
++    EPOCH.get_or_init(Instant::now)
++}
++
++/// Remember the module name of the current thread (called once when the
++/// module's real-time thread starts).
++pub fn set_module(name: &str) {
++    MODULE.with(|m| *m.borrow_mut() = name.to_string());
++}
++
++/// Emit one diagnostic line for `hop`, attributed to the module named for
++/// the current thread. Dropped silently when the same hop and module logged
++/// less than `MIN_INTERVAL` ago.
++pub fn emit(hop: u8, args: fmt::Arguments<'_>) {
++    let module = MODULE.with(|m| m.borrow().clone());
++    emit_as(hop, &module, args);
++}
++
++/// Emit one diagnostic line for `hop` from an explicitly named module (for
++/// threads that are not a module's real-time thread, e.g. stats or tui).
++pub fn emit_as(hop: u8, module: &str, args: fmt::Arguments<'_>) {
++    let mut slots = match slots().lock() {
++        Ok(s) => s,
++        Err(_) => return,
++    };
++    let now = Instant::now();
++    let key = (hop, module.to_string());
++    if let Some(t) = slots.get(&key) {
++        if now.duration_since(*t).as_secs_f64() < MIN_INTERVAL {
++            return;
++        }
++    }
++    slots.insert(key, now);
++    eprintln!("[{:>6.1}s] hop={} module={} {}", now.duration_since(*epoch()).as_secs_f64(), hop, module, args);
++}
+diff --git a/src/lib.rs b/src/lib.rs
+index 691e1b9..56b5615 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -3,6 +3,7 @@
+ pub mod audio;
+ pub mod clock;
+ pub mod control;
++pub mod hoplog;
+ pub mod mixer;
+ pub mod module;
+ pub mod music;
+diff --git a/src/mixer.rs b/src/mixer.rs
+index be233cf..ec20678 100644
+--- a/src/mixer.rs
++++ b/src/mixer.rs
+@@ -76,6 +76,9 @@ impl Mixer {
+         let reordered = input.highest.map_or(false, |hi| h.seq < hi);
+         input.highest = Some(input.highest.map_or(h.seq, |hi| hi.max(h.seq)));
+         let lost = (input.highest.unwrap().saturating_sub(input.first) as u64 + 1).saturating_sub(input.rx_count) as u32;
++        // 002-07 hop 1: the per-input loss counter as computed (this line
++        // only logs; the counter itself is unchanged).
++        crate::hoplog::emit(1, format_args!("stream={} seq={} first={} highest={} rx_count={} lost={}", d.input, h.seq, input.first, input.highest.unwrap_or(0), input.rx_count, lost));
+ 
+         // Controller values first, whatever their place in the datagram.
+         let mut audio_msg = None;
+@@ -171,6 +174,9 @@ impl Mixer {
+         }
+         .encode(&mut self.buf);
+         ctx.send(0, &self.buf[..len]);
++        // 002-07 hop 2: rx_lost as written into this echo header, with the
++        // raw little-endian header bytes at offset 72..76 (proto.rs:205).
++        crate::hoplog::emit(2, format_args!("stream={} seq={} rx_lost={} rx_lost_bytes={:02x} {:02x} {:02x} {:02x}", d.input, h.seq, lost, lost as u8, (lost >> 8) as u8, (lost >> 16) as u8, (lost >> 24) as u8));
+ 
+         let _ = self.records.push(Record {
+             stream: d.input as u8,
+diff --git a/src/module.rs b/src/module.rs
+index c759f89..a3ebce1 100644
+--- a/src/module.rs
++++ b/src/module.rs
+@@ -1621,6 +1621,11 @@ fn spawn_rt<S: Send + 'static>(
+ ) -> JoinHandle<()> {
+     thread::spawn(move || {
+         rt::setup_thread(hot.rt_prio, cpu, hot.busy_poll);
++        // Ticket 002-07 logging: name this module's real-time thread so its
++        // per-hop log lines carry the module name (synth1/synth2/mixer/sender).
++        if let Ok(net) = inner.net.try_lock() {
++            crate::hoplog::set_module(&net.me.name);
++        }
+         let mut buf = vec![0u8; 65536];
+         let mut peer = Peer::new();
+         let mut fds: Vec<libc::pollfd> =
+diff --git a/src/sender.rs b/src/sender.rs
+index e695457..691d227 100644
+--- a/src/sender.rs
++++ b/src/sender.rs
+@@ -413,6 +413,10 @@ impl Sender {
+         // Times along the path, all in network time: sent here (t1),
+         // received by the first module (t2k), sent by the mixer (t3),
+         // received here.
++        // 002-07 hop 3: the return header's rx_lost about to be copied into
++        // the sender's record, with the raw little-endian field bytes
++        // (header offset 72..76, proto.rs:205).
++        crate::hoplog::emit(3, format_args!("stream={} seq={} rx_lost={} rx_lost_bytes={:02x} {:02x} {:02x} {:02x}", stream, h.seq, h.rx_lost, h.rx_lost as u8, (h.rx_lost >> 8) as u8, (h.rx_lost >> 16) as u8, (h.rx_lost >> 24) as u8));
+         let _ = self.records.push(Record {
+             stream,
+             seq: h.seq,
+diff --git a/src/stats.rs b/src/stats.rs
+index 4f7e3eb..14280fd 100644
+--- a/src/stats.rs
++++ b/src/stats.rs
+@@ -322,6 +322,9 @@ impl Aggregator {
+         self.highest = Some(self.highest.map_or(r.seq, |h| h.max(r.seq)));
+         self.reordered += r.reordered as u64;
+         self.lost_fwd = r.rx_lost as u64;
++        // 002-07 hop 4: the record's rx_lost stored as lost_fwd (latest
++        // record wins, pooled across return streams).
++        crate::hoplog::emit_as(4, "stats", format_args!("stream={} seq={} rx_lost={} lost_fwd={}", r.stream, r.seq, r.rx_lost, self.lost_fwd));
+         self.frames = r.frames;
+         self.media_pos = r.sample_pos;
+ 
+diff --git a/src/synth.rs b/src/synth.rs
+index 3e382d8..8a22fba 100644
+--- a/src/synth.rs
++++ b/src/synth.rs
+@@ -86,6 +86,9 @@ impl Synth {
+         let reordered = self.highest.map_or(false, |hi| h.seq < hi);
+         self.highest = Some(self.highest.map_or(h.seq, |hi| hi.max(h.seq)));
+         let lost = (self.highest.unwrap().saturating_sub(self.first) as u64 + 1).saturating_sub(self.rx_count) as u32;
++        // 002-07 hop 1: the per-input loss counter as computed (this line
++        // only logs; the counter itself is unchanged).
++        crate::hoplog::emit(1, format_args!("stream={} seq={} first={} highest={} rx_count={} lost={}", d.input, h.seq, self.first, self.highest.unwrap_or(0), self.rx_count, lost));
+         let rate = h.path_delay;
+         self.voices.set_rate(rate);
+         self.transport.set_rate(rate);
+@@ -172,6 +175,9 @@ impl Synth {
+         }
+         .encode(&mut self.buf);
+         ctx.send(0, &self.buf[..len]);
++        // 002-07 hop 2: rx_lost as written into this echo header, with the
++        // raw little-endian header bytes at offset 72..76 (proto.rs:205).
++        crate::hoplog::emit(2, format_args!("stream={} seq={} rx_lost={} rx_lost_bytes={:02x} {:02x} {:02x} {:02x}", d.input, h.seq, lost, lost as u8, (lost >> 8) as u8, (lost >> 16) as u8, (lost >> 24) as u8));
+ 
+         let _ = self.records.push(Record {
+             stream: 0,
+diff --git a/src/tui.rs b/src/tui.rs
+index 6ed17fa..8e89b3e 100644
+--- a/src/tui.rs
++++ b/src/tui.rs
+@@ -107,6 +107,8 @@ fn headless_line(s: &Snapshot) -> String {
+     match (s.sent, s.lost_total) {
+         (Some(sent), Some(lost)) => {
+             out += &format!(" | sent {sent} lost {lost} (fwd {}) dropped-at-sender {}", s.lost_fwd, s.dropped);
++            // 002-07 hop 5: the display line's loss figures as printed.
++            crate::hoplog::emit_as(5, "tui", format_args!("display sent={} lost={} (fwd={}) dropped-at-sender={}", sent, lost, s.lost_fwd, s.dropped));
+             if s.audio_on == Some(false) {
+                 out += " | AUDIO OFF";
+             }
