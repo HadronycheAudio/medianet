@@ -1,0 +1,16 @@
+{
+  "spec_version": "1",
+  "id": "negative-duplicate-id",
+  "machine": "Discovery",
+  "steps": [
+    {
+      "time_ns": 1000,
+      "input": { "kind": "hello", "args": { "domain": 7 } },
+      "expected": {
+        "outputs": [],
+        "events": [ { "name": "ModuleJoined" } ],
+        "state": { "counters": { "received": 1 }, "health": "Live" }
+      }
+    }
+  ]
+}
