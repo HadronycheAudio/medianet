@@ -13,6 +13,13 @@
 # Override the notes path with NOTES=/path (only sensible for self-testing)
 # and the POC location with HADROPOC=/path.
 #
+# AC4 (the POC tree-cleanliness report) honours the orchestrated epic-003
+# write window: the orchestrator commits `swarm/poc-write-in-flight` in THIS
+# repository; when present, that single assertion is reported as SKIP and
+# never fails.  State is restored between commits, so the assertion is
+# meaningful again once the marker is removed.  Override the marker location
+# with MARKER_PATH=/path.
+#
 # Acceptance criteria and their mechanical encoding
 # -------------------------------------------------
 # AC1  Two figures exist, one for `--sync-hz 50` and one for `--sync-hz 1000`,
@@ -68,7 +75,11 @@
 #      --porcelain` in the POC is empty (ignored paths such as target/ are
 #      not shown by git, so they are allowed).  This runs LAST and only
 #      REPORTS the current state; the coder is bound to leave the tree clean
-#      and the reviewer re-runs it.
+#      and the reviewer re-runs it.  When the orchestrator marker
+#      `swarm/poc-write-in-flight` exists in this repository (or at
+#      $MARKER_PATH), this single assertion is reported as SKIP and does not
+#      fail: a serialised epic-003 write is in flight and the POC is expected
+#      to be dirty.  The "POC is a git repository" precondition still holds.
 #
 # Exit status: 0 all criteria pass, 1 otherwise (one FAIL line per criterion).
 
@@ -77,8 +88,10 @@ export LC_ALL=C
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL  cannot cd to repository root"; exit 1; }
 
+REPO_ROOT="$(pwd)"
 NOTES="${NOTES:-swarm/notes/003-02.md}"
 POC="${HADROPOC:-/home/dorian/workspace/hadropoc}"
+MARKER_PATH="${MARKER_PATH:-$REPO_ROOT/swarm/poc-write-in-flight}"
 TMPROOT="${TMPDIR:-/tmp/opencode}"
 mkdir -p "$TMPROOT" 2>/dev/null || TMPROOT=/tmp
 TMP="$(mktemp -d "$TMPROOT/003-02.XXXXXX")" || { echo "FAIL  cannot create temp dir"; exit 1; }
@@ -92,6 +105,7 @@ note() { printf '      %s\n' "$*"; }
 echo "== 003-02: pre-fix sync-rate measurement notes =="
 echo "   notes: $NOTES"
 echo "   POC:   $POC"
+echo "   marker: $MARKER_PATH"
 
 # Body of the first Markdown section whose heading line contains $2
 # (case-insensitive), from after the heading to the next heading of the same
@@ -450,8 +464,16 @@ fi
 # Reported LAST: read-only observation of the POC working tree.  Ignored
 # paths (target/, experiments/<dir>/) are not listed by git status, so they
 # are allowed; anything else means this ticket changed the frozen POC.
+# During the orchestrated epic-003 write window the tree is expected to be
+# dirty: the marker makes this single assertion a loud SKIP, never a failure.
 echo "-- AC4 POC working tree unchanged (read-only; reported last)"
-if git -C "$POC" rev-parse --git-dir >/dev/null 2>&1; then
+if ! git -C "$POC" rev-parse --git-dir >/dev/null 2>&1; then
+  bad "AC4 $POC is not a git repository; cannot report its working-tree state"
+elif [ -e "$MARKER_PATH" ]; then
+  printf 'SKIP: epic-003 write in flight (orchestrator marker present)\n'
+  note "marker: $MARKER_PATH"
+  note "AC4 POC tree-cleanliness assertion skipped; this is not a failure"
+else
   porcelain=$(git -C "$POC" status --porcelain 2>&1)
   if [ -z "$porcelain" ]; then
     pass "AC4 git status --porcelain in $POC is empty (clean apart from ignored paths)"
@@ -459,8 +481,6 @@ if git -C "$POC" rev-parse --git-dir >/dev/null 2>&1; then
     bad "AC4 POC working tree is not clean:"
     printf '%s\n' "$porcelain" | head -n 10 | while IFS= read -r l; do note "$l"; done
   fi
-else
-  bad "AC4 $POC is not a git repository; cannot report its working-tree state"
 fi
 
 # ----------------------------------------------------------------- summary
