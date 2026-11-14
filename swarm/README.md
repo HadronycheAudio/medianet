@@ -116,3 +116,12 @@ Every crate under `probes/` is standalone: its Cargo.toml carries an empty
 root `exclude` globs do not free nested packages on this toolchain; the
 per-crate table does, verified empirically). The per-change suite runs
 `cargo test` and clippy in every `probes/*/`.
+
+### Frozen-POC access (serialisation rule)
+
+Only one agent may write to /home/dorian/workspace/hadropoc at a time (epic
+003 tickets), and while an epic-003 write is in flight, no other agent runs
+or verifies against the frozen tree (a run mid-write sees mixed code, and a
+concurrent verifier's clean-tree check fails spuriously). Reads are always
+fine. The orchestrator sequences POC-writing tickets against POC-running
+verifications.
