@@ -389,7 +389,7 @@
    "phase": "rework (clippy + changes-list prose)",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
-  "status": "in-flight"
+  "status": "done"
  },
  "004-04": {
   "branch": "t/004-04",
