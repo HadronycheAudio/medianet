@@ -1,0 +1,123 @@
+# Machine-readable wire tables — schema revision 1 (ticket 004-02).
+#
+# This file is the machine-readable form of the field tables in
+# `doc/design/spec/wire.md` (C-130). Task 007 (conformance) generates its test
+# vectors from it; tasks 009 to 014 implement the layouts it describes. The
+# checker `hadronyche-tools::wire_tables::check_file` (C-133) verifies it in
+# CI, unprivileged: parse, round-trip, field coverage, declared versus
+# computed maximum size, and the 1 252-byte control bound (C-17, C-116).
+#
+# # Schema, revision 1
+#
+# Top level (all four keys are required, exactly these units):
+#
+#   schema       = 1        integer schema revision; this file is revision 1.
+#   offset_unit  = "bits"   every field `offset` is a bit position counted
+#                           from bit 0 of the message start.
+#   width_unit   = "bits"   every field `width` is a bit count. For a counted
+#                           field (see `count`) the width is the width of ONE
+#                           element; the field occupies width * max_count bits.
+#   size_unit    = "bytes"  every `max_size` is a byte count.
+#
+# Per message, one `[[message]]` table; `name` is unique and non-empty:
+#
+#   name         = "..."    unique, non-empty message name.
+#   layer        = "..."    one of "control", "sync", "media", "measurement".
+#   dscp         = N        the DiffServ codepoint, an integer 0..=63.
+#   max_size     = N        the declared maximum size in bytes. Every message
+#                           has a fixed maximum, because a `no_std` core crate
+#                           parses it without allocation and in bounded time.
+#                           (The deprecated spelling `maximum_size` is still
+#                           accepted by the parser, but the canonical writer
+#                           emits `max_size`, so a file using the deprecated
+#                           spelling fails the round-trip check; use
+#                           `max_size`.)
+#   section_of   = "..."    optional: this message is a section of the named
+#                           parent message (the regime stamp is split into
+#                           sections that each fit the control bound, C-18).
+#   exempt_from_control_bound = "C-116"
+#                           optional: the only exemption from the 1 252-byte
+#                           control bound, for the path-MTU probe pair, which
+#                           is sent at the intended media packet size (C-116).
+#                           Any other value is a parse error.
+#   rejection_reasons = ["...", ...]
+#                           the rejection reasons this message can produce, in
+#                           table order. From ticket 004-03 each entry must be
+#                           a member of the closed `Reject` enumeration; until
+#                           then the membership check is skipped visibly.
+#
+# Per field, one `[[message.field]]` table inside its message; `name` is
+# unique within the message, and the fields must cover the message from bit 0
+# with no overlap and no undeclared gap (a `type = "pad"` field declares
+# padding):
+#
+#   name     = "..."        unique, non-empty field name.
+#   offset   = N            bit position from the message start (bits).
+#   width    = N            bit count (bits); the field occupies
+#                           [offset, offset + width), or
+#                           [offset, offset + width * max_count) when `count`
+#                           is present.
+#   type     = "..."        one of:
+#                             "uint"   sub-byte unsigned integer (e.g. the
+#                                      2-bit copy index, C-07);
+#                             "u8" "u16" "u32" "u64" "u128"
+#                                      fixed-width unsigned integers
+#                                      (C-10, C-11, C-12);
+#                             "i8" "i16" "i32" "i64" "i128"
+#                                      fixed-width signed integers;
+#                             "f32"    one 4-byte sample (C-03);
+#                             "q1.31"  Q1.31 fixed-point sample;
+#                             "pad"    declared padding (zero bits on the
+#                                      wire); a pad field is what makes an
+#                                      otherwise undeclared gap legal.
+#   meaning  = "..."        what the field carries.
+#   valid    = "..."        the valid range, free text (e.g. "0 to 255").
+#   reserved = "..."        optional: the reserved value, when one exists
+#                           (rules for reserved fields are ticket 004-05).
+#   count    = "..."        optional: the name of the field that counts this
+#                           list; `width` is then per element.
+#   max_count = N           required with `count`: the list's fixed maximum
+#                           (e.g. at most 32 bundle members, C-08; at most 64
+#                           peers, C-34). This is how the maximum message size
+#                           is computed from the file alone: the declared
+#                           `max_size` must equal the size computed from the
+#                           fields and maximum counts, which is why counted
+#                           lists are encoded as a count field plus a maximum
+#                           count and never as an unbounded list.
+#
+# The checker runs the rules in this order: parse; round-trip (re-serialise,
+# re-parse, compare models); field coverage (overlap, then gap); declared
+# versus computed maximum size; and the 1 252-byte control bound for control
+# messages and regime stamp sections, with the C-116 exemption.
+
+schema = 1
+offset_unit = "bits"
+width_unit = "bits"
+size_unit = "bytes"
+
+# The one example message (ticket 004-02 Work step 4): a placeholder with two
+# fields, so the checker has something to verify. Later tickets (004-06 to
+# 004-20) replace this placeholder with the real field tables, one [[message]]
+# table per message, in both wire.md and this file.
+[[message]]
+name = "example"
+layer = "control"
+dscp = 40
+max_size = 4
+rejection_reasons = ["TooShort"]
+
+[[message.field]]
+name = "flags"
+offset = 0
+width = 8
+type = "u8"
+meaning = "example flags byte (placeholder; replaced by the real message tables)"
+valid = "0 to 255"
+
+[[message.field]]
+name = "sequence"
+offset = 8
+width = 24
+type = "uint"
+meaning = "example 24-bit sequence number (placeholder; replaced by the real message tables)"
+valid = "0 to 16777215"

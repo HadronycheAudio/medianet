@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+# Ticket 004-02: the standard TOML library (the ticket's default), so the
+# checker's file parser is not hand-written and needs no fuzzing under C-95.
+toml = "0.9"
 
 [[bin]]
 name = "gen"
