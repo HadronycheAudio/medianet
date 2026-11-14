@@ -267,7 +267,7 @@
   "phase": "P0",
   "role": {
    "coder": "melious/glm-5.3-flash",
-   "phase": "review",
+   "phase": "approved; merge held for green suite (002-01 checkfix pending)",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
