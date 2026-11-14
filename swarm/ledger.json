@@ -321,7 +321,7 @@
    "phase": "rework (chimera bound hand-off)",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
-  "status": "in-flight"
+  "status": "done"
  },
  "003-06": {
   "branch": "t/003-06",
