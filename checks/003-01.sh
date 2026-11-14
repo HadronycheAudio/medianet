@@ -9,6 +9,23 @@
 # output below the POC's `target/`, which the ticket's own .gitignore excludes.
 # Override the location with HADROPOC=/path for reproduction.
 #
+# This check runs permanently in the per-change suite.  It therefore encodes
+# the standing invariant of the frozen baseline, not a snapshot of the tree:
+#   1. `poc-untouched` remains an annotated tag on the POC's root commit;
+#   2. that commit's tree is still the untouched pre-ticket tree (verified
+#      against the immutable tag object, so later epic-003 fixes cannot
+#      invalidate it);
+#   3. every commit after it is a sanctioned epic-003 change: each commit
+#      message's first line references a 003-XX ticket id;
+#   4. the POC working tree is clean vs HEAD, except while an orchestrated
+#      epic-003 write is in flight.  For that window the orchestrator
+#      commits `swarm/poc-write-in-flight` in THIS repository; when present,
+#      the tree-cleanliness assertion alone is SKIPPED (loudly) and never
+#      fails.  State is restored between commits, so the assertion is
+#      meaningful again once the marker is removed.
+# Epic 003 is the only task allowed to modify the POC, hence rule 3.
+# Override the marker location with MARKER_PATH=/path.
+#
 # Acceptance criteria and their mechanical encoding
 # -------------------------------------------------
 # AC1  `git tag` lists poc-untouched and `git cat-file -t poc-untouched`
@@ -22,8 +39,9 @@
 #      directories only.  We additionally assert the behaviour of that rule
 #      with `git check-ignore` on synthetic probe paths.
 #
-# AC3  The tagged commit is a root commit and, relative to the pre-ticket
-#      tree, the only new path is `.gitignore`.  Chosen encoding:
+# AC3  `poc-untouched` is the POC's root commit and its tree is the untouched
+#      pre-ticket tree; commits made after it are sanctioned epic-003 changes.
+#      Chosen encoding:
 #        (a) `git rev-list --parents -n 1 poc-untouched^{commit}` prints
 #            exactly one hash (the commit has no parent);
 #        (b) `git show --name-status poc-untouched` (root commit => diff
@@ -33,22 +51,30 @@
 #            (pre-ticket inventory ∪ {.gitignore}) — nothing missing,
 #            nothing extra.  The pre-ticket inventory is frozen at RED time
 #            in `checks/003-01-pre-ticket.sha256`;
-#        (d) source-content invariant: every pre-ticket file still has the
-#            SHA-256 recorded at RED time (`sha256sum -c`), so no source
-#            file was modified before being committed (DoD "no source file
-#            of the POC differs from its pre-ticket content");
-#        (e) the working tree equals the tagged tree: `git status --porcelain`
-#            is empty and `git diff --quiet poc-untouched` succeeds (no
-#            untracked, staged, unstaged or deleted paths).  Ignored dirs
-#            (target/, experiments/<dir>/) are outside this comparison by
-#            construction.
+#        (d) tag integrity: the SHA-256 of `git cat-file blob
+#            poc-untouched:<path>` equals the RED-time record for every
+#            manifest path.  This reads the immutable tag object, never the
+#            working files, so it remains valid while epic 003 edits the
+#            tree;
+#        (e) history convention: every commit reachable from HEAD but not
+#            from `poc-untouched` has a first line matching `003-[0-9][0-9]`
+#            (epic 003 is the only task allowed to change the POC).  A
+#            root-only history passes vacuously;
+#        (f) tree cleanliness: `git status --porcelain` is empty, i.e. HEAD
+#            is committed and nothing but ignored paths is untracked.  When
+#            the orchestrator marker `swarm/poc-write-in-flight` exists in
+#            this repository (or at $MARKER_PATH), this single assertion is
+#            reported as SKIP and does not fail: a serialised epic-003
+#            write is in flight and the tree is expected to be dirty.
 #      Note: with a root commit `git show --name-status` necessarily lists
 #      every path as `A`; "only .gitignore is new" is therefore expressed by
 #      (c), the set difference against the frozen pre-ticket inventory.
 #
-# AC4  `cargo test` at poc-untouched runs the two transport tests and both
-#      pass.  We run `cargo test transport` in the POC's working tree, which
-#      AC3(e) has just proven identical to the tagged tree, and require:
+# AC4  `cargo test` runs the two transport tests and both pass.  Since the
+#      POC may be mid-fix (epic 003), this is evaluated on the working tree
+#      as-is: during an in-flight write it may fail, and that failure is
+#      honest — passing it is the fix's own requirement.  We run
+#      `cargo test transport` and require:
 #        - exit status 0;
 #        - one `running 2 tests` line;
 #        - exactly two lines `test transport::tests::<name> ... ok`;
@@ -64,7 +90,9 @@ export LC_ALL=C
 
 POC="${HADROPOC:-/home/dorian/workspace/hadropoc}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HERE/.." && pwd)"
 MANIFEST="$HERE/003-01-pre-ticket.sha256"
+MARKER_PATH="${MARKER_PATH:-$REPO_ROOT/swarm/poc-write-in-flight}"
 TMPROOT="${TMPDIR:-/tmp/opencode}"
 mkdir -p "$TMPROOT" 2>/dev/null || TMPROOT=/tmp
 TMP="$(mktemp -d "$TMPROOT/003-01.XXXXXX")" || { echo "FAIL  cannot create temp dir"; exit 1; }
@@ -80,6 +108,7 @@ gitpoc() { git -C "$POC" "$@"; }
 echo "== 003-01: POC repository and poc-untouched tag =="
 echo "   POC:      $POC"
 echo "   manifest: $MANIFEST"
+echo "   marker:   $MARKER_PATH"
 
 # ---------------------------------------------------------------- precheck
 if [ ! -d "$POC" ]; then
@@ -146,7 +175,7 @@ for probe in "target/003-01-probe" "experiments/003-01-probe/file"; do
 done
 
 # -------------------------------------------------------------------- AC 3
-echo "-- AC3 root commit introducing only .gitignore"
+echo "-- AC3 pristine root tag, sanctioned post-tag history, clean tree"
 tag_commit='poc-untouched^{commit}'
 if ! gitpoc rev-parse --verify -q "$tag_commit" >/dev/null 2>&1; then
   bad "AC3 poc-untouched does not resolve to a commit"
@@ -195,32 +224,74 @@ else
     fi
   fi
 
-  # (d) content invariant: no pre-ticket source file was modified.
+  # (d) tag integrity: hash the blobs recorded by the immutable tag, not the
+  # working files.  Later epic-003 commits cannot change these blobs.
   if [ -f "$MANIFEST" ]; then
-    if ( cd "$POC" && sha256sum -c "$MANIFEST" ) > "$TMP/hashcheck" 2>&1; then
-      pass "AC3 every pre-ticket file matches its RED-time SHA-256"
+    : > "$TMP/hash-bad"
+    verified=0
+    while IFS= read -r record; do
+      [ -n "$record" ] || continue
+      want="$(printf '%s\n' "$record" | awk '{ print $1 }')"
+      path="$(printf '%s\n' "$record" | awk '{ $1=""; sub(/^[ \t]+/, ""); print }')"
+      if [ -z "$path" ]; then
+        printf '(unparsable manifest record)\n' >> "$TMP/hash-bad"
+        continue
+      fi
+      if ! gitpoc cat-file -e "poc-untouched:$path" 2>/dev/null; then
+        printf '%s (missing from tag)\n' "$path" >> "$TMP/hash-bad"
+        continue
+      fi
+      got="$(gitpoc cat-file blob "poc-untouched:$path" 2>/dev/null | sha256sum | awk '{ print $1 }')"
+      if [ "$want" = "$got" ]; then
+        verified=$((verified + 1))
+      else
+        printf '%s (sha256 %s != recorded %s)\n' "$path" "$got" "$want" >> "$TMP/hash-bad"
+      fi
+    done < "$MANIFEST"
+    if [ -s "$TMP/hash-bad" ]; then
+      bad "AC3 poc-untouched tag tree does not match the RED-time inventory:"
+      head -n 10 "$TMP/hash-bad" | while IFS= read -r l; do note "$l"; done
     else
-      bad "AC3 pre-ticket file content changed:"
-      grep -E 'FAILED|No such file' "$TMP/hashcheck" | head -n 10 | while IFS= read -r l; do note "$l"; done
+      pass "AC3 poc-untouched tag blobs match the RED-time SHA-256 ($verified files)"
     fi
   fi
 
-  # (e) working tree equals the tagged tree (ignored dirs excluded).
-  porcelain="$(gitpoc status --porcelain 2>&1)"
-  if [ -z "$porcelain" ]; then
-    pass "AC3 working tree clean vs HEAD (git status --porcelain empty)"
+  # (e) every commit after the root is a sanctioned epic-003 change.
+  if ! gitpoc rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    bad "AC3 POC HEAD does not resolve to a commit"
   else
-    bad "AC3 working tree not clean:"
-    printf '%s\n' "$porcelain" | head -n 5 | while IFS= read -r l; do note "$l"; done
+    : > "$TMP/bad-commits"
+    post_count=0
+    for c in $(gitpoc rev-list HEAD --not "$tag_commit" 2>/dev/null); do
+      post_count=$((post_count + 1))
+      subject="$(gitpoc log -1 --format=%s "$c" 2>/dev/null)"
+      if ! printf '%s' "$subject" | grep -Eq '003-[0-9]{2}'; then
+        printf '%s %s\n' "$(printf '%s' "$c" | cut -c1-12)" "$subject" >> "$TMP/bad-commits"
+      fi
+    done
+    if [ -s "$TMP/bad-commits" ]; then
+      bad "AC3 post-poc-untouched commits without a 003-XX ticket id:"
+      head -n 10 "$TMP/bad-commits" | while IFS= read -r l; do note "$l"; done
+    elif [ "$post_count" -eq 0 ]; then
+      pass "AC3 no commits after poc-untouched (root-only history; convention holds vacuously)"
+    else
+      pass "AC3 all $post_count commit(s) after poc-untouched reference a 003-XX ticket"
+    fi
   fi
 
-  gitpoc diff --quiet "$tag_commit" -- >/dev/null 2>&1
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
-    pass "AC3 working tree identical to poc-untouched (git diff --quiet)"
+  # (f) tree cleanliness vs HEAD, skipped for the orchestrated write window.
+  if [ -e "$MARKER_PATH" ]; then
+    printf 'SKIP: epic-003 write in flight (orchestrator marker present)\n'
+    note "marker: $MARKER_PATH"
+    note "AC3 tree-cleanliness assertion skipped; this is not a failure"
   else
-    bad "AC3 working tree differs from poc-untouched (git diff exit $rc)"
-    gitpoc diff --stat "$tag_commit" -- 2>/dev/null | head -n 5 | while IFS= read -r l; do note "$l"; done
+    porcelain="$(gitpoc status --porcelain 2>&1)"
+    if [ -z "$porcelain" ]; then
+      pass "AC3 working tree clean vs HEAD (git status --porcelain empty)"
+    else
+      bad "AC3 working tree not clean:"
+      printf '%s\n' "$porcelain" | head -n 5 | while IFS= read -r l; do note "$l"; done
+    fi
   fi
 fi
 
