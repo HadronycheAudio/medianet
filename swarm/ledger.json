@@ -166,7 +166,8 @@
   "epic": "002",
   "phase": "P0",
   "role": {
-   "phase": "red",
+   "coder": "melious/glm-5.3-flash",
+   "phase": "green",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
   "status": "in-flight"
