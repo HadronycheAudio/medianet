@@ -26,7 +26,8 @@
 #   dscp         = N        the DiffServ codepoint, an integer 0..=63.
 #   max_size     = N        the declared maximum size in bytes. Every message
 #                           has a fixed maximum, because a `no_std` core crate
-#                           parses it without allocation and in bounded time.
+#                           parses it without allocation and in bounded time
+#                           [decision].
 #                           (The deprecated spelling `maximum_size` is still
 #                           accepted by the parser, but the canonical writer
 #                           emits `max_size`, so a file using the deprecated
