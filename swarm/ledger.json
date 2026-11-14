@@ -241,6 +241,7 @@
   "class": "host",
   "epic": "003",
   "merged": "main, merge commit after 9fd4ae4",
+  "notes": "check amendment (t/003-01-checkfix) merged and concurred by the ticket reviewer: tag-blob integrity, 003-XX-only history, clean-vs-HEAD, loud narrow skip",
   "phase": "P0",
   "role": {
    "coder": "melious/glm-5.3-flash",
