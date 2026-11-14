@@ -742,7 +742,7 @@
    "phase": "rework (one finding: time_of no-fit rule)",
    "tester": "melious/deepseek-v4.1-flash-1017"
   },
-  "status": "in-flight"
+  "status": "done"
  },
  "006-03": {
   "branch": "t/006-03",
