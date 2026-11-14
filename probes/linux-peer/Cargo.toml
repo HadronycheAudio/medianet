@@ -1,0 +1,19 @@
+[package]
+name = "linux-peer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Throwaway probe, not part of the hadronyche-tools crate (C-133).
+
+[lib]
+name = "linux_peer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "linux-peer"
+path = "src/bin/linux-peer.rs"
+
+[[bin]]
+name = "fuzz-decode"
+path = "src/bin/fuzz-decode.rs"
