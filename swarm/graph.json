@@ -19775,15 +19775,16 @@
   }
  },
  "frontier": [
+  "001-02",
+  "001-06",
   "001-11",
-  "002-03",
   "002-04",
   "002-07",
   "002-09",
   "002-11",
   "002-12",
-  "003-03",
-  "006-02",
+  "003-04",
+  "004-02",
   "007a-02",
   "011-01",
   "016-01",
@@ -19796,17 +19797,18 @@
  ],
  "frontier_by_phase": {
   "P0": [
+   "001-02",
+   "001-06",
    "001-11",
-   "002-03",
    "002-04",
    "002-07",
    "002-09",
    "002-11",
    "002-12",
-   "003-03"
+   "003-04"
   ],
   "P1": [
-   "006-02",
+   "004-02",
    "007a-02"
   ],
   "P3": [
@@ -19834,26 +19836,26 @@
   "001": {
    "phase": "P0",
    "todo": 16,
-   "in-flight": 1,
-   "done": 0,
+   "in-flight": 0,
+   "done": 1,
    "hardware-ready": 0,
    "blocked": 0,
    "total": 17
   },
   "002": {
    "phase": "P0",
-   "todo": 12,
+   "todo": 11,
    "in-flight": 1,
-   "done": 1,
+   "done": 2,
    "hardware-ready": 0,
    "blocked": 0,
    "total": 14
   },
   "003": {
    "phase": "P0",
-   "todo": 8,
-   "in-flight": 1,
-   "done": 1,
+   "todo": 7,
+   "in-flight": 0,
+   "done": 3,
    "hardware-ready": 0,
    "blocked": 0,
    "total": 10
@@ -19861,8 +19863,8 @@
   "004": {
    "phase": "P1",
    "todo": 28,
-   "in-flight": 1,
-   "done": 0,
+   "in-flight": 0,
+   "done": 1,
    "hardware-ready": 0,
    "blocked": 0,
    "total": 29
@@ -19878,9 +19880,9 @@
   },
   "006": {
    "phase": "P1",
-   "todo": 20,
+   "todo": 19,
    "in-flight": 0,
-   "done": 1,
+   "done": 2,
    "hardware-ready": 0,
    "blocked": 0,
    "total": 21
