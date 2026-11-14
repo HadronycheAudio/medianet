@@ -110,3 +110,18 @@ still prints OK on the unchanged design set.
   when finished." — Rule 4 amended accordingly: the integrator pushes
   `main` to origin after every merge. First push done: 47ef750..919bbcb
   (50 commits, 6 tickets merged + swarm state).
+
+## Incident log
+
+- 2026-11-14, merge of 004-01: the integrator merged and pushed with a
+  failing per-change suite (process error — the suite result was not checked
+  before the push). Root cause: checks/002-01.sh and checks/003-01.sh assert
+  the POC tree is byte-identical to its pre-fix state; as PERMANENT suite
+  checks they fail on epic 003's sanctioned modifications (003-03's
+  metrics-writer fix was in flight). Fix (in progress, by the tests' own
+  authors per the dispute rule): 002-01's fingerprint recomputes from the
+  `poc-untouched` TAG tree via git (true forever); 003-01's tree assertions
+  become clean-vs-HEAD + only-003-XX-referencing commits after the tag, with
+  a loud orchestrated skip (`swarm/poc-write-in-flight`) during an epic-003
+  green phase. No merge lands again until the suite is green (gate
+  re-asserted).
