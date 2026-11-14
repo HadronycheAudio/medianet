@@ -1,0 +1,10 @@
+[package]
+name = "hadronyche-tools"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+[[bin]]
+name = "gen"
+path = "src/bin/gen.rs"

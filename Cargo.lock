@@ -3,5 +3,9 @@
 version = 4
 
 [[package]]
-name = "medianet"
+name = "hadronyche-tools"
+version = "0.1.0"
+
+[[package]]
+name = "hadronyche-vectors"
 version = "0.1.0"
