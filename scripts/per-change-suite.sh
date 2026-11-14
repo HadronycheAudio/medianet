@@ -49,6 +49,18 @@ for d in probes/*/; do
   run_cargo "$d"
 done
 
+# function-length rule (design owner, 2026-11-14): "Every function that's
+# over 100 lines of code must be split." Counting convention: code lines of
+# the function body (non-blank, non-comment-only), enforced by
+# scripts/function-length.py. Runs over every Rust source in this
+# repository (target/, .git and doc/ excluded); the frozen POC at
+# /home/dorian/workspace/hadropoc is out of scope.
+echo "== function length (max 100 code lines) =="
+if ! python3 scripts/function-length.py; then
+  echo "FAIL: function length"
+  fail=1
+fi
+
 # document checks (one executable per ticket under checks/, until the
 # hadronyche-tools crate owns them; see swarm/README.md)
 if [ -d checks ]; then

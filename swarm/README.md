@@ -43,6 +43,15 @@ warnings` passes in every crate, and the per-change suite enforces it. Coders
 deliver clippy-clean code or the review fails; reviewers run it as part of
 the suite. `cargo fmt --check` is not currently required.
 
+Function length (design owner rule, 2026-11-14): "Every function that's over
+100 lines of code must be split." Counting convention: a function body over
+100 code lines — lines after the opening brace through the closing brace,
+excluding blank lines and comment-only lines — must be split. Enforced by the
+per-change suite via `scripts/function-length.py`, which scans every Rust
+source in this repository (`target/`, `.git` and `doc/` excluded). The frozen
+POC at `/home/dorian/workspace/hadropoc` is out of scope: it is not part of
+this tree, and epic 003's fixes there must stay minimal.
+
 ### One ticket, in five steps (kickoff section 6)
 
 Every agent works in its own git worktree, never in the shared checkout at
