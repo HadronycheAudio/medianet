@@ -5,11 +5,15 @@
 # vectors from it; tasks 009 to 014 implement the layouts it describes. The
 # checker `hadronyche-tools::wire_tables::check_file` (C-133) verifies it in
 # CI, unprivileged: parse, round-trip, field coverage, declared versus
-# computed maximum size, and the 1 252-byte control bound (C-17, C-116).
+# computed maximum size, the 1 252-byte control bound (C-17, C-116), and —
+# from ticket 004-03 — that every `rejection_reasons` entry is a member of
+# the closed `Reject` enumeration declared below.
 #
 # # Schema, revision 1
 #
-# Top level (all four keys are required, exactly these units):
+# Top level (the four unit keys are required, exactly these units; the
+# optional `reject` array of tables, from ticket 004-03, is the fifth
+# top-level key):
 #
 #   schema       = 1        integer schema revision; this file is revision 1.
 #   offset_unit  = "bits"   every field `offset` is a bit position counted
@@ -18,6 +22,24 @@
 #                           field (see `count`) the width is the width of ONE
 #                           element; the field occupies width * max_count bits.
 #   size_unit    = "bytes"  every `max_size` is a byte count.
+#
+# Per rejection reason, one `[[reject]]` table (ticket 004-03), in value
+# order; together the entries are the closed `Reject` enumeration of
+# wire.md's "Rejection reasons" section:
+#
+#   name    = "..."   the variant name, unique, non-empty, CamelCase as in
+#                     wire.md.
+#   value   = N        the variant's u8 value, unique, 0..=255. The values are
+#                     stable across minor versions; the enumeration is closed
+#                     within a major version, with values 13..=255 reserved
+#                     for a future major version [decision].
+#   meaning = "..."   the one-line meaning, as in wire.md.
+#
+# The array is optional (the 004-02 fixtures predate it); the canonical file
+# declares it. When present it must declare exactly the closed set pinned by
+# the checker, name-for-name and value-for-value — the enumeration is
+# closed, so a file cannot redefine it — and every entry of a message's
+# `rejection_reasons` must name a member.
 #
 # Per message, one `[[message]]` table; `name` is unique and non-empty:
 #
@@ -44,8 +66,9 @@
 #   rejection_reasons = ["...", ...]
 #                           the rejection reasons this message can produce, in
 #                           table order. From ticket 004-03 each entry must be
-#                           a member of the closed `Reject` enumeration; until
-#                           then the membership check is skipped visibly.
+#                           a member of the closed `Reject` enumeration (the
+#                           `[[reject]]` tables above); the checker rejects a
+#                           file whose message names a non-member.
 #
 # Per field, one `[[message.field]]` table inside its message; `name` is
 # unique within the message, and the fields must cover the message from bit 0
@@ -86,15 +109,88 @@
 #                           lists are encoded as a count field plus a maximum
 #                           count and never as an unbounded list.
 #
-# The checker runs the rules in this order: parse; round-trip (re-serialise,
-# re-parse, compare models); field coverage (overlap, then gap); declared
-# versus computed maximum size; and the 1 252-byte control bound for control
-# messages and regime stamp sections, with the C-116 exemption.
+# The checker runs the rules in this order: parse (from ticket 004-03 this
+# includes rejecting any `rejection_reasons` entry that is not a member of
+# the `[[reject]]` enumeration); round-trip (re-serialise, re-parse, compare
+# models); field coverage (overlap, then gap); declared versus computed
+# maximum size; and the 1 252-byte control bound for control messages and
+# regime stamp sections, with the C-116 exemption.
 
 schema = 1
 offset_unit = "bits"
 width_unit = "bits"
 size_unit = "bytes"
+
+# The closed `Reject` enumeration (ticket 004-03): the machine-readable copy
+# of wire.md's "Rejection reasons" section, which is the human-readable
+# authority; the two must agree name-for-name and value-for-value. The
+# enumeration is closed within a major version, and values 13..=255 are
+# reserved for a future major version and stay unused [decision].
+
+[[reject]]
+name = "TooShort"
+value = 0
+meaning = "fewer bytes than the message's fixed minimum: dropped before any field is read"
+
+[[reject]]
+name = "BadMagic"
+value = 1
+meaning = "the leading bytes are not the magic of any message of this major version; the magic is fixed by 004-04"
+
+[[reject]]
+name = "VersionMismatch"
+value = 2
+meaning = "the version field is not the version of this major version: counted like every rejection and also raises a named event (never a silent drop); the version travels in the hello, so the mismatch is found before a connection exists"
+
+[[reject]]
+name = "ForeignDomain"
+value = 3
+meaning = "the domain id is a non-zero domain other than this module's (C-11): dropped and counted"
+
+[[reject]]
+name = "UnconfiguredDomain"
+value = 4
+meaning = "the domain id is 0, the unconfigured domain (C-11): the packet is ignored and counted, not refused, and is never a ForeignDomain (C-173)"
+
+[[reject]]
+name = "UnknownStream"
+value = 5
+meaning = "the stream number names no stream this consumer admits"
+
+[[reject]]
+name = "UnadmittedSource"
+value = 6
+meaning = "the source's module id has no admitted connection at this consumer"
+
+[[reject]]
+name = "BadLength"
+value = 7
+meaning = "a declared length or count disagrees with the message's own size rules: a count above its fixed maximum, or a body that does not fill the fixed size"
+
+[[reject]]
+name = "BadChecksum"
+value = 8
+meaning = "the checksum does not match the recomputed value; the checksum arrives with 004-13"
+
+[[reject]]
+name = "BadPacketIndex"
+value = 9
+meaning = "the packet index lies outside the packet count its slice declares"
+
+[[reject]]
+name = "WrongEpoch"
+value = 10
+meaning = "the timeline epoch is not the consumer's current epoch (C-10): counted under this reason — the per-connection other-epoch counter (C-135, C-159) — and never a miss (C-102)"
+
+[[reject]]
+name = "OversizeControl"
+value = 11
+meaning = "a control message exceeds the 1 252-byte UDP-payload bound (C-17)"
+
+[[reject]]
+name = "ReservedNonZero"
+value = 12
+meaning = "a field this specification fixes at zero carries a non-zero value; the fields and their required zeros are fixed by 004-05"
 
 # The one example message (ticket 004-02 Work step 4): a placeholder with two
 # fields, so the checker has something to verify. Later tickets (004-06 to

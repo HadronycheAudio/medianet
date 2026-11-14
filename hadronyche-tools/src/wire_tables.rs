@@ -6,7 +6,10 @@
 //! field offsets are contiguous and non-overlapping, verifies each declared
 //! maximum size against the size computed from fields and maximum counts, and
 //! verifies the 1 252-byte control bound (C-17), with the explicit path-MTU
-//! probe exemption (C-116).
+//! probe exemption (C-116). From ticket 004-03 it also verifies that every
+//! `rejection_reasons` entry is a member of the closed `Reject` enumeration,
+//! which the file declares in `[[reject]]` tables and which the checker pins
+//! (the enumeration is closed within a major version).
 //!
 //! The file parser is the standard TOML library (the ticket's default), not a
 //! hand-written parser, so it needs no fuzzing under C-95. The checker's own
@@ -64,8 +67,25 @@ pub struct Error {
 /// order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Report {
+    /// One entry per `[[reject]]`, in file order (ticket 004-03): the closed
+    /// `Reject` enumeration as the file declares it. Empty when the file
+    /// declares none, as the 004-02 fixtures do; the membership check always
+    /// runs against the closed set pinned in the checker.
+    pub rejects: Vec<RejectReport>,
     /// One entry per `[[message]]`, in file order.
     pub messages: Vec<MessageReport>,
+}
+
+/// What the checker learned about one `[[reject]]` entry (ticket 004-03): one
+/// variant of the closed `Reject` enumeration, in file order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectReport {
+    /// The variant name (`name`).
+    pub name: String,
+    /// The variant's `u8` value (`value`).
+    pub value: u8,
+    /// The one-line meaning (`meaning`), as in wire.md.
+    pub meaning: String,
 }
 
 /// What the checker learned about one message. The tests use this to prove
@@ -109,6 +129,29 @@ const LAYERS: [&str; 4] = ["control", "sync", "media", "measurement"];
 const FIELD_TYPES: [&str; 14] = [
     "uint", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "f32", "q1.31",
     "pad",
+];
+
+/// The closed `Reject` enumeration (ticket 004-03): one `(name, u8 value)`
+/// pair per variant, in wire.md table order. The enumeration is closed
+/// within a major version — no file may declare a different set — so the
+/// checker pins it here, as it pins the layers and the field types, and
+/// accepts a `[[reject]]` declaration only when it matches exactly,
+/// name-for-name and value-for-value. Values 13..=255 are reserved for a
+/// future major version and never assigned here.
+const REJECT: [(&str, u8); 13] = [
+    ("TooShort", 0),
+    ("BadMagic", 1),
+    ("VersionMismatch", 2),
+    ("ForeignDomain", 3),
+    ("UnconfiguredDomain", 4),
+    ("UnknownStream", 5),
+    ("UnadmittedSource", 6),
+    ("BadLength", 7),
+    ("BadChecksum", 8),
+    ("BadPacketIndex", 9),
+    ("WrongEpoch", 10),
+    ("OversizeControl", 11),
+    ("ReservedNonZero", 12),
 ];
 
 /// Which spelling of the maximum-size key the parser saw. The deprecated
@@ -163,6 +206,15 @@ struct Message {
     fields: Vec<Field>,
 }
 
+/// One `[[reject]]` entry (ticket 004-03): a variant of the closed `Reject`
+/// enumeration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Reject {
+    name: String,
+    value: u8,
+    meaning: String,
+}
+
 /// The whole parsed file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Model {
@@ -170,6 +222,7 @@ struct Model {
     offset_unit: String,
     width_unit: String,
     size_unit: String,
+    rejects: Vec<Reject>,
     messages: Vec<Message>,
 }
 
@@ -259,6 +312,7 @@ fn parse_model(src: &str) -> Result<Model, Error> {
     check_unit(&root, "offset_unit", "bits")?;
     check_unit(&root, "width_unit", "bits")?;
     check_unit(&root, "size_unit", "bytes")?;
+    let rejects = parse_rejects(&root)?;
     let entries = root
         .get("message")
         .ok_or_else(|| parse_error("missing [[message]] array"))?
@@ -277,8 +331,67 @@ fn parse_model(src: &str) -> Result<Model, Error> {
         offset_unit: "bits".to_owned(),
         width_unit: "bits".to_owned(),
         size_unit: "bytes".to_owned(),
+        rejects,
         messages,
     })
+}
+
+/// Parse the optional `[[reject]]` array: the closed `Reject` enumeration
+/// (ticket 004-03). The array is optional — the 004-02 fixtures predate it —
+/// but when present it must declare exactly the closed set pinned in
+/// [`REJECT`], name-for-name and value-for-value, because the enumeration is
+/// closed within a major version and no file may redefine it.
+fn parse_rejects(root: &toml::Table) -> Result<Vec<Reject>, Error> {
+    let entries = match root.get("reject") {
+        None => return Ok(Vec::new()),
+        Some(value) => value
+            .as_array()
+            .ok_or_else(|| parse_error("`reject` must be an array of tables"))?,
+    };
+    let mut rejects = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let context = format!("reject {index}");
+        let table = entry
+            .as_table()
+            .ok_or_else(|| parse_error(format!("{context} is not a table")))?;
+        let name = require_str(table, "name", &context)?;
+        if name.is_empty() {
+            return Err(parse_error(format!("{context}: `name` must be non-empty")));
+        }
+        let raw = require_u64(table, "value", &context)?;
+        let value = u8::try_from(raw).map_err(|_| {
+            parse_error(format!("{context}: `value` = {raw} is outside the u8 range 0..=255"))
+        })?;
+        let meaning = require_str(table, "meaning", &context)?;
+        if meaning.is_empty() {
+            return Err(parse_error(format!("{context}: `meaning` must be non-empty")));
+        }
+        rejects.push(Reject { name, value, meaning });
+    }
+    let mut names: Vec<&str> = rejects.iter().map(|reject| reject.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup_by(|a, b| a == b);
+    if names.len() != rejects.len() {
+        return Err(parse_error("duplicate reject name; names must be unique"));
+    }
+    let mut values: Vec<u8> = rejects.iter().map(|reject| reject.value).collect();
+    values.sort_unstable();
+    values.dedup();
+    if values.len() != rejects.len() {
+        return Err(parse_error("duplicate reject value; u8 values must be unique"));
+    }
+    let mut declared: Vec<(&str, u8)> =
+        rejects.iter().map(|reject| (reject.name.as_str(), reject.value)).collect();
+    declared.sort_unstable();
+    let mut closed: Vec<(&str, u8)> = REJECT.to_vec();
+    closed.sort_unstable();
+    if declared != closed {
+        return Err(parse_error(
+            "the [[reject]] tables must declare exactly the closed Reject enumeration \
+             (ticket 004-03, closed within a major version); this file declares a different set",
+        ));
+    }
+    Ok(rejects)
 }
 
 /// Message names must be unique (the schema's `name` identifies the message).
@@ -357,8 +470,9 @@ fn parse_max_size(table: &toml::Table, name: &str) -> Result<(u64, SizeKey), Err
     }
 }
 
-/// Parse the per-message rejection-reason list: an array of non-empty strings.
-/// Membership in the closed `Reject` enumeration is checked from 004-03.
+/// Parse the per-message rejection-reason list: an array of non-empty
+/// strings, each a member of the closed `Reject` enumeration (checked from
+/// ticket 004-03).
 fn parse_rejection_reasons(table: &toml::Table, name: &str) -> Result<Vec<String>, Error> {
     let value = table
         .get("rejection_reasons")
@@ -372,6 +486,11 @@ fn parse_rejection_reasons(table: &toml::Table, name: &str) -> Result<Vec<String
         if reason.is_empty() {
             return Err(parse_error(format!(
                 "message {name}: an empty rejection reason would be skipped silently (C-125)"
+            )));
+        }
+        if !REJECT.iter().any(|(variant, _)| *variant == reason) {
+            return Err(parse_error(format!(
+                "message {name}: rejection reason \"{reason}\" is not a member of the closed Reject enumeration (ticket 004-03, wire.md's Rejection reasons section)"
             )));
         }
         reasons.push(reason.to_owned());
@@ -482,6 +601,12 @@ fn write_canonical(model: &Model) -> String {
     write_quoted(&mut out, "offset_unit", &model.offset_unit);
     write_quoted(&mut out, "width_unit", &model.width_unit);
     write_quoted(&mut out, "size_unit", &model.size_unit);
+    for reject in &model.rejects {
+        out.push_str("\n[[reject]]\n");
+        write_quoted(&mut out, "name", &reject.name);
+        let _ = writeln!(out, "value = {}", reject.value);
+        write_quoted(&mut out, "meaning", &reject.meaning);
+    }
     for message in &model.messages {
         out.push_str("\n[[message]]\n");
         write_quoted(&mut out, "name", &message.name);
@@ -626,6 +751,15 @@ fn check_control_bound(model: &Model) -> Result<(), Error> {
 
 /// Build the public report from the parsed model, in file order.
 fn build_report(model: &Model) -> Report {
+    let rejects = model
+        .rejects
+        .iter()
+        .map(|reject| RejectReport {
+            name: reject.name.clone(),
+            value: reject.value,
+            meaning: reject.meaning.clone(),
+        })
+        .collect();
     let messages = model
         .messages
         .iter()
@@ -639,14 +773,17 @@ fn build_report(model: &Model) -> Report {
             rejection_reasons: message.rejection_reasons.clone(),
         })
         .collect();
-    Report { messages }
+    Report { rejects, messages }
 }
 
 /// Parse, round-trip and check one machine-readable tables file.
 ///
-/// The checks run in this order: parse, round-trip (re-serialise the model,
-/// re-parse, compare), per-message field coverage (overlap, then gap), the
-/// declared-versus-computed maximum size, and the 1 252-byte control bound.
+/// The checks run in this order: parse (from ticket 004-03 this includes
+/// rejecting any `rejection_reasons` entry that is not a member of the closed
+/// `Reject` enumeration, and any `[[reject]]` declaration that differs from
+/// it), round-trip (re-serialise the model, re-parse, compare), per-message
+/// field coverage (overlap, then gap), the declared-versus-computed maximum
+/// size, and the 1 252-byte control bound.
 ///
 /// # Errors
 ///
