@@ -1,38 +1,35 @@
 # Model map
 
-Kickoff section 5 names the models. What exists in this environment differs in
-two places; substitutions are recorded here and are otherwise faithful to the
-split.
+Amended by the design owner, 2026-11-14: "Reconfigure the swarm so the
+coding, testing and review agents use GLM 5.3 flash to save tokens."
 
-| Tier | Model | Provider id | Used for | Notes |
-|---|---|---|---|---|
-| Strong | `glm-5.3` | `melious/glm-5.3` | Team leads, every reviewer, coders on hard tickets, constants steward, integrator, escalations | as specified |
-| Fast | `glm-5.3-flash` | `melious/glm-5.3-flash` | Coders on routine tickets | as specified |
-| Fast | `deepseek-v4.1-flash-1017` | `melious/deepseek-v4.1-flash-1017` | Testers | as specified |
-| Fast | `deepseek-v4.1-flash` | `opencode/deepseek-v4.1-flash-free` | Second opinions, re-tests after a dispute, spare tester or coder capacity | **substituted**: `melious` exposes no plain `deepseek-v4.1-flash`; the free endpoint of the same model is used |
-| Fast | `deepseek-v4-flash-0731` | `opencode/glm-5.3-flash-free` | Mechanical work: index and report updates, renames, formatting, fixture generation | **substituted**: no v4-flash-0731 endpoint exists here; mechanical work is the risk-free role for a substitution |
+| Tier | Model | Provider id | Used for |
+|---|---|---|---|
+| Fast | `glm-5.3-flash` | `melious/glm-5.3-flash` | **Every tester, every coder (routine AND hard tickets), every reviewer** |
+| Strong | `glm-5.3` | `melious/glm-5.3` | Team leads, escalations (a ticket that fails two reviews escalates its coder to glm-5.3), the constants steward, the integrator |
 
-Invariants kept: tester and coder on one ticket are always one deepseek and
-one glm; every reviewer and every team lead is `glm-5.3`.
+Consequences, recorded honestly:
+- The kickoff's tester/coder family-separation invariant (one deepseek, one
+  glm per ticket) is **suspended by this directive** — every worker is one
+  model, so a shared misreading of a ticket is no longer caught by family
+  diversity. The first-pass failure rates below are the remaining signal.
+- The kickoff's hard-ticket rule (servo, seqlock, unsafe, state machines,
+  spec-writing → glm-5.3) is **suspended** for the coding role; those tickets
+  now go to glm-5.3-flash. Escalation after two failed reviews still reaches
+  glm-5.3.
+- The deepseek endpoints are no longer used.
 
 ## First-pass review failure rates
 
-Per team and model, updated by the orchestrator as reviews complete. A model
-is moved out of a role where it fails clearly more often than another would.
+Per team and role (all glm-5.3-flash since 2026-11-14; historical rates from
+the previous map kept for comparison — tester was deepseek-v4.1-flash-1017,
+hard coders and reviewers were glm-5.3):
 
-| Team | Tester (`deepseek-v4.1-flash-1017`) | Coder (`glm-5.3-flash`) | Coder (`glm-5.3`) | Reviewer (`glm-5.3`) |
-|---|---|---|---|---|
-| Baseline | 0/0 | 2/3 | 0/0 | — |
-| Specification | 0/0 | 1/1 | 3/4 | — |
-| Clocking | 0/0 | 0/0 | 0/0 | — |
-| Datagramming | 0/0 | 0/0 | 0/0 | — |
-| Control plane | 0/0 | 0/0 | 0/0 | — |
-| Measurement | 0/0 | 0/0 | 0/0 | — |
-| Networking and real time | 0/0 | 0/0 | 0/0 | — |
-| Audio edges | 0/0 | 0/0 | 0/0 | — |
-| DSL | 0/0 | 0/0 | 0/0 | — |
-| Verification | 0/0 | 0/0 | 0/0 | — |
-| Embedded | 0/0 | 0/0 | 0/0 | — |
-| Tools | 0/0 | 0/0 | 0/0 | — |
+| Team | Tester | Coder | Reviewer |
+|---|---|---|---|
+| Baseline | 0/7 | 2/4 (flash) 0/0 (glm) | — (glm-5.3 era) |
+| Specification | 0/0 | 1/2 (flash) 2/3 (glm) | — (glm-5.3 era) |
 
-(cells: first-pass review failures / reviews completed)
+(rates as first-pass failures / reviews completed; the glm-5.3-era reviewer
+caught real defects — falsified bounds, false [code] claims, citation
+discipline — the quality bar to watch under the new map)
