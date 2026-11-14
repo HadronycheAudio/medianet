@@ -102,3 +102,11 @@ still prints OK on the unchanged design set.
   independent of 003-01): the frozen-tree fingerprint covers src/, tools/,
   experiments/, Cargo.toml, Cargo.lock, README.md; excludes target/, .git/,
   .gitignore.
+
+## Standing conditions from the design owner (continued)
+
+- 2026-11-14: "I see nothing pushed on github. Agents should push there
+  when they are finished with a ticket. Always push what's merged in main
+  when finished." — Rule 4 amended accordingly: the integrator pushes
+  `main` to origin after every merge. First push done: 47ef750..919bbcb
+  (50 commits, 6 tickets merged + swarm state).

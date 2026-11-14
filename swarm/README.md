@@ -125,3 +125,10 @@ or verifies against the frozen tree (a run mid-write sees mixed code, and a
 concurrent verifier's clean-tree check fails spuriously). Reads are always
 fine. The orchestrator sequences POC-writing tickets against POC-running
 verifications.
+
+### Remote (amended by the design owner, 2026-11-14)
+
+Kickoff rule 4 ("nothing leaves the machine") is amended: the integrator
+pushes `main` to `origin` (github.com:HadronycheAudio/medianet) immediately
+after every merge and after swarm-state commits that follow it. In-flight
+ticket branches are not pushed. Agents never push; the integrator does.
