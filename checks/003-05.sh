@@ -81,8 +81,11 @@
 #
 # L1   Working-notes discipline (same lead decision as 003-02): the notes are
 #      marked as WORKING NOTES and pair BASELINE.md with a pending marker;
-#      when the default notes path is used the file must be tracked by git.
-#      (Tracking is skipped for a NOTES override.)
+#      when the default notes path is used the file must EXIST at that path.
+#      The notes live at swarm/notes/003-05.md on this machine's disk; the
+#      swarm directory is untracked by the design owner's directive
+#      (2026-11-14), so tracked-ness is no longer required — existence and
+#      content are.  (The existence check is skipped for a NOTES override.)
 #
 # AC4-POC  The POC working tree is clean after the runs: `git status
 #      --porcelain` in the POC is empty (ignored paths such as target/ are not
@@ -638,7 +641,7 @@ if [ "$notes_present" -eq 1 ]; then
   fi
 
   # ------------------------------------------------------------------ L 1
-  echo "-- L1 committed working notes, pending BASELINE.md"
+  echo "-- L1 working notes on disk at the default path, pending BASELINE.md"
   if grep -Eqi 'working[ -]notes' "$NOTES"; then
     pass "L1 notes are marked as WORKING NOTES"
   else
@@ -650,13 +653,15 @@ if [ "$notes_present" -eq 1 ]; then
     bad "L1 notes do not mark the figures as pending BASELINE.md (003-08 writes it in the POC repository)"
   fi
   if [ "$NOTES" = "swarm/notes/003-05.md" ]; then
-    if git ls-files --error-unmatch -- "$NOTES" >/dev/null 2>&1; then
-      pass "L1 notes are committed (tracked by git)"
+    # swarm/ is untracked by the design owner's directive (2026-11-14): the
+    # notes are required on this machine's disk, not in the git tree.
+    if [ -f "$NOTES" ]; then
+      pass "L1 notes exist at the default path swarm/notes/003-05.md on this machine's disk (tracked-ness not required: swarm/ is untracked per the design owner's 2026-11-14 directive)"
     else
-      bad "L1 notes exist but are not committed (git does not track them)"
+      bad "L1 notes file does not exist at the default path swarm/notes/003-05.md"
     fi
   else
-    note "L1 tracking check skipped (NOTES override: $NOTES)"
+    note "L1 default-path existence check skipped (NOTES override: $NOTES)"
   fi
 
 fi
