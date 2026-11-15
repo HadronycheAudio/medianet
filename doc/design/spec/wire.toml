@@ -283,6 +283,43 @@ major = 1
 minor = 0
 version = 0x0100
 
+# The media packet size budget (ticket 004-14): the machine-readable copy of
+# the totals of wire.md's "Size budget" section, which is the authority and
+# shows the arithmetic. Integers in bytes. The checker does not model this
+# table; checks/004-14.sh requires every integer here to be a bound, a part
+# size, a total or a spare of the wire.md tables, and recomputes each part
+# from the [[message]] field tables below. Part sizes: packet header 16,
+# slice header 22, announcement container 1 (count byte) to 49 (4 x 12 + 1),
+# measurement extension 9, content-message header 3, checksum 4, audio
+# 6 x 48 x 4 = 1152 (C-04). Totals include the audio; spares are the bound
+# less the total. "fallback" is the C-06 path, 1252 bytes of UDP payload;
+# the other cases are the 1472-byte path of C-100.
+[budget]
+payload_bound = 1472
+fallback_payload_bound = 1252
+packet_header = 16
+slice_header = 22
+announcement_count = 1
+announcement_container_max = 49
+measurement_extension = 9
+content_message_header = 3
+checksum = 4
+audio = 1152
+mandatory_beside_audio = 46
+maximum_beside_audio = 103
+default_total = 1198
+default_spare = 274
+worst_total = 1255
+worst_spare = 217
+worst_no_extension_total = 1246
+worst_no_extension_spare = 226
+fallback_mandatory_total = 1198
+fallback_mandatory_spare = 54
+fallback_four_announcements_total = 1246
+fallback_four_announcements_spare = 6
+fallback_three_announcements_extension_total = 1243
+fallback_three_announcements_extension_spare = 9
+
 # The one example message (ticket 004-02 Work step 4): a placeholder with two
 # fields, so the checker has something to verify. Later tickets (004-06 to
 # 004-20) replace this placeholder with the real field tables, one [[message]]
