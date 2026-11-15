@@ -53,8 +53,13 @@
 #   word (pac, deadline or timeout) and [measured]: the run confirmation of
 #   the mechanism. The subsection says "poc-untouched" for the numbering.
 # * (AC 5, P-02 replacement.) A line carrying "P-02", "replac" and [measured]
-#   that also carries a figure within 1 of the 50 Hz mean and a figure within
-#   1 of the 1000 Hz mean (both means as written in the rate lines).
+#   declares its replacement pair "x / y" (the first pair inside bold, else
+#   the first pair on the line; x = 50 Hz, y = 1000 Hz). The pair is labelled
+#   corrected or naive by the nearest such word in its sentence. Each figure
+#   must equal the stated mean of the SAME kind for its rate (a "mean" that
+#   follows the rate token, labelled by the nearest corrected/naive word in
+#   its sentence) within 0.05, i.e. the one-decimal rounding of that mean.
+#   A naive figure elsewhere on the line cannot satisfy a corrected pair.
 # * (Method and source.) A paragraph naming the scratch copy (scratch or
 #   poc-scratch), the method (distinct, separate, each module, per module, or
 #   own metrics path/process) and metrics, carrying a tag. The subsection
@@ -477,32 +482,131 @@ fi
 # AC 5 — P-02 replacement: a tagged line with the clean 50 and 1000 Hz figures
 # ---------------------------------------------------------------------------
 
-p02_line=""
-if [ -n "$M50" ] && [ -n "$M1000" ]; then
-  p02_line=$(awk -v a="$SUB_FIRST" -v b="$SUB_LAST" -v m50="$M50" -v m1k="$M1000" '
-    function absv(x) { return x < 0 ? -x : x }
-    NR < a { next }
-    NR > b { exit }
-    /^[[:space:]]*```/ { f = !f; next }
-    f { next }
-    {
-      low = tolower($0)
-      if (low !~ /p-02/ || low !~ /replac/ || index($0, "[measured]") == 0) next
-      line = $0; h50 = 0; h1k = 0
-      while (match(line, /[0-9]+([.,][0-9]+)?/)) {
-        v = substr(line, RSTART, RLENGTH); gsub(/,/, ".", v); v = v + 0
-        if (absv(v - m50) <= 1) h50 = 1
-        if (absv(v - m1k) <= 1) h1k = 1
-        line = substr(line, RSTART + RLENGTH)
-      }
-      if (h50 && h1k) { print NR; exit }
+# The stated means, by kind: every "mean" that follows a rate token (50 or
+# 1000) within its sentence, labelled corrected or naive by the nearest kind
+# word in that sentence. Prints "rate kind mean" lines.
+STATED=$(awk -v a="$SUB_FIRST" -v b="$SUB_LAST" '
+  function mindist(str, word, pos,   best, cur, rest, k, occ, d) {
+    best = 1e9; cur = 0; rest = str
+    while ((k = index(rest, word)) > 0) {
+      occ = cur + k
+      d = occ - pos; if (d < 0) d = -d
+      if (d < best) best = d
+      cur = occ + length(word) - 1
+      rest = substr(str, cur + 1)
     }
-  ' "$REPORT")
-fi
+    return best
+  }
+  NR < a { next }
+  NR > b { exit }
+  /^[[:space:]]*```/ { f = !f; next }
+  f { next }
+  {
+    line = tolower($0)
+    gsub(/i\.e\. /, "ie ", line); gsub(/e\.g\. /, "eg ", line)
+    n = split(line, sents, /\. /)
+    for (i = 1; i <= n; i++) {
+      s = sents[i]
+      split("50 1000", rates, " ")
+      for (r = 1; r <= 2; r++) {
+        R = rates[r]; cur = 0; rest = s
+        while (match(rest, "(^|[^0-9.,])" R "([^0-9.,%]|$)")) {
+          tokend = cur + RSTART + RLENGTH - 1
+          cur = tokend
+          rest = substr(s, cur + 1)
+          tail = substr(s, tokend + 1)
+          m = index(tail, "mean")
+          if (m == 0 || m > 40) continue
+          after = substr(tail, m + 4)
+          if (!match(after, /[0-9]+(\.[0-9]+)?/) || RSTART > 6) continue
+          numpos = tokend + m + 4 + RSTART - 1
+          num = substr(after, RSTART, RLENGTH)
+          dc = mindist(s, "corrected", numpos)
+          dn = mindist(s, "naive", numpos)
+          if (dc == 1e9 && dn == 1e9) continue
+          kind = (dc < dn) ? "corrected" : "naive"
+          print R, kind, num
+        }
+      }
+    }
+  }
+' "$REPORT")
+
+# The P-02 replacement line: the first tagged P-02 line that carries a pair
+# "x / y" (bold pairs preferred).
+p02_line=$(awk -v a="$SUB_FIRST" -v b="$SUB_LAST" '
+  NR < a { next }
+  NR > b { exit }
+  /^[[:space:]]*```/ { f = !f; next }
+  f { next }
+  {
+    low = tolower($0)
+    if (low ~ /p-02/ && low ~ /replac/ && index($0, "[measured]") > 0 && $0 ~ /[0-9] ?\/ ?[0-9]/) { print NR; exit }
+  }
+' "$REPORT")
+
+# The declared pair of that line, as "a b kind": the first pair inside bold
+# (else the first pair), kind = the nearest corrected/naive word on the line.
+DECL=""
 if [ -n "$p02_line" ]; then
-  ok "AC 5: a tagged P-02 replacement line carries the clean 50 Hz and 1000 Hz figures (line $p02_line)"
+  DECL=$(line_range "$REPORT" "$p02_line" "$p02_line" | awk '
+    function mindist(str, word, pos,   best, cur, rest, k, occ, d) {
+      best = 1e9; cur = 0; rest = str
+      while ((k = index(rest, word)) > 0) {
+        occ = cur + k
+        d = occ - pos; if (d < 0) d = -d
+        if (d < best) best = d
+        cur = occ + length(word) - 1
+        rest = substr(str, cur + 1)
+      }
+      return best
+    }
+    {
+      s = $0; low = tolower(s); cur = 0; rest = s
+      bp = ""; bpos = 0; fp = ""; fpos = 0
+      while (match(rest, /[0-9]+(\.[0-9]+)?[ ]?\/[ ]?[0-9]+(\.[0-9]+)?/)) {
+        p = substr(rest, RSTART, RLENGTH); pos = cur + RSTART
+        before = substr(s, 1, pos - 1)
+        nb = gsub(/\*\*/, "", before)
+        if (nb % 2 == 1 && bp == "") { bp = p; bpos = pos }
+        if (fp == "") { fp = p; fpos = pos }
+        cur = cur + RSTART + RLENGTH - 1
+        rest = substr(s, cur + 1)
+      }
+      chosen = (bp != "") ? bp : fp
+      cpos = (bp != "") ? bpos : fpos
+      if (chosen == "") exit
+      split(chosen, parts, "/")
+      x = parts[1]; y = parts[2]
+      gsub(/ /, "", x); gsub(/ /, "", y)
+      dc = mindist(low, "corrected", cpos)
+      dn = mindist(low, "naive", cpos)
+      kind = (dc == 1e9 && dn == 1e9) ? "?" : ((dc < dn) ? "corrected" : "naive")
+      print x, y, kind
+    }')
+fi
+
+if [ -z "$p02_line" ]; then
+  bad "AC 5: no tagged 'P-02 replacement' line carrying the replacement figures (002-13 copies it)"
+elif [ -z "$DECL" ]; then
+  bad "AC 5: the P-02 replacement line (line $p02_line) carries no figure pair 'x / y' for 50 and 1000 Hz"
 else
-  bad "AC 5: no tagged 'P-02 replacement' line carrying the clean 50 Hz and 1000 Hz figures in a form that replaces P-02 (002-13 copies it)"
+  set -- $DECL
+  d50=$1; d1k=$2; dkind=$3
+  if [ "$dkind" = "?" ]; then
+    bad "AC 5: the P-02 replacement pair ($d50 / $d1k, line $p02_line) is not labelled corrected or naive in its sentence"
+  else
+    s50=$(printf '%s\n' "$STATED" | awk -v k="$dkind" '$1 == "50" && $2 == k { print $3; exit }')
+    s1k=$(printf '%s\n' "$STATED" | awk -v k="$dkind" '$1 == "1000" && $2 == k { print $3; exit }')
+    if [ -z "$s50" ] || [ -z "$s1k" ]; then
+      bad "AC 5: the subsection states no $dkind mean for both rates, so the P-02 pair labelled $dkind cannot be bound to them"
+    elif awk -v x="$d50" -v m="$s50" 'BEGIN { d = x - m; if (d < 0) d = -d; exit !(d <= 0.05 + 1e-9) }' \
+         && awk -v x="$d1k" -v m="$s1k" 'BEGIN { d = x - m; if (d < 0) d = -d; exit !(d <= 0.05 + 1e-9) }'; then
+      ok "AC 5: the P-02 replacement pair $d50 / $d1k (line $p02_line, $dkind) is the stated $dkind means $s50 / $s1k, rounded to one decimal"
+    else
+      bad "AC 5: the P-02 replacement pair $d50 / $d1k (line $p02_line) is labelled $dkind, but the stated $dkind means are $s50 / $s1k (tolerance ±0.05)"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
