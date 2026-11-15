@@ -327,17 +327,18 @@ valid = "0 to 16777215"
 # the [[message]] "announcement" below, a section of this message. 004-10
 # (measurement extension) and 004-13 (checksum, which adds BadChecksum)
 # extend this message further and grow its declared max_size. The 9-byte
-# measurement extension (ticket 004-10) follows the container; max_size is
-# header + slice header + container + extension = 38 + 1 + 4 x 12 + 9 = 96
-# bytes [decision].
+# measurement extension (ticket 004-10) follows the container, and the 4-byte
+# slice checksum (ticket 004-13) follows the extension; max_size is header +
+# slice header + container + extension + checksum = 38 + 1 + 4 x 12 + 9 + 4
+# = 100 bytes, the C-137 cap [decision].
 # ---------------------------------------------------------------------------
 
 [[message]]
 name = "media packet"
 layer = "media"
 dscp = 46
-max_size = 96
-rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource", "WrongEpoch", "BadLength", "BadPacketIndex", "ReservedNonZero"]
+max_size = 100
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource", "WrongEpoch", "BadLength", "BadPacketIndex", "BadChecksum", "ReservedNonZero"]
 
 [[message.field]]
 name = "magic"
@@ -514,6 +515,24 @@ width = 32
 type = "u32"
 meaning = "accumulated declared delay: the sum of the forwarding processors' structural latency L, whole samples at the domain rate 96 000 Hz (C-01, C-105); saturates at 4 294 967 295, never wraps (004-10)"
 valid = "any 32-bit value; 4 294 967 295 is the saturated value"
+
+# Slice checksum (ticket 004-13): wire.md's "Checksum" field table is the
+# human-readable authority. On the wire the checksum starts where the
+# measurement extension ends, or the container when the measurement bit is
+# clear, at byte 39 + 12 x count + 9 x m (m = 1 when bit 4 is set), and only
+# the last packet of a slice (packet index = packet count - 1) carries it; it
+# is declared here at the maximum-occupancy offset, bit 768 (byte 96), the
+# model the extension uses, so the computed max_size covers it [decision].
+# Algorithm CRC-32C: width 32, poly 0x1EDC6F41, init 0xFFFFFFFF, refin and
+# refout true, xorout 0xFFFFFFFF, check 0xE3069283.
+
+[[message.field]]
+name = "checksum"
+offset = 768
+width = 32
+type = "u32"
+meaning = "slice checksum: CRC-32C of the slice's covered bytes (packet header bytes 0 to 13, the flags byte AND 0xC0, slice header bytes 16 to 25, and the content of every packet in packet-index order), stored little-endian; carried in the last packet of the slice only (004-13)"
+valid = "any 32-bit value; a value that differs from the recomputed CRC is BadChecksum"
 
 # The announcement entry (ticket 004-09): one entry of the media packet's
 # announcement container, declared as a section of the media packet message;
