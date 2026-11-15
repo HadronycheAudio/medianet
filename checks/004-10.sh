@@ -44,14 +44,22 @@
 #   AC 5  wire.toml carries the extension's three fields, agreeing with
 #         wire.md field by field (width, type, offset relative to the
 #         extension's first byte). Either form is accepted: the fields in the
-#         media packet [[message]] at or after the container's maximum end
-#         (bit 696 = byte 87 = 38 + 1 + 4 x 12), or a [[message]] whose name
-#         contains "measurement", with section_of = "media packet" and offsets
-#         from 0. The media packet max_size equals the container's maximum
-#         end plus the extension's bytes. The carrying message's
-#         rejection_reasons are enumeration members and include BadLength and
-#         ReservedNonZero. `cargo run --bin wire-check` passes and
-#         `cargo test -p hadronyche-tools --test wire_tables` stays 12/0/0.
+#         media packet [[message]] inside the extension window, [container
+#         end, container end + extension bits), where the container's maximum
+#         end is bit 696 = byte 87 = 38 + 1 + 4 x 12 and the extension bits are
+#         the sum of its widths in wire.md; fields after the window (004-13's
+#         checksum, a later ticket's fields) are not extension fields and are
+#         ignored. Or a [[message]] whose name contains "measurement", with
+#         section_of = "media packet" and offsets from 0; its own max_size
+#         equals the extension's bytes. The media packet max_size is an
+#         invariant, not a snapshot: it is >= the container's maximum end plus
+#         the extension's bytes (the extension fits) and <= 100, the C-137
+#         header cap that later tickets fill (004-13 adds the checksum); in the
+#         section form the media packet max_size gets the same bounds. The
+#         carrying message's rejection_reasons are enumeration members and
+#         include BadLength and ReservedNonZero. `cargo run --bin wire-check`
+#         passes and `cargo test -p hadronyche-tools --test wire_tables` stays
+#         12/0/0.
 #
 # DoD also: every block of the new section carries an evidence tag ([code],
 # [measured], [kernel-doc], [standard], [memory], [decision]); the design
@@ -1155,8 +1163,8 @@ else:
 if ac5_ok:
     print(
         f"PASS AC5: wire.toml carries the extension's three fields ({form} form), "
-        "agreeing with wire.md on offset, width and type; max_size grows by the "
-        "extension's bytes; reasons are enumeration members"
+        "agreeing with wire.md on offset, width and type; media max_size >= container "
+        "end + extension bytes and <= 100 (C-137 cap); reasons are enumeration members"
     )
 
 # ---------------------------------------------------------------------------
