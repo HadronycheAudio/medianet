@@ -35,6 +35,10 @@
 #      HEAD; every commit after poc-untouched has a first line matching
 #      003-NN; every commit in BASE..HEAD references 003-NN; at least one commit
 #      in BASE..HEAD references 003-06 (red: none, so this FAILS now).
+#      "References 003-NN" is a token rule applied to the first line: the id
+#      003-NN as a whole token, either as the legacy prefix `003-NN: ...` or as
+#      a Conventional Commits scope `type(003-NN): ...`.  Same rule as 003-01
+#      and 003-03/003-04 (`[^0-9A-Za-z]003-NN([^0-9]|$)`).
 #
 # AC1  Inert case (system AC-9, epic 003-AC4): `loopback --duration 1 --no-tui`
 #      with the untouched smoke flags.  At 1 s music and transport have 0
@@ -146,7 +150,7 @@ fi
 # Commits of this ticket: first line references 003-06.
 ticket_commits() {
   gitpoc log --reverse --format='%H%x09%s' "$BASE..HEAD" 2>/dev/null \
-    | awk -F'\t' '$2 ~ /^003-06[: ]/ { print $1 }'
+    | awk -F'\t' '$2 ~ /(^|[^0-9A-Za-z])003-06($|[^0-9])/ { print $1 }'
 }
 
 # -------------------------------------------------------------------- AC 0
@@ -161,14 +165,14 @@ if gitpoc merge-base --is-ancestor "$UNTOUCHED" HEAD 2>/dev/null; then
 else
   bad "AC0 $UNTOUCHED is not an ancestor of HEAD"
 fi
-bad_ids="$(gitpoc log --format='%h %s' "$UNTOUCHED..HEAD" 2>/dev/null | grep -Ev '^[0-9a-f]+ 003-[0-9][0-9]([: ]|$)' || true)"
+bad_ids="$(gitpoc log --format='%h %s' "$UNTOUCHED..HEAD" 2>/dev/null | grep -Ev '[^0-9A-Za-z]003-[0-9][0-9]([^0-9]|$)' || true)"
 if [ -n "$bad_ids" ]; then
   bad "AC0 commits after $UNTOUCHED without a 003-XX id in the first line:"
   printf '%s\n' "$bad_ids" | head -n 5 | while IFS= read -r l; do note "$l"; done
 else
   pass "AC0 every commit after $UNTOUCHED references a 003-XX ticket"
 fi
-bad_base="$(gitpoc log --format='%h %s' "$BASE..HEAD" 2>/dev/null | grep -Ev '^[0-9a-f]+ 003-[0-9][0-9]([: ]|$)' || true)"
+bad_base="$(gitpoc log --format='%h %s' "$BASE..HEAD" 2>/dev/null | grep -Ev '[^0-9A-Za-z]003-[0-9][0-9]([^0-9]|$)' || true)"
 if [ -n "$bad_base" ]; then
   bad "AC0 commits after $BASE without a 003-XX id in the first line:"
   printf '%s\n' "$bad_base" | head -n 5 | while IFS= read -r l; do note "$l"; done
@@ -202,7 +206,7 @@ fi
 # Wait while another POC loopback run is active (suite overlap), bounded.
 wait_for_poc() {
   local waited=0
-  while pgrep -f 'hadropoc loopback' >/dev/null 2>&1; do
+  while pgrep -x hadropoc >/dev/null 2>&1; do
     if [ "$waited" -ge 300 ]; then
       note "NOTE: another hadropoc loopback run is still active after 300 s; running concurrently (isolated group, not timing-sensitive)"
       return
