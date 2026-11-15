@@ -15,7 +15,7 @@ Facts about the POC that bear on the choice:
 - The fabric's core is one 1 756-line file doing five jobs: builder framework, gossip, elections, metrics and telemetry, command-line helpers `[code]`.
 - There are two tests in the whole codebase, both in the transport code `[code]`.
 - The directory is not under version control `[measured]`.
-- Its first measured run exposed instrument bugs: a corrupt metrics file (four writers on one path), an implausible loss counter, two check families reporting zero samples on a green run, and a sync rate of 37 per second at a configured 50 (P-02) `[measured]`.
+- Its first measured run exposed instrument bugs: a corrupt metrics file (four writers on one path), an implausible loss counter, two check families reporting zero samples on a green run, and a sync rate of 37 per second at a configured 50 `[measured]` (read from that corrupt metrics file; superseded by the clean figure 36.1, P-02, REPORT-0b section (e)).
 - Its tuning encodes hardware experiments that are expensive to repeat.
 
 ## Decision

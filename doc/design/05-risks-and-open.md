@@ -80,7 +80,7 @@ Reviewers: this is what was consciously excluded. Reintroducing any of it needs 
 | Text gossip | Unbounded parsing on devices | Binary control format with a size bound |
 | Header fields overloaded by direction; per-receiver acknowledgements in forward packets; measurements in the stream header | Unreadable, blocks multicast later | Measurement extension and measurement path |
 | Servo phase-step corrections | Discontinuous published time | Frequency-only correction |
-| Timeout-paced sync requests | Measured 37/s and 77/s for 50 and 1 000 configured | Deadline pacing |
+| Timeout-paced sync requests | Measured 36.1/s and 71.4/s for 50 and 1 000 configured (P-02) | Deadline pacing |
 | Holdover that never expires; lock without a numeric bound | Stale time reported as usable | Growing bound, numeric lock |
 | Mutex shared between clock thread and housekeeping | Priority inversion | L-8 |
 | Rate step at handover | Edge resamplers see a frequency jump | Frequency-continuous handover |

@@ -1,0 +1,91 @@
+# 002-13 evidence: the 002-10 falsifier for the run-1 degradation (N = 10 baseline/flooded pairs, one-sided sign test), run 2026-11-15.
+# Binary: git archive of the poc-untouched tag into /tmp/opencode/002-13-scratch, then 002-07-scratch.diff and 002-10-scratch.diff applied (logging only;
+#   the 002-10 configuration: poc-scratch 2f29eba = pristine + hoplog, plus ticklog), cargo build --release. poc-scratch and the frozen tree were not used.
+# Every run: hadropoc loopback --duration 30 --csv <run>.csv --no-tui --group 239.72.68.44:<group port> --port <48000 + 100*(group port - 47400)>, unprivileged.
+# Flooded runs: flood-send (probes/flood-send, built from this branch) --target 127.0.0.1:<port+31> --rate 20000 --duration 28 --session <sender id> --ack-seq <sender id>,
+#   started 1.5 s after the ticklog's 'ticklog module=sender id=<n>' line, as in 002-10. Order: baseline first in odd pairs, flooded first in even pairs.
+# Coordination: /tmp/opencode/measuring.lock held for the runs; a monitor polled every 0.5 s for foreign per-change-suite/hadropoc processes during each pair.
+# Discarded: the first attempt's pair01-baseline (group port 47401) — a per-change suite started 2 s into it; the pair was repeated on fresh ports. No other run discarded.
+# All 20 accepted runs exit 0; all 10 floods: 560001 datagrams in 28.000 s, 20000 per second, 0 send errors.
+
+== run -> group port (from the run metadata) ==
+22:55:01 pair01-baseline: group 239.72.68.44:47402 port 48200
+22:55:31 pair01-flooded: group 239.72.68.44:47403 port 48300 flood target 127.0.0.1:48331
+22:56:31 pair02-baseline: group 239.72.68.44:47405 port 48500
+22:56:01 pair02-flooded: group 239.72.68.44:47404 port 48400 flood target 127.0.0.1:48431
+22:57:02 pair03-baseline: group 239.72.68.44:47406 port 48600
+22:57:32 pair03-flooded: group 239.72.68.44:47407 port 48700 flood target 127.0.0.1:48731
+22:58:33 pair04-baseline: group 239.72.68.44:47409 port 48900
+22:58:02 pair04-flooded: group 239.72.68.44:47408 port 48800 flood target 127.0.0.1:48831
+22:59:03 pair05-baseline: group 239.72.68.44:47410 port 49000
+22:59:33 pair05-flooded: group 239.72.68.44:47411 port 49100 flood target 127.0.0.1:49131
+23:00:33 pair06-baseline: group 239.72.68.44:47413 port 49300
+23:00:03 pair06-flooded: group 239.72.68.44:47412 port 49200 flood target 127.0.0.1:49231
+23:01:04 pair07-baseline: group 239.72.68.44:47414 port 49400
+23:01:34 pair07-flooded: group 239.72.68.44:47415 port 49500 flood target 127.0.0.1:49531
+23:02:34 pair08-baseline: group 239.72.68.44:47417 port 49700
+23:02:04 pair08-flooded: group 239.72.68.44:47416 port 49600 flood target 127.0.0.1:49631
+23:03:04 pair09-baseline: group 239.72.68.44:47418 port 49800
+23:03:34 pair09-flooded: group 239.72.68.44:47419 port 49900 flood target 127.0.0.1:49931
+23:04:35 pair10-baseline: group 239.72.68.44:47421 port 50100
+23:04:05 pair10-flooded: group 239.72.68.44:47420 port 50000 flood target 127.0.0.1:50031
+
+== python3 002-13-sign-test-analyze.py /tmp/opencode/002-13 10 ==
+pair order        baseline_high flooded_high diff class           b_win f_win b_tick_n f_tick_n b_maxlate_us f_maxlate_us exit_b exit_f
+1    baseline-first             0            0    0 tie                30    30    59961    59961       3820.5       3641.6 poc exit=0 | poc exit=0
+2    flooded-first              0            0    0 tie                30    30    59961    59961       3838.7       2279.1 poc exit=0 | poc exit=0
+3    baseline-first             0            0    0 tie                30    30    59961    59961        480.7       3965.2 poc exit=0 | poc exit=0
+4    flooded-first              0            0    0 tie                30    30    59961    59961       1924.5       2872.5 poc exit=0 | poc exit=0
+5    baseline-first             0            0    0 tie                30    30    59961    59961       3632.7       3664.3 poc exit=0 | poc exit=0
+6    flooded-first              0            0    0 tie                30    30    59961    59961        405.2       3707.4 poc exit=0 | poc exit=0
+7    baseline-first             0            0    0 tie                30    30    59961    59961       2144.2       2845.0 poc exit=0 | poc exit=0
+8    flooded-first              0            0    0 tie                30    30    59961    59961        821.8       3891.8 poc exit=0 | poc exit=0
+9    baseline-first             0            0    0 tie                30    30    59961    59961        306.1       3737.9 poc exit=0 | poc exit=0
+10   flooded-first              0            0    0 tie                30    30    59961    59961        559.8       3717.5 poc exit=0 | poc exit=0
+
+pair01 baseline in0 received=59894 audio=59894 ok=59894 rejected=0 mixed=59894 echo_full=59894 echo_hdr=0
+pair01 flooded  in0 received=617619 audio=617619 ok=617619 rejected=0 mixed=617619 echo_full=617619 echo_hdr=0
+pair02 baseline in0 received=59891 audio=59891 ok=59891 rejected=0 mixed=59891 echo_full=59891 echo_hdr=0
+pair02 flooded  in0 received=616936 audio=616936 ok=616936 rejected=0 mixed=616936 echo_full=616936 echo_hdr=0
+pair03 baseline in0 received=59893 audio=59893 ok=59893 rejected=0 mixed=59893 echo_full=59893 echo_hdr=0
+pair03 flooded  in0 received=616650 audio=616650 ok=616650 rejected=0 mixed=616650 echo_full=616650 echo_hdr=0
+pair04 baseline in0 received=59895 audio=59895 ok=59895 rejected=0 mixed=59895 echo_full=59895 echo_hdr=0
+pair04 flooded  in0 received=617346 audio=617346 ok=617346 rejected=0 mixed=617346 echo_full=617346 echo_hdr=0
+pair05 baseline in0 received=59896 audio=59896 ok=59896 rejected=0 mixed=59896 echo_full=59896 echo_hdr=0
+pair05 flooded  in0 received=616779 audio=616779 ok=616779 rejected=0 mixed=616779 echo_full=616779 echo_hdr=0
+pair06 baseline in0 received=59885 audio=59885 ok=59885 rejected=0 mixed=59885 echo_full=59885 echo_hdr=0
+pair06 flooded  in0 received=618074 audio=618074 ok=618074 rejected=0 mixed=618074 echo_full=618074 echo_hdr=0
+pair07 baseline in0 received=59896 audio=59896 ok=59896 rejected=0 mixed=59896 echo_full=59896 echo_hdr=0
+pair07 flooded  in0 received=619045 audio=619045 ok=619045 rejected=0 mixed=619045 echo_full=619045 echo_hdr=0
+pair08 baseline in0 received=59886 audio=59886 ok=59886 rejected=0 mixed=59886 echo_full=59886 echo_hdr=0
+pair08 flooded  in0 received=618694 audio=618694 ok=618694 rejected=0 mixed=618694 echo_full=618694 echo_hdr=0
+pair09 baseline in0 received=59893 audio=59893 ok=59893 rejected=0 mixed=59893 echo_full=59893 echo_hdr=0
+pair09 flooded  in0 received=618396 audio=618396 ok=618396 rejected=0 mixed=618396 echo_full=618396 echo_hdr=0
+pair10 baseline in0 received=59895 audio=59895 ok=59895 rejected=0 mixed=59895 echo_full=59895 echo_hdr=0
+pair10 flooded  in0 received=617500 audio=617500 ok=617500 rejected=0 mixed=617500 echo_full=617500 echo_hdr=0
+
+F = 0, B = 0, ties = 10, F - B = 0
+one-sided sign-test probability P(X >= F | n = 0, p = 1/2) = 1.0000
+decision: host noise, no flood effect shown at this rate (F - B <= 4)
+
+== per run: highest and median per-window sender ticker p99 (us), sender return-input datagrams per second (median of windows 3..27), whole-run ticker p50/p99 (us) ==
+pair01-baseline  max_window_p99= 15 median_window_p99=10.5 sender_in0_per_s=6000 run_p50=4.0 run_p99=12.0
+pair01-flooded   max_window_p99=  9 median_window_p99= 1.5 sender_in0_per_s=25942 run_p50=0.0 run_p99=6.0
+pair02-baseline  max_window_p99= 11 median_window_p99=10.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair02-flooded   max_window_p99= 21 median_window_p99= 3.0 sender_in0_per_s=25927 run_p50=0.0 run_p99=6.0
+pair03-baseline  max_window_p99= 11 median_window_p99=10.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair03-flooded   max_window_p99= 11 median_window_p99= 6.5 sender_in0_per_s=25894 run_p50=0.0 run_p99=7.0
+pair04-baseline  max_window_p99= 11 median_window_p99=10.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair04-flooded   max_window_p99= 10 median_window_p99= 6.0 sender_in0_per_s=25939 run_p50=0.0 run_p99=7.0
+pair05-baseline  max_window_p99= 11 median_window_p99= 9.5 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair05-flooded   max_window_p99= 12 median_window_p99= 6.0 sender_in0_per_s=25912 run_p50=0.0 run_p99=8.0
+pair06-baseline  max_window_p99= 11 median_window_p99=10.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair06-flooded   max_window_p99=  9 median_window_p99= 4.0 sender_in0_per_s=25957 run_p50=0.0 run_p99=6.0
+pair07-baseline  max_window_p99= 12 median_window_p99=10.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair07-flooded   max_window_p99= 10 median_window_p99= 6.0 sender_in0_per_s=25989 run_p50=0.0 run_p99=7.0
+pair08-baseline  max_window_p99= 11 median_window_p99=10.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair08-flooded   max_window_p99= 10 median_window_p99= 0.0 sender_in0_per_s=25986 run_p50=0.0 run_p99=6.0
+pair09-baseline  max_window_p99= 11 median_window_p99=10.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair09-flooded   max_window_p99= 10 median_window_p99= 4.0 sender_in0_per_s=25955 run_p50=0.0 run_p99=7.0
+pair10-baseline  max_window_p99= 12 median_window_p99= 9.0 sender_in0_per_s=6000 run_p50=4.0 run_p99=10.0
+pair10-flooded   max_window_p99= 36 median_window_p99=10.0 sender_in0_per_s=25954 run_p50=0.0 run_p99=11.0
