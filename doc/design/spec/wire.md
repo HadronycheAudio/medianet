@@ -102,11 +102,11 @@ The enumeration — one row per variant, with its `u8` value, its meaning, and t
 | 3 | ForeignDomain | the domain id is a non-zero domain other than this module's (C-11): dropped and counted | control, sync, media, measurement |
 | 4 | UnconfiguredDomain | the domain id is 0, the unconfigured domain (C-11): the packet is ignored and counted, not refused, and is never a `ForeignDomain` (C-173) | control, sync, media, measurement |
 | 5 | UnknownStream | the stream number names no stream this consumer admits | media |
-| 6 | UnadmittedSource | the source's module id has no admitted connection at this consumer | media |
+| 6 | UnadmittedSource | the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply) | media, sync |
 | 7 | BadLength | a declared length or count disagrees with the message's own size rules: a count above its fixed maximum, or a body that does not fill the fixed size | control, sync, media, measurement |
 | 8 | BadChecksum | the checksum does not match the recomputed value; the checksum arrives with 004-13 | media |
 | 9 | BadPacketIndex | the packet index lies outside the packet count its slice declares | media |
-| 10 | WrongEpoch | the timeline epoch is not the consumer's current epoch (C-10): counted under this reason — the per-connection other-epoch counter (C-135, C-159) — and never a miss (C-102) | media |
+| 10 | WrongEpoch | the timeline epoch is not the consumer's current epoch (C-10): counted under this reason — the per-connection other-epoch counter (C-135, C-159) — and never a miss (C-102); on the sync layer, a reply whose epoch differs from the follower's current epoch and that answers a request sent no later than the follower adopted that epoch, counted per socket (Sync request and reply) | media, sync |
 | 11 | OversizeControl | a control message exceeds the 1 252-byte UDP-payload bound (C-17) | control |
 | 12 | ReservedNonZero | a field this specification fixes at zero carries a non-zero value; the fields and their required zeros are fixed by 004-05 | control, sync, media, measurement |
 
@@ -782,7 +782,127 @@ To be filled by 004-29 (commissioning window announcement and close messages, C-
 
 ## Sync request and reply
 
-To be filled by 004-19 (sync request and reply layouts).
+A follower estimates its offset from the holder with request/reply exchanges on the sync port: the follower sends a sync request to the holder, and the holder answers each request with one sync reply. The holder's monotonic clock defines network time (01-architecture.md § 2.3), and a reply carries what a follower needs to place itself on the domain line: the holder's two timestamps of the exchange, the timeline epoch with its origin, and the holder's identity `[decision]`. This section fixes both layouts, the timestamps' unit and clock, the decisions this ticket owns, and every invalid form with its outcome `[decision]`.
+
+### Exchange rules
+
+The exchange is stateless: the reply echoes the request's own send timestamp verbatim, so the holder answers each request from that request alone and keeps no per-request state, and a follower pairs a reply with its request by the echoed value, read on its own clock `[decision]`. A stale or duplicate reply is therefore a valid exchange with an honestly large round trip — its echoed send timestamp is old, so the round trip the follower computes from it is long — and never an invalid form; the follower's exchange filtering, which this specification does not define, decides what a long round trip is worth `[decision]`. Nothing in either message names an exchange: the holder's per-module values in a reply — its clock, its module id, its current epoch and origin, its message counter — are the holder's own state, the same whichever request is being answered `[decision]`.
+
+Sync messages travel by UDP unicast over IPv4 (C-100) at DSCP CS6 (48) (C-13): the follower sends its request to the holder's sync port, and the holder sends the reply to the source address and port the request came from, which is all the addressing a stateless reply needs `[decision]`. The class-selector codepoints are the 'xxx000' set (RFC 2474, § 4.2.2.1 The Class Selector Codepoints), CS6 being 110000 `[standard]`. Neither message carries a DSCP field: the holder records the DSCP it observes on each follower's requests on its clock thread (C-188) and reports it in its regime stamp (C-152), in the section 004-28 lays out `[decision]`.
+
+The request rate is behaviour, never a field: a follower sends 50 requests per second (C-36), and the holder accepts 10 to 200 requests per second from each follower (C-112) `[decision]`. Requests beyond 200 per second from one follower are dropped before any work is done and counted per follower in the holder's regime stamp (C-204); that drop is not a rejection of a malformed message, it increments no counter of the closed enumeration, and its counter is laid out by 004-28, so neither message carries a rate field `[decision]`. How the per-follower entries of C-152 and C-204 identify a follower is 004-28's to fix; the request adds no identity field for it `[decision]`.
+
+### Authentication reservation
+
+Sync messages carry the authentication reservation of C-12 — scheme 8 bits, message counter 64 bits, tag 128 bits — in both the request and the reply, at the same offsets in both, with the v1 values of C-115: scheme 0 (none), tag 128 zero bits, and a live counter `[decision]`. This closes R11 for sync messages; the receiver outcomes are those of Reserved fields, Authentication reservation (C-12): a non-zero scheme or a non-zero tag is dropped and counted under ReservedNonZero, and the counter never produces ReservedNonZero `[decision]`. Falsifier: a later authentication scheme cannot be added to sync messages without a major change — for example a scheme that needs more than the 128-bit tag, or a field the reservation does not hold — in which case this decision is wrong and the reservation's shape is reopened by epic 004 `[decision]`.
+
+**Why carry it.** Three arguments decide it, in order of weight `[decision]`:
+
+1. Adding it later is a major change by construction. Both messages are fixed-size, with no length prefix and no optional part, and a receiver rejects every other datagram size under BadLength (Validity rules below); a field added after v1 changes that fixed size, so every v1 receiver rejects the new message, and by Versioning, Minor and major changes, a change an older receiver can neither parse nor skip is a major one. Leaving the reservation out would make the ticket's falsifier true on the day the first scheme arrives; carrying it, a scheme fills fields that already exist at fixed offsets with the message unchanged in shape, so no existing field moves or widens `[decision]`.
+2. A forged reply is the most damaging forgery on the medianet. In v1 nothing authenticates a reply: one forged with the holder's module id and the domain passes every rule below. Its timestamps bias the follower's offset estimate, and its epoch, if it differs from the follower's current one and echoes a recent send timestamp, is taken as the holder's new epoch (Timeline epoch and holder identity below), after which every source of that module announces a switch and restarts its session (01-architecture.md § 2.2). The sync reply is therefore the first message a later scheme must cover, and the reservation is what lets it `[decision]`.
+3. The cost is small. The reservation is 25 bytes per message (200 bits). At the holder, at most 64 followers (C-35) each sending 50 requests per second (C-36) make 3 200 requests in and 3 200 replies out per second; the reservation adds 25 × 3 200 = 80 000 bytes per second in each direction, 0.64 Mbit/s, and at the accepted ceiling of 200 per second per follower (C-112) 2.56 Mbit/s. Whole sync traffic at 50 per second, the 28 bytes of IPv4 and UDP headers included (Layer overview), is (74 + 28) × 3 200 × 8 = 2 611 200 bit/s per direction, about 2.6 Mbit/s — an eighth of one 6-channel stream's 21.1 Mbit/s (C-21). The holder's serving work grows by a 25-byte copy and two zero comparisons per message, with no cryptography in v1, so the holder-serving-lateness falsifier of C-35 is not brought nearer `[decision]`.
+
+The counter is live in sync messages as in control messages (C-115): each module increments one sync-message counter by one for every sync message it sends, request or reply, and that counter is module state, not per-request state. In v1 no receiver rule depends on its value — liveness on the sync layer is judged on the replies themselves (C-37) — and a later scheme finds its replay counter already on the wire `[decision]`. The header keeps the field order ticket 004-16 names for the common control header — magic, version, domain, message type, authentication reservation — so one header parser can serve both layers; if 004-16 lays its header out differently, the sync layer keeps this layout, which no control parser reads `[decision]`.
+
+### Request
+
+Little-endian (Byte order), packed with no padding for alignment (Alignment and padding); offsets are byte distances from the first byte of the UDP payload. The request carries the common header and the follower's send timestamp, then explicit padding to the reply's size `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | 0x0100 in v1 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
+| 6 | 1 | u8 | Message type: 1 = sync request (Message type codes) | 1 only |
+| 7 | 1 | u8 | Authentication scheme (C-12); 0 = none in v1 (C-115) | 0 only |
+| 8 | 8 | u64 | Message counter (C-12): live (C-115), incremented by one for every sync message the follower sends | any 64-bit value |
+| 16 | 16 | u128 | Authentication tag (C-12): 128 zero bits in v1 (C-115) | 0 only |
+| 32 | 8 | u64 | Send timestamp: the follower's local monotonic clock in nanoseconds when it sends the request; opaque to the holder, which echoes it verbatim (Timestamps) | any 64-bit value |
+| 40 | 34 | pad | Padding: brings the request to the reply's size, the room the reply's receive and send timestamps, holder module id, epoch origin and timeline epoch take; senders write zero (Reserved fields, general rule) | 0 only |
+
+### Reply
+
+Same conventions as the request; bytes 0 to 31 are the common header, the echoed timestamp sits at the request's send-timestamp offset, so a holder may build the reply over the request's own bytes, and the padding's room carries the holder's values `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | 0x0100 in v1 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
+| 6 | 1 | u8 | Message type: 2 = sync reply (Message type codes) | 2 only |
+| 7 | 1 | u8 | Authentication scheme (C-12); 0 = none in v1 (C-115) | 0 only |
+| 8 | 8 | u64 | Message counter (C-12): live (C-115), incremented by one for every sync message the holder sends | any 64-bit value |
+| 16 | 16 | u128 | Authentication tag (C-12): 128 zero bits in v1 (C-115) | 0 only |
+| 32 | 8 | u64 | Echoed send timestamp: the request's send timestamp, echoed verbatim; the follower's clock, never the holder's | any 64-bit value |
+| 40 | 8 | u64 | Receive timestamp: the holder's monotonic clock in nanoseconds when the request was received (Timestamps) | any 64-bit value |
+| 48 | 8 | u64 | Send timestamp: the holder's monotonic clock in nanoseconds when the reply is sent (Timestamps) | any 64-bit value |
+| 56 | 8 | u64 | Holder module id (C-11): the module id of the holder that answers | any 64-bit value; a follower accepts only the holder it follows (Timeline epoch and holder identity) |
+| 64 | 8 | i64 | Epoch origin: origin_ns of the current timeline epoch's line, nanoseconds of network time on the holder's scale (timeline.md, The epoch origin) | any 64-bit value |
+| 72 | 2 | u16 | Timeline epoch (C-10): the holder's current timeline epoch | any 16-bit value; acceptance at a follower is in Timeline epoch and holder identity |
+
+Request and reply are both 74 bytes long: the request's fields sum to 2 + 2 + 2 + 1 + 1 + 8 + 16 + 8 + 34 = 74 bytes and the reply's to 2 + 2 + 2 + 1 + 1 + 8 + 16 + 8 + 8 + 8 + 8 + 8 + 2 = 74 bytes, each tiling its message from byte 0 with no gap and no overlap `[decision]`. Equal sizes keep the exchange symmetric on the path and let a receiver judge a datagram's size before it reads the message type, since every sync message has the one fixed size `[decision]`. Both fit the 1 252-byte UDP-payload bound with room to spare, though that bound (C-17) is written for control messages `[decision]`.
+
+**Message type codes.** The message type is scoped to the sync layer, which has its own socket (Rejection reasons, Counting model): 1 is the sync request and 2 the sync reply; 0 and 3 to 255 are unused in v1, so a zeroed buffer is never a valid message `[decision]`.
+
+**The epoch origin.** The reply carries the origin of the current epoch's line as well as the epoch: a follower reconstructs the line `position = (network_time − epoch_origin) × 96 000 Hz` from a reply alone only if the reply names the origin, and epic 006 lists it among the fields a reply must carry (006-04, the epic's line 1b: epoch, origin, holder identity) `[decision]`. Its type is timeline.md's `origin_ns: i64` `[decision]`. It is carried now because a field added later would be the major change argued above; 006-04 confirms it, as the last subsection of this section records `[decision]`.
+
+### Timestamps
+
+All three timestamps are 64-bit unsigned counts of nanoseconds, one tick 1 ns, read from a local monotonic clock: the same unit, the same clock and the same width as the slice header's send timestamp (Slice header, Send timestamp), so a module reads one clock for media and sync and no new clock or unit enters the wire `[decision]`. The retired POC's exchange held the same four instants of a two-way exchange as 64-bit nanosecond counts (`clock.rs`, `Exchange`, fields `t1` to `t4`) `[code]`. The epoch origin is the one signed time on the sync layer, because timeline.md fixes it as i64 nanoseconds `[decision]`.
+
+- **Request send timestamp.** The follower's local monotonic clock when it sends the request. It is opaque to the holder: the holder never interprets it, compares it or stores it, and copies it verbatim into the reply's echoed send timestamp `[decision]`.
+- **Reply receive timestamp.** The holder's monotonic clock — network time (01-architecture.md § 2.3) — at the receipt of the request, taken from the holder's receive stamp of that datagram `[decision]`.
+- **Reply send timestamp.** The holder's monotonic clock at the transmission of the reply, read as late before the send as the holder's backend allows `[decision]`. Its difference from the receive timestamp is the holder serving time C-167 measures (reply send time minus request receive time) `[decision]`.
+
+The follower's fourth instant, its receive stamp of the reply, never travels: it is the follower's own reading, and the backend that builds each exchange from receive stamps is also where wall-clock step detection lives (C-121); the wire carries the timestamps that exchange needs, nothing more `[decision]`. With the 2^64 ns wrap period, about 584 years (Slice header, Send timestamp), no exchange ever sees a wrapped timestamp `[decision]`.
+
+### Timeline epoch and holder identity
+
+**Who the holder is.** A follower knows the holder it follows from the election and discovery messages of epic 005 (004-16, 004-17); the reply's holder module id is the wire's statement of who answered, and the follower compares it with the module id of the holder it follows `[decision]`. A reply whose holder module id differs — a former holder still answering after a takeover, a module that is not the holder, or a stray reply — is dropped and counted under UnadmittedSource `[decision]`. UnadmittedSource is the closest member of the closed enumeration: its meaning is a source whose module id has no admitted connection at this receiver, and on the sync layer the holder the follower follows is its one admitted source of time; its Layers cell now names sync, and its meaning names this case, which adds no reason to the enumeration (Rejection reasons, Closed enumeration) `[decision]`. The source address is not part of the rule: the module id is the identity the wire states, and how a follower learns its holder is election behaviour, epic 005's `[decision]`.
+
+**Which epochs a follower accepts.** The reply is how a follower learns the holder's current epoch: the epoch changes on an election in which no candidate has usable time (C-113, C-213) and on a holder stall (C-136), and a takeover by a candidate with usable time keeps it (C-213), so an epoch different from the follower's is not by itself wrong `[decision]`. The follower holds its current epoch E together with A, the reading of its own monotonic clock at which it adopted E — from a sync reply, an epoch-switch announcement or admission (Media packet header, Timeline epoch width and wrap) — and judges a reply from the holder it follows, carrying epoch e, by the echoed send timestamp, which is a reading of the same clock `[decision]`:
+
+1. e equals E: accepted.
+2. e differs from E and the echoed send timestamp is later than A: accepted. The request was sent after the follower adopted E, so the holder answered it with its epoch as it stood after that adoption, and the reply is the follower's evidence of a bump; what the follower then does with the new epoch and origin — line reconstruction, the switch its sources announce — belongs to epic 006 (006-04, 006-11) `[decision]`.
+3. e differs from E and the echoed send timestamp is at or before A: dropped and counted under WrongEpoch. The reply answers a request sent before the follower adopted E, so its epoch predates what the follower already knows; a newer epoch carried by such a reply is not lost, because the next request, sent after A, fetches it under case 2 `[decision]`.
+4. A follower with no current epoch — at cold start, after it starts following a different holder, or once its epoch's tenure has passed the wrap-ambiguity span W (Media packet header, Timeline epoch width and wrap) — accepts any epoch from the holder it follows; this is the reply that re-establishes the current epoch `[decision]`.
+
+The rule needs no state at the holder and no serial-number comparison of epochs, which the wrap section declines: the follower's own clock orders the replies by the requests they answer, and the holder only ever moves its epoch forward `[decision]`. WrongEpoch's Layers cell now names sync and its meaning names case 3; on the sync layer the rejection is counted per socket like all sync rejections (Validity rules below), not on the per-connection other-epoch counter of media (C-135, C-159) `[decision]`. Whether 006-04's adoption rule matches cases 1 to 4 stays to be confirmed, as the last subsection of this section records `[decision]`.
+
+### Receive timestamps
+
+Neither message names a receive-timestamp source. The source the holder's receive timestamp comes from is one of the four values of C-131 — kernel, userspace, mac-hardware or interrupt — each reported with one of the capability states of C-129, and it is declared in the regime stamp (004-25's receive-timestamp section, C-18), not in sync messages `[decision]`.
+
+**Per-OS notes (slot for epic 001).** Epic 001 supplies a non-blocking report on receive timestamps per OS; its remarks on how each OS stamps the receipt of a sync request or reply are recorded here when the report lands, and they affect only these notes on the timestamp fields, never a field's offset, width or meaning `[decision]`. No per-OS remark is recorded yet `[decision]`.
+
+### Validity rules
+
+Every malformed sync message is dropped — or ignored, for the unconfigured domain — and counted under one member of the closed Rejection reasons enumeration; nothing is dropped silently `[decision]`. A sync message matches no admitted input (Rejection reasons, Counting model), so every sync rejection is counted per (socket, reason) on the receiving sync socket `[decision]`. The rules run in the order of the table — the magic and the version first, as Versioning requires — and the first that applies decides the outcome; a message of the same major and another minor is accepted, as Versioning, Receiver behaviour fixes `[decision]`:
+
+| Invalid form | Required outcome |
+|---|---|
+| datagram too short to hold the two leading fields every message starts with (under 4 octets) | drop and count under TooShort: dropped before any field is read `[decision]` |
+| bad magic (the leading two bytes are not 0x4d4e) | drop and count under BadMagic |
+| version mismatch (the version's major, its high byte, is not 1: a different major) | drop and count under VersionMismatch, and raise the VersionMismatch event — never a silent drop (Versioning, Receiver behaviour) |
+| datagram size not equal to the 74-byte fixed size, at 4 bytes or more | drop and count under BadLength: the body does not fill the fixed size `[decision]` |
+| domain id 0, the unconfigured domain (C-11) | ignore and count under UnconfiguredDomain — never ForeignDomain (C-173) |
+| foreign domain (a non-zero domain other than the local domain, C-11) | drop and count under ForeignDomain |
+| message type not the one the receiving end expects: not 1 at a module answering requests, not 2 at a follower awaiting replies, or any value other than 1 and 2 | drop and count under BadLength `[decision]` — provisional, the message's declared kind disagrees with the receiving role, as the content messages' role rule uses BadLength (Content messages, Validity rules); confirmed by 004-21, see the end of this section |
+| authentication scheme non-zero | drop and count under ReservedNonZero (Reserved fields, Authentication reservation) |
+| authentication tag non-zero | drop and count under ReservedNonZero (Reserved fields, Authentication reservation) |
+| request padding non-zero (any bit of bytes 40 to 73 of a request) | drop and count under ReservedNonZero (Reserved fields, general rule) |
+| reply from a non-holder: the holder module id is not the module id of the holder the follower follows | drop and count under UnadmittedSource `[decision]` |
+| reply with wrong epoch: the timeline epoch differs from the follower's current epoch and the echoed send timestamp is at or before the follower's adoption of that epoch (case 3 above) | drop and count under WrongEpoch `[decision]` |
+| duplicate or stale reply carrying the follower's current epoch | none — a valid exchange with an honestly large round trip; never a rejection `[decision]` |
+| a request beyond 200 per second from one follower (C-204) | none of the enumeration — dropped before any work is done and counted per follower in the holder's regime stamp (004-28) `[decision]` |
+
+No value of the message counter or of any timestamp, origin or module id field is a malformed case: each accepts every value its type holds, and only the rules above reject `[decision]`.
+
+### Open items
+
+**Open item 1 — the reply's line fields.** The reply carries the epoch origin (i64) beside the epoch and the holder module id, ahead of 006-04's field list, because a field added later is a major change. Owner: epic 006, ticket 006-04 (sync reply contents and choice of epoch origin), which confirms the list. Falsifier: 006-04's list names a field the reply does not carry or a width other than the one laid out here (epoch 16 bits, origin 64 bits signed, module id 64 bits), or shows the origin is not needed in the reply; either reopens this layout `[decision]`.
+
+**Open item 2 — epoch acceptance and message-type outcome.** Cases 1 to 4 of Timeline epoch and holder identity are the wire's minimal rule for a follower's epoch acceptance; 006-04 asks for a serial comparison of epochs, which the wrap section declines. Owner: epic 006, ticket 006-04 (and 006-11 for consumer-side adoption) for the epoch rule; ticket 004-21, the validity-rules completeness audit, for the BadLength outcome of an unexpected message type. Falsifier: 006-04's adoption rule adopts a reply this section counts under WrongEpoch, or two followers reconstruct different lines from the same replies under cases 1 to 4; or 004-21 finds a member of the closed enumeration that names an unexpected message type better than BadLength `[decision]`.
 
 ## Receiver report
 
