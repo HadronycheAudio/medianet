@@ -39,14 +39,16 @@
 #   AC 3  At least 6 invalid forms are listed with outcomes, covering the
 #         ticket's list: unknown type within the same major (SKIPPABLE by
 #         length — encoded as NOT a rejection), length overrun (BadLength),
-#         named position not in the future, named position closer than the
-#         lead (with the C-43 arithmetic, 64 slices = 32 ms), duplicate type
-#         in one packet, announcement in a gap slice (if forbidden),
-#         count above maximum (BadLength). Every rejection reason named is
-#         a member of the closed 13-name enumeration; no invented reason.
+#         named position not in the future (BadLength: at or before the
+#         packet's slice position), duplicate type in one packet, announcement
+#         in a gap slice (if forbidden), count above maximum (BadLength),
+#         announcement-present flag with a zero count (BadLength). Every
+#         rejection reason named is a member of the closed 13-name
+#         enumeration; no invented reason.
 #   AC 4  C-43 (lead 64 slices, flat; 64 x 0.5 ms = 32 ms at the C-02
 #         defaults) and C-44 (re-issued every 16 slices until the named
-#         position passes, in every bundle member) restated as SENDER rules.
+#         position passes, in every bundle member) restated as SENDER rules;
+#         the lead binds the sender's FIRST issue of a change.
 #   AC 5  The proposed re-alignment and transport-reference-change payloads
 #         are recorded as OPEN ITEMS with epic 005 as the confirming owner
 #         and the ticket's falsifier (a receiver cannot act on the
@@ -61,6 +63,13 @@
 #         BadLength and name only enumeration members. `cargo run --bin
 #         wire-check` passes and `cargo test -p hadronyche-tools --test
 #         wire_tables` stays 12/0/0.
+#
+# DEFECT (004-09 amendment): the lead (C-43) is a SENDER obligation on the
+# FIRST issue of a change; a re-issue (C-44) inside the lead is valid; a
+# receiver rejects (BadLength) only a named position that is NOT in the
+# future. The check fails while a table row, a field-table cell, a prose
+# sentence or a wire.toml field string makes the lead a validity condition,
+# and requires the statement that a re-issue inside the lead is valid.
 #
 # DoD also: every block of the new section carries an evidence tag ([code],
 # [measured], [kernel-doc], [standard], [memory], [decision]); the design
@@ -1040,18 +1049,18 @@ if not placeholder:
         (
             "named position not in the future",
             r"position[^.;\n]{0,80}(?:not\s+(?:in\s+the\s+)?future|in\s+the\s+past|already\s+passed|past)",
-            "MEMBER",
-        ),
-        (
-            "named position closer than the lead (C-43: 64 slices = 32 ms)",
-            r"closer\s+than\s+the\s+lead|nearer\s+than\s+the\s+lead|inside\s+the\s+lead|lead[^.;\n]{0,60}(?:closer|nearer)",
-            "MEMBER",
+            "BadLength",
         ),
         ("duplicate type in one packet", r"duplicate", "MEMBER"),
         ("announcement in a gap slice (if forbidden)", r"gap", "GAP"),
         (
             "count above maximum",
             r"count[^.;\n]{0,60}(?:above|exceed|over|greater|more\s+than|larger)",
+            "BadLength",
+        ),
+        (
+            "announcement-present flag with a zero count",
+            r"zero[\s-]+count|flag[^.;\n]{0,80}\bzero\b",
             "BadLength",
         ),
     ]
@@ -1134,17 +1143,6 @@ if not placeholder:
             ac3_ok = False
             continue
         forms_with_reason += 1
-
-        # the lead arithmetic: the closer-than-the-lead form must show it
-        if "closer than the lead" in label:
-            if not (re.search(r"\b64\b", window) and re.search(r"\b32\b", window)):
-                fail(
-                    3,
-                    "the closer-than-the-lead form does not show the C-43 "
-                    "arithmetic (lead 64 slices = 32 ms at the C-02 defaults): "
-                    + hit[:110],
-                )
-                ac3_ok = False
 
     # every reason-looking token in the section must be a member
     non_member_tokens = set()
@@ -1475,6 +1473,110 @@ if not placeholder:
             f"PASS AC6: announcement fields declared in wire.toml (messages: "
             f"{names}), count/type/length/position present, reasons are "
             "enumeration members incl. BadLength"
+        )
+
+# ---------------------------------------------------------------------------
+# DEFECT — the lead is a sender obligation on the FIRST issue (C-43); a
+# re-issue (C-44) inside the lead is valid; a receiver rejects only a position
+# that is not in the future. Keyword-level detectors over the section's rows,
+# valid-range cells, prose sentences and wire.toml field strings.
+# ---------------------------------------------------------------------------
+LEAD_RE = re.compile(r"\blead|C-43|closer|nearer|inside|within|less\s+than\s+a\s+lead", re.I)
+EXEMPT_RE = re.compile(r"\bfirst\b|re-?issu|C-44", re.I)
+NEG_RE = re.compile(r"\b(?:not|never|no|nor|cannot|neither|none)\b|n't", re.I)
+REJECT_RE = re.compile(
+    r"BadLength|\bdrops?\b|\breject|\bdisagree|\binvalid|\bmalformed|\bcount\s+under", re.I
+)
+VALID_RE = re.compile(r"\bvalid\b", re.I)
+AT_LEAST_RE = re.compile(r"\bat\s+least\b", re.I)
+
+
+def lead_as_rejection(seg, cell=False):
+    """True when a segment makes the lead a validity condition: it names the
+    lead, is neither about the first issue or a re-issue nor negated, and
+    either rejects, or calls the lead a condition of a valid announcement (a
+    valid-range cell states the condition on the position directly)."""
+    if not LEAD_RE.search(seg) or EXEMPT_RE.search(seg) or NEG_RE.search(seg):
+        return False
+    if REJECT_RE.search(seg):
+        return True
+    if cell:
+        return bool(VALID_RE.search(seg) or AT_LEAST_RE.search(seg))
+    return bool(VALID_RE.search(seg) and AT_LEAST_RE.search(seg))
+
+
+if not placeholder:
+    defect_ok = True
+
+    for _, header, rows in all_tables:
+        for row in rows:
+            if is_field_table(header):
+                for idx, cell in enumerate(row):
+                    if lead_as_rejection(cell, cell=(idx == 4)):
+                        fail("defect", "a field-table cell makes the lead a validity condition: " + cell[:110])
+                        defect_ok = False
+            elif lead_as_rejection(" | ".join(row)):
+                fail("defect", "a table row rejects or invalidates a position for the lead: " + " | ".join(row)[:110])
+                defect_ok = False
+
+    for b in blks:
+        if b.lstrip().startswith("|"):
+            continue
+        for sent in re.split(r"(?<=[.;])\s+", b):
+            if lead_as_rejection(sent):
+                fail("defect", "prose makes the lead a validity condition: " + sent.strip()[:110])
+                defect_ok = False
+    for line in section_prose.splitlines():
+        s = line.strip()
+        if re.match(r"^[-*]\s+", s) or re.match(r"^\d+[.)]\s+", s):
+            if lead_as_rejection(s):
+                fail("defect", "a list item makes the lead a validity condition: " + s[:110])
+                defect_ok = False
+
+    for msg, f in ann_fields:
+        for key in ("valid", "meaning"):
+            txt = f.get(key)
+            if isinstance(txt, str) and lead_as_rejection(txt, cell=(key == "valid")):
+                fail(
+                    "defect",
+                    f"wire.toml field {f.get('name')!r} ({key}) makes the lead a "
+                    "validity condition: " + txt[:110],
+                )
+                defect_ok = False
+
+    if not any(
+        re.search(r"re-?issu", b, re.I)
+        and LEAD_RE.search(b)
+        and re.search(r"\bvalid\b|\baccept|not\s+(?:be\s+)?(?:rejected|dropped|counted)", b, re.I)
+        for b in blks
+        if not b.lstrip().startswith("|")
+    ):
+        fail(
+            "defect",
+            "no statement that a re-issue (C-44) inside the lead is valid; the "
+            "receiver rejects only a position that is not in the future",
+        )
+        defect_ok = False
+
+    if not any(
+        re.search(r"\bfirst\b", s, re.I)
+        and re.search(r"\blead|C-43|64\s+slices", s, re.I)
+        and re.search(r"sender", s, re.I)
+        for b in blks
+        if not b.lstrip().startswith("|")
+        for s in re.split(r"(?<=[.;])\s+", b)
+    ):
+        fail(
+            "defect",
+            "the lead (C-43) is not stated as the sender's obligation on the FIRST issue",
+        )
+        defect_ok = False
+
+    if defect_ok:
+        print(
+            "PASS defect: the lead binds the sender's first issue (C-43); a re-issue "
+            "inside the lead is valid (C-44); no row, cell, sentence or wire.toml "
+            "string rejects a position for being inside the lead"
         )
 
 # ---------------------------------------------------------------------------
