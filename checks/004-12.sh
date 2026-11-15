@@ -46,8 +46,10 @@
 #         rows; the receiver-side statements: read-only (a sentence saying so)
 #         and receivers never write it back (a sentence saying so); the
 #         pre-arrival default (stopped, playhead at zero, 120 bpm); the gap
-#         rule (held, degraded); the open item for the rest of the field set,
-#         owned by epic 004, with the falsifier and [decision].
+#         rule (held, degraded); the transport field set either as an open
+#         item (a paragraph that begins "Open item", with an owner and a
+#         falsifier) or stated as decided ([decision], no open item). Headings
+#         and cross-references are not open items.
 #   AC 3  At least 6 invalid-form rows in the new area, across the two types.
 #         The outcome of each row names only closed-enumeration members, or
 #         says the message is skipped, ignored, not counted, cannot occur or
@@ -74,8 +76,9 @@
 #         (C-137); the constants C-01, C-02, C-137, C-141, C-181, C-184, C-199,
 #         C-200 and C-205 are cited in the new area.
 #   DoD   every prose unit of 5 or more words in the new area carries an
-#         evidence tag; a [code] unit names a POC pointer; every open item
-#         names an owner and a falsifier.
+#         evidence tag; a [code] unit names a POC pointer; every declared open
+#         item (a paragraph beginning "Open item") names an owner and a
+#         falsifier.
 #
 # Compatibility with the siblings: the new subsection headings contain none of
 # the words "header", "audio" or "dense", and the new toml message names contain
@@ -276,10 +279,6 @@ def field_rows(text):
     return None
 
 
-# ---------------------------------------------------------------------------
-# A small TOML reader (copied from checks/004-13.sh, the same subset parser
-# that checks/004-08.sh and 004-09.sh use).
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # A small TOML reader (the subset parser of checks/004-08.sh and 004-09.sh:
 # the check must run offline, unprivileged, on the Python the other checks use).
@@ -695,6 +694,17 @@ for _, hdr, rows in parse_tables(new_text):
                      if any(c.strip() for c in r)]
 
 
+def declared_units(text):
+    """Units that DECLARE an open item: their first prose line begins 'Open item'."""
+    out = []
+    for u in units(text):
+        body = [ln.strip().lstrip("*_ ").strip() for ln in u.splitlines()
+                if ln.strip() and not ln.lstrip().startswith(("#", "|"))]
+        if body and re.match(r"open\s+item\b", body[0], re.I):
+            out.append(u)
+    return out
+
+
 def has_row(t, pat):
     return any(re.search(pat, rtext(r), re.I) for r in t)
 
@@ -742,18 +752,27 @@ else:
                     fail("AC 1", f"a sentence states the entry as {v} bytes, not the sum of its widths, "
                          f"{W}: " + s[:80])
 
-maxN = None
+# The maximum for ENTRIES per message: a keyword (at most, up to, no more
+# than, maximum, max) directly before the number and the word 'entries', or
+# 'entries' followed by the keyword and the number. A sentence that gives the
+# maximum of a size (the fixed maximum size in bytes) does not match.
+MAX_ENTRIES = [
+    re.compile(r"\b(?:at most|up to|no more than|maximum(?: of)?|max(?:imum)?)\s+(" + NUMPAT + r")\s+entr", re.I),
+    re.compile(r"\bentr\w*[^.;]{0,30}?\b(?:at most|up to|no more than|maximum(?: of)?)\s+(" + NUMPAT + r")\b", re.I),
+]
+maxima = set()
 for s in prose_sents:
-    m = re.search(r"\b(?:maximum|max|at most|up to|no more than)\b", s, re.I)
-    if m and re.search(r"\bentr(?:y|ies)\b", s, re.I):
-        ns = nums(s[m.end():])
-        if ns:
-            maxN = ns[0]
-            break
-N = maxN
-if N is None:
+    for rx in MAX_ENTRIES:
+        for m in rx.finditer(s):
+            maxima.add(int(re.sub(r"[ \u00a0\u202f]", "", m.group(1))))
+N = None
+if not maxima:
     fail("AC 1", "no stated maximum number of sparse entries per message "
-         "(a sentence with 'maximum' or 'at most', a number and 'entries')")
+         "(a sentence with 'at most' or 'maximum', a number and 'entries')")
+elif len(maxima) > 1:
+    fail("AC 1", f"the sentences state conflicting maxima for entries per message: {sorted(maxima)}")
+else:
+    N = maxima.pop()
 
 if not any(re.search(r"\blinear", s, re.I) and re.search(r"\bramp", s, re.I) for s in prose_sents):
     fail("AC 1", "the linear ramp of a sparse entry over the slice is not stated")
@@ -875,22 +894,28 @@ else:
                and re.search(r"receiver", s, re.I) for s in prose_sents):
         fail("AC 2", "the section does not say that receivers never write the transport state back")
 
-ts_units = [u for u in units(new_text) if re.search(r"open\s+item", u, re.I) and re.search(r"transport", u, re.I)]
-if not ts_units:
-    fail("AC 2", "no open item for the rest of the transport state field set")
-else:
-    joined = "\n".join(ts_units)
-    if not re.search(r"field\s+set", joined, re.I):
-        fail("AC 2", "the transport open item does not name the field set")
-    if not re.search(r"epic\s+004", joined, re.I):
-        fail("AC 2", "the transport open item has no owner, epic 004")
+# The transport field set is either an open item (a declared unit, owner and
+# falsifier) or stated as decided ([decision], no open item). Either is valid;
+# a cross-reference to someone else's open item is not a declaration.
+ts_items = [u for u in declared_units(new_text)
+            if re.search(r"transport", u, re.I) and re.search(r"\bfield", u, re.I)]
+if ts_items:
+    joined = "\n".join(ts_items)
+    if not re.search(r"\bowner\b|\bowned\b|\bepic\s+\d+", joined, re.I):
+        fail("AC 2", "the transport field set's open item names no owner")
     if not re.search(r"falsif", joined, re.I):
-        fail("AC 2", "the transport open item has no falsifier")
-    if not re.search(r"cannot\s+express\s+a\s+value\s+it\s+must\s+send\s+without\s+a\s+major", joined, re.I):
-        fail("AC 2", "the transport falsifier is not the stated one: 'a producer cannot express a value "
-             "it must send without a major change'")
-    if not re.search(r"\[decision\]", joined):
-        fail("AC 2", "the transport open item's field set is not tagged [decision]")
+        fail("AC 2", "the transport field set's open item has no falsifier")
+    if not (re.search(r"cannot\s+express", joined, re.I) and re.search(r"\bmajor\b", joined, re.I)):
+        fail("AC 2", "the transport falsifier is not stated: a producer cannot express a value it "
+             "must send without a major change")
+else:
+    decided = [u for u in units(new_text)
+               if not u.lstrip().startswith(("#", "|")) and u not in declared_units(new_text)
+               and re.search(r"transport", u, re.I) and re.search(r"\bfield", u, re.I)
+               and re.search(r"\[decision\]", u)]
+    if not decided:
+        fail("AC 2", "the transport state field set is neither an open item (owner and falsifier) "
+             "nor stated as decided ([decision])")
 
 # ---------------------------------------------------------------------------
 # AC 3 — invalid forms and outcomes
@@ -926,7 +951,7 @@ for label, pat, exact in concepts:
     if not rows_c:
         fail("AC 3", f"no invalid form covers: {label}")
         continue
-    if exact is not None and not any(exact in " | ".join(r[1:]) for r in rows_c):
+    if exact is not None and not all(exact in " | ".join(r[1:]) for r in rows_c):
         fail("AC 3", f"the {label} form does not give {exact} (the enumeration's count / "
              "declared-shape member)")
 
@@ -1110,12 +1135,11 @@ for u in units(new_text):
              "([code] [measured] [kernel-doc] [standard] [memory] [decision]): " + prose_body.splitlines()[0][:90])
     if re.search(r"\[code\]", u, re.I) and not re.search(r"\bPOC\b|poc/|\bPart\b", u):
         fail("DoD", "a [code] unit of the new area names no POC pointer: " + prose_body.splitlines()[0][:90])
-for u in units(new_text):
-    if re.search(r"open\s+item", u, re.I):
-        if not re.search(r"owner|epic\s+004|004-\d+", u, re.I):
-            fail("DoD", "an open item of the new area names no owner: " + u.splitlines()[0][:90])
-        if not re.search(r"falsif", u, re.I):
-            fail("DoD", "an open item of the new area names no falsifier: " + u.splitlines()[0][:90])
+for u in declared_units(new_text):
+    if not re.search(r"owner|epic\s+004|004-\d+", u, re.I):
+        fail("DoD", "an open item of the new area names no owner: " + u.splitlines()[0][:90])
+    if not re.search(r"falsif", u, re.I):
+        fail("DoD", "an open item of the new area names no falsifier: " + u.splitlines()[0][:90])
 
 # ---------------------------------------------------------------------------
 # Repository-level gates (skipped under overrides, as in checks/004-11.sh)
