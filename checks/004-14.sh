@@ -552,7 +552,10 @@ for t in TABLES_SEC:
     rows = t["rows"]
     hdr = t["header"]
     totals = [r for r in rows if r and label_of(r[0]).startswith("total")]
-    if not totals:
+    # A budget table has a Total row, a Spare row and an audio row. Any other table in the
+    # section (a wire-size table of 004-15, say) is not a budget table and AC 1 to 3 ignore it.
+    present = {row_kind(label_of(r[0])) for r in rows if r and label_of(r[0])}
+    if not totals or not {"spare", "audio"} <= present:
         continue
     for c in range(1, len(hdr)):
         if parse_num(totals[0][c] if c < len(totals[0]) else None) is None:
@@ -724,45 +727,20 @@ else:
 # ---------------------------------------------------------------------------
 # AC 5: the machine-readable totals.
 # ---------------------------------------------------------------------------
-budget_ints = []
-
-
-def gather(obj, acc):
-    if isinstance(obj, dict):
-        for v in obj.values():
-            gather(v, acc)
-    elif isinstance(obj, list):
-        for v in obj:
-            gather(v, acc)
-    elif isinstance(obj, int) and not isinstance(obj, bool):
-        acc.append(obj)
-
-
 budget_tables = [(n, v) for n, v in OTHERS.items() if "budget" in n.lower()]
-for name, value in budget_tables:
-    gather(value, budget_ints)
+BUDGET_FLAT = {}
+for _name, _value in budget_tables:
+    _items = _value if isinstance(_value, list) else [_value]
+    for _block in _items:
+        for _k, _v in _block.items():
+            if isinstance(_v, int) and not isinstance(_v, bool):
+                BUDGET_FLAT[_k] = _v
 
-md_numbers = set()
-for c in CASES:
-    md_numbers.update({c["total"], abs(c["spare"]), c["bound"]})
-for v in (PKT, SLICE, ANN_COUNT, CW, AUDIO, CKSUM, EXT, ANN_MAX, MANDATORY, MAX_NON_AUDIO):
-    if v is not None:
-        md_numbers.add(v)
-
-derived_by_checker = False
-if budget_tables:
-    stray = sorted({n for n in budget_ints if n not in md_numbers})
-    if stray:
-        fail("AC 5", f"wire.toml budget values {stray} are not totals, spares or components of wire.md")
-    for c in CASES:
-        if c["kind"] in ("default", "fb") and c["total"] not in budget_ints:
-            fail("AC 5", f"wire.toml budget table does not carry the {c['kind']} total {c['total']}")
-else:
+if not budget_tables:
     if overridden:
         print("NOTE AC 5: document paths overridden and wire.toml has no budget table; "
               "cargo run --bin wire-check skipped")
     else:
-        derived_by_checker = True
         try:
             proc = subprocess.run(["cargo", "run", "--quiet", "--bin", "wire-check"],
                                   capture_output=True, text=True, timeout=600)
@@ -875,6 +853,89 @@ for s in re.split(r"(?<=[.;])\s+", sec_text):
 if not sparse_ok:
     fail("AC 6", f"no sentence gives the sparse entries that fit beside a transport state ({TRANSPORT} bytes) "
                  f"inside an allowance, with the sparse entry size {SP_ENTRY} bytes and header {SP_HDR} bytes")
+
+# ---------------------------------------------------------------------------
+# AC 5 (keys): every toml budget key is bound to its case by name tokens. Key spellings are
+# not pinned: a key matches a case when its tokens satisfy the case's groups (any alternative
+# of a group) and avoid its forbidden tokens. Its value must equal the computed figure for
+# that case. Unknown integer keys are allowed; a key whose name contains "allowance" must
+# equal a computed allowance from the controller allowance table (AC 6).
+# ---------------------------------------------------------------------------
+def key_tokens(name):
+    return {t for t in re.split(r"[^a-z0-9]+", name.lower()) if t}
+
+
+def tok_match(tokens, groups, forb):
+    return all(tokens & g for g in groups) and not (tokens & forb)
+
+
+ROLE = {"total": {"total"}, "spare": {"spare", "margin"}}
+ANN_WORDS = {0: {"mandatory", "one", "1", "bare", "plain", "none"},
+             3: {"three", "3"},
+             4: {"four", "4", "all", "maximum", "full"}}
+
+
+def case_groups(c):
+    if c["kind"] == "default":
+        return [{"default", "mandatory", "nominal", "1472"}], {"fallback", "worst"}
+    if c["kind"] == "worst":
+        if c["ext"]:
+            return [{"worst", "maximum", "max"}], {"fallback", "default", "no", "without"}
+        return [{"worst", "maximum", "max"}, {"no", "without", "absent"}], {"fallback", "default"}
+    k = (c["ann"] - ANN_COUNT) // ENTRY if ENTRY else -1
+    groups = [{"fallback"}, ANN_WORDS.get(k, {str(k)})]
+    forb = {"default", "worst"}
+    if c["ext"]:
+        groups.append({"extension", "measurement"})
+    else:
+        forb = forb | {"extension", "measurement"}
+    return groups, forb
+
+
+PART_SPECS = [
+    ("packet header", [{"packet"}, {"header"}], {"content", "total", "spare", "allowance", "fallback"}, PKT),
+    ("slice header", [{"slice"}, {"header"}], {"total", "spare", "allowance"}, SLICE),
+    ("announcement count", [{"announcement"}, {"count"}], {"total", "spare", "allowance", "container", "max", "maximum"}, ANN_COUNT),
+    ("announcement container maximum", [{"announcement"}, {"container", "max", "maximum"}], {"count", "total", "spare", "allowance"}, ANN_MAX),
+    ("measurement extension", [{"measurement", "extension"}], {"allowance", "total", "spare"}, EXT),
+    ("content-message header", [{"content"}, {"header"}], {"packet", "slice", "total", "spare", "allowance"}, CW),
+    ("checksum", [{"checksum", "crc"}], {"total", "spare", "allowance"}, CKSUM),
+    ("audio", [{"audio"}], {"total", "spare", "allowance", "mandatory", "maximum"}, AUDIO),
+    ("path payload", [{"payload"}], {"fallback", "allowance", "total", "spare"}, PAY_DEF),
+    ("fallback path payload", [{"payload"}, {"fallback"}], {"allowance", "total", "spare"}, PAY_FB),
+    ("mandatory beside audio", [{"mandatory"}], {"total", "spare", "allowance", "fallback", "default", "worst"}, MANDATORY),
+    ("maximum beside audio", [{"maximum"}], {"container", "announcement", "total", "spare", "allowance", "worst", "fallback", "default"}, MAX_NON_AUDIO),
+]
+
+if budget_tables:
+    key_fails = 0
+    for c in CASES:
+        groups, forb = case_groups(c)
+        for role, expected in (("total", c["total"]), ("spare", c["spare"])):
+            cands = [(k, v) for k, v in BUDGET_FLAT.items()
+                     if tok_match(key_tokens(k), groups + [ROLE[role]], forb)]
+            if not cands:
+                fail("AC 5", f"no wire.toml budget key for the {c['kind']} case (announcements {c['ann']}, "
+                             f"extension {c['ext']}) and its {role}")
+                key_fails += 1
+                continue
+            for k, v in cands:
+                if v != expected:
+                    fail("AC 5", f"wire.toml key {k!r} = {v}, but the {c['kind']} case (announcements {c['ann']}, "
+                                 f"extension {c['ext']}) has {role} {expected}")
+                    key_fails += 1
+    for label, groups, forb, expected in PART_SPECS:
+        if expected is None:
+            continue
+        for k, v in BUDGET_FLAT.items():
+            if tok_match(key_tokens(k), groups, forb) and v != expected:
+                fail("AC 5", f"wire.toml key {k!r} = {v}, but the {label} is {expected} (landed table)")
+    for k, v in BUDGET_FLAT.items():
+        if "allowance" in key_tokens(k) and v not in set(allowances):
+            fail("AC 5", f"wire.toml key {k!r} = {v} is not a computed controller allowance "
+                         f"({sorted(set(allowances))})")
+    if not allowances and any("allowance" in key_tokens(k) for k in BUDGET_FLAT):
+        fail("AC 5", "wire.toml names an allowance but wire.md has no computed allowance table")
 
 # ---------------------------------------------------------------------------
 # DoD: evidence tags and open items in the section.
