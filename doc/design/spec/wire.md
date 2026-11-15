@@ -491,7 +491,128 @@ To be filled by 004-11 (content messages: audio and dense controllers) and 004-1
 
 ## Checksum
 
-To be filled by 004-13 (slice checksum algorithm, width and placement).
+The slice checksum is a 32-bit CRC-32C over the reassembled slice — the identity bytes, the announcement container and the content of every packet of the slice — carried once per slice, as the last 4 bytes of the UDP payload of the slice's last packet, so it trails the content as 01-architecture.md § 3.2 draws it (media rule 6; 01-architecture.md § 16: transport integrity, bytes delivered equal bytes sent, per slice) `[decision]`. The fields a sender or a hop writes per packet, per copy or per hop without changing the slice — the send timestamp, the packet index and count, the copy index and the measurement extension — are outside the covered bytes, so stamping, measuring and duplicating never require recomputing it `[decision]`.
+
+### Algorithm
+
+The algorithm is CRC-32C, the Castagnoli polynomial, in the parameterised (Rocksoft) model below; it is the catalogue entry CRC-32/ISCSI, and the check value is the CRC of the nine ASCII bytes "123456789" `[decision]`:
+
+| Parameter | Value |
+|---|---|
+| Width | 32 bits |
+| Polynomial | 0x1EDC6F41 (normal form; 0x82F63B78 reflected) |
+| Initial value | 0xFFFFFFFF |
+| Input reflection | true (each byte is processed least significant bit first) |
+| Output reflection | true |
+| Final XOR | 0xFFFFFFFF |
+| Check value | 0xE3069283 |
+
+The polynomial and its name are those of iSCSI: RFC 3720, § 12.1 HeaderDigest and DataDigest, lists CRC32C with generator 0x11edc6f41, and its Appendix B.4 CRC Examples gives 32 zero bytes the digest bytes aa 36 91 8a `[standard]`. The parameters above reproduce that vector — 0x8A9136AA, stored little-endian as aa 36 91 8a — and give the check value 0xE3069283: checks/004-13.sh recomputes the check value from the table with a bitwise implementation of these parameters on every CI run (Python 3, machine-independent integer arithmetic) `[measured]`. The 32-bit result is stored as a u32 in the wire's little-endian order (Byte order), so the stored bytes are exactly the RFC's digest bytes `[decision]`.
+
+Why CRC-32C `[decision]`: a 32-bit width is the widest that fits the header cap (Placement and the header cap); among 32-bit CRCs the choice is between the Ethernet polynomial 0x04C11DB7 and Castagnoli's 0x1EDC6F41, and CRC-32C wins on the hosts that carry most of the media load. On x86-64 the SSE4.2 instruction computes exactly this polynomial — Intel 64 and IA-32 Architectures Software Developer's Manual, Volume 2A, instruction CRC32 (Accumulate CRC32 Value), which uses the polynomial 11EDC6F41H `[standard]` — and on 64-bit ARM the CRC32C instructions of the CRC extension do the same, optional in Armv8.0 and mandatory from Armv8.1 `[memory]` (the Arm Architecture Reference Manual clause is pinned by 004-22, as for the byte-order clause), so both machines of the pair (C-151) verify a slice in a fraction of a microsecond (Cost per slice).
+
+Detection over a default slice, computed rather than recalled `[measured]`: the covered bytes of a default slice with no announcement are 14 + 1 + 10 + 1 + 1 152 = 1 178 bytes, and at most 1 178 + 48 = 1 226 bytes with four announcements, so a codeword — covered bytes plus the 32 check bits — is at most 1 230 bytes, 9 840 bits. checks/004-13.sh verifies on every CI run that the full generator 0x11EDC6F41 has an even number of terms, so x + 1 divides it and every error of an odd number of bits — every 1-bit and 3-bit error among them — is detected, and that the residues x^k mod G are pairwise distinct for every k below the codeword length, so no 2-bit error is a multiple of the generator. The checksum therefore detects every error of up to 3 bits and every odd-weight error in a default slice, with or without announcements. The comparison with other polynomials is recalled, not computed: in Koopman's CRC Zoo (32-bit table) Castagnoli's polynomial keeps Hamming distance 4 for every data word up to 2 147 483 615 bits and 6 up to 5 243 bits, while the Ethernet polynomial keeps distance 4 only up to 91 607 bits and lacks the x + 1 factor `[memory]` (read from the published table; 004-22 pins the citation).
+
+The link's own checks do not replace it: the Ethernet frame check sequence covers one link and is recomputed by every switch (IEEE 802.3, clause 3.2.9, Frame Check Sequence (FCS) field), and the UDP checksum covers one datagram and is optional over IPv4 (RFC 768, Fields: an all-zero checksum value means the transmitter generated no checksum) `[standard]`; neither covers a reassembled slice or the buffers of the hosts on either end, which is what media rule 6 asks of this one `[decision]`.
+
+### Covered range
+
+The covered bytes — the checksum input — are, for each packet of the slice in packet-index order, that packet's parts below in the order listed, concatenated; the sender builds them from the packets exactly as it sends them on the path, and the receiver from the packets it reassembled. Every packet header, slice header and container byte is either covered or excluded by a row of this table, and no byte is covered twice `[decision]`:
+
+| Part | Treatment | Reason |
+|---|---|---|
+| Packet header bytes 0 to 13: magic, version, domain id, stream number, session, timeline epoch | covered, 14 bytes of every packet, as on the wire | the slice's identity: a corrupted stream number, session or epoch would deliver correct content to the wrong stream or epoch, which no other rule detects; magic and version are constant and keep the run contiguous |
+| Packet header byte 14, the flags | covered as one byte per packet, the flags byte AND 0xC0: gap (bit 7) and degraded (bit 6) as on the wire, bits 5..0 written zero for the computation | gap and degraded describe the content (C-122, rule 10); the announcement-present bit (5) is redundant with the covered count byte, the measurement-present bit (4) belongs to the excluded extension, and bits 3..0 are reserved zero |
+| Packet header byte 15: copy index (C-07) and its 6 reserved bits | excluded | every copy of a slice must carry the same checksum, because nothing about a copy's content depends on its index (Reserved fields, Copy index); the reserved bits are zero by rule, so excluding them loses nothing |
+| Slice header bytes 16 to 25: position and frames | covered, 10 bytes of every packet, as on the wire | the slice's address on the domain line and its length; a corrupted position would play correct samples at the wrong time, which no other rule detects |
+| Slice header bytes 26 to 29: packet index and packet count | excluded | packetisation, not content: the index differs per packet, and both are already checked (BadPacketIndex, BadLength); the packet-index order of the concatenation carries the index's role |
+| Slice header bytes 30 to 37: send timestamp | excluded | per packet: the pacer writes it at the moment of sending, after the checksum exists (Send timestamp; 01-architecture.md § 3.4) |
+| Announcement container: the count byte and every announcement | covered, 1 + 12 × count bytes of every packet, as sent on the path | an announcement steers every consumer at a future position (an epoch switch, an end of stream), and a corruption that still passes the announcement's own validity rules — a flipped epoch-switch payload, a shifted end-of-stream position that stays a lead ahead — would otherwise be acted on (Announcements, Sender obligations); covering it closes that gap |
+| Measurement extension (004-10) | excluded | mutable per hop: each processor rewrites it from its critical input's values, and its residence time is measured up to the send timestamp, after the checksum exists (Measurement extension, Forwarding update rule) |
+| Content region: the audio payload and every content message (004-11, 004-12) | covered, every byte as on the wire | the slice's content: 1 152 bytes of audio in a default slice (C-04) |
+| The checksum field itself | excluded | it carries the result |
+
+The content region of a packet is every byte after its measurement extension, or after its container when the measurement flag is clear, up to the end of the UDP payload — in the last packet, up to the checksum, 4 bytes before the end; its layout is 004-11's and 004-12's, and this section covers it byte for byte whatever that layout is `[decision]`. In the default regime the slice is one packet and the covered bytes are that packet's parts in the order above `[decision]`.
+
+### Placement and the header cap
+
+The checksum is placed in the last packet of the slice — the packet whose packet index equals packet count − 1 — and in no other packet; in the default regime the packet count is 1 (C-05), so every default packet is a last packet and carries it `[decision]`. One value per reassembled slice has one place: the receiver verifies after reassembly (Validity rules), so copies in earlier packets would add bytes and a new disagreement case without adding detection `[decision]`.
+
+The checksum trails the content: it is the last 4 bytes of the UDP payload of the last packet, at offset payload length − 4, following the content region, as 01-architecture.md § 3.2 draws it (packet header, slice header, announcements, measurement extension, content, checksum) `[decision]`. A receiver knows the payload length from the datagram before it reads any byte, so the checksum's offset is known up front, and a sender appends it after the content it covers `[decision]`. In wire.toml the checksum is a section message of the media packet, the precedent of the announcement entry, because a trailing field has no fixed offset from the packet's start `[decision]`. A gap slice carries no checksum: it is header-only, exactly 38 bytes (rule 10; Slice header), and has no content to cover `[decision]`.
+
+The header cap holds with no fallback rule: the packet header (16 bytes) + the slice header (22) + a maximal announcement container (49) + the measurement extension (9) = 96 bytes, and 96 + 4 = 100 bytes, exactly the 100 bytes C-137 allows for all headers and the checksum, so a default slice at maximum occupancy is 100 + 1 152 = 1 252 bytes of UDP payload, the bound of C-17 `[decision]`. The checksum is never omitted to meet the cap; the media packet's declared maximum stays 96 bytes and the checksum section adds its 4 (wire.toml) `[decision]`.
+
+### Field table
+
+Little-endian (Byte order); the offset is relative to the end of the UDP payload of the slice's last packet `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| payload length − 4: the last 4 bytes of the UDP payload, last packet of the slice only, following the content | 4 | u32 | slice checksum: CRC-32C (Algorithm) of the slice's covered bytes (Covered range), stored little-endian | any 32-bit value; a value that differs from the CRC the receiver recomputes is BadChecksum |
+
+### Who computes and who verifies
+
+The checksum is computed by the sender of the slice — a source, or a processor or edge emitting its own output slice — at packetisation, over the covered bytes of the packets exactly as laid out for the path they are sent on; no hop carries a checksum through `[decision]`. Because the announcement containers are covered and a sender may lay a slice out differently per path only in its announcements — the announcements it carries on each path, or a C-137 fallback path that omits them; the packet count is per stream, fixed by the regime stamp (Slice header, Multi-packet regime), and never differs between paths — the sender computes one CRC per distinct layout, usually one per slice; how it computes it (one pass, or a content CRC combined with the per-layout header bytes) is the implementation's, as long as the result equals the CRC of the covered bytes `[decision]`. A processor verifies each input slice it receives and computes a fresh checksum for each output slice it emits, because its output is new content at a new position (01-architecture.md § 4.1) `[decision]`. Writing an excluded field never requires recomputing: the pacer writes the send timestamp, a processor writes the extension's updated counters, and a future duplicating sender writes the copy index, all after the checksum exists `[decision]`.
+
+### Validity rules
+
+The checksum is verified once per slice, after reassembly — in the default regime, on the single packet — and only after every per-packet rule of the packet header, slice header, announcement container and measurement extension has passed, so a packet rejected for another reason never reaches the checksum and every rejected packet counts under exactly one reason `[decision]`. Its invalid forms and their required outcomes:
+
+| Invalid form | Required outcome |
+|---|---|
+| the stored checksum differs from the CRC-32C the receiver recomputes over the reassembled slice's covered bytes | drop the slice — every packet of it — and count each of its packets under BadChecksum on the input `[decision]` |
+| the last packet's UDP payload is too short to hold its headers, its container, its extension when flagged and the 4-byte checksum: the body does not fill the shape its header declares | drop and count under BadLength, as for a missing measurement extension `[decision]` |
+| the packets of one multi-packet slice disagree on an identity byte — session, frames, the degraded flag, or any other covered packet header or slice header byte — that no per-packet rule rejects | no separate comparison: every packet's identity bytes are covered, so the disagreement makes the recomputed CRC differ from the stored one; drop the slice and count each of its packets under BadChecksum `[decision]` |
+
+A mismatch is dropped and counted under BadChecksum — one count per packet of the slice, so the per-input, per-reason counting of AC-23 sees every rejected packet — and never delivered: the handler receives a slice whole or not at all (01-architecture.md § 3.1) `[decision]`. Identity disagreements that a per-packet rule already rejects keep that rule's reason: a domain or epoch other than the consumer's (ForeignDomain, UnconfiguredDomain, WrongEpoch) and an inconsistent packet count (BadPacketIndex); the stream number and position are the reassembly key with the packet index (rule 9), so packets that disagree on them never meet in one slice `[decision]`. A slice that fails the checksum is not a valid copy (rule 9), so a later copy of the same slice may still be accepted `[decision]`. In the last packet the frames-against-length rule of the slice header counts the content region only, without the 4 checksum bytes `[decision]`. The verification is linear in the slice's length, inside C-164's bound per bad input together with the per-packet rules (Cost per slice) `[decision]`.
+
+### Cost per slice
+
+At the defaults a stream carries 1 152 bytes of audio per slice (C-04) at 2 000 slices/s (C-02): 1 152 × 2 000 = 2 304 000 bytes/s of audio, and with the 26 covered header and container bytes of a packet without announcements 1 178 × 2 000 = 2 356 000 covered bytes/s per stream `[decision]`. The estimates below rest on recalled instruction costs, not on runs `[memory]`:
+
+| Target | Assumption | Per default slice (1 178 bytes) | Load per stream at 2 000 slices/s |
+|---|---|---|---|
+| x86-64 host with SSE4.2 | one dependent chain of 8-byte CRC32 instructions, 3 cycles each, ≈ 0.375 cycles per byte `[memory]` | ≈ 440 cycles, ≈ 0.15 µs at 3 GHz | ≈ 0.9 Mcycles/s, ≈ 0.03 % of one 3 GHz core; a 96-channel source's 32 000 packets/s (C-22) ≈ 14 Mcycles/s, ≈ 0.5 % |
+| 64-bit ARM host with the CRC extension | same order as x86-64, 8 bytes per instruction `[memory]` | well under 1 µs | well under 1 % of one core |
+| reference embedded target, software, byte-wise table (1 KiB) | ≈ 8 cycles per byte on a Cortex-M7-class core `[memory]` | ≈ 9 400 cycles: ≈ 20 µs at 480 MHz | ≈ 18.8 Mcycles/s, ≈ 3.9 % of 480 MHz |
+| reference embedded target, software, slice-by-8 tables (8 KiB) | ≈ 2.5 cycles per byte `[memory]` | ≈ 2 900 cycles: ≈ 6 µs at 480 MHz | ≈ 5.9 Mcycles/s, ≈ 1.2 % of 480 MHz |
+| reference embedded target, hardware CRC unit with a programmable polynomial | one 32-bit word per bus write, ≈ 295 writes, or fed by DMA `[memory]` | ≈ 1 µs or less | negligible |
+
+Per-path computation on the sender `[memory]`: each distinct layout costs one more pass, ≈ 0.15 µs per slice on an x86-64 host; even a slice laid out differently for each of 63 consumers — the most a 64-module medianet has besides the sender (C-34) — costs 63 × 440 × 2 000 ≈ 55 Mcycles/s, ≈ 1.9 % of one 3 GHz core per stream, and the usual case is one layout per slice.
+
+The reference board is not chosen yet (026b-01; 026a-01 builds for a generic Cortex-M target until then), and the reference device is a sink receiving one 6-channel stream (epic 026b), so its load is one row of the table, verification only `[decision]`. The budget this section sets is C-164's: the per-packet rules plus the verification of one default slice must take at most 10 µs on the reference board, which at 2 000 slices/s is at most 2 % of its CPU (10 µs × 2 000 = 20 ms per second); the CRC does not get all of it `[decision]`. On the estimates a byte-wise table alone exceeds the whole budget on any Cortex-M clock (it would need ≈ 940 MHz), slice-by-8 takes ≈ 6 µs at 480 MHz and leaves ≈ 4 µs for the per-packet rules, and a programmable hardware CRC unit leaves nearly all of it; a CRC unit fixed to the Ethernet polynomial cannot compute CRC-32C, so 026b-01 weighs a programmable unit or a clock rate at which slice-by-8 leaves the per-packet rules their share `[decision]`.
+
+### Open items
+
+**Open item.** The embedded cost above is an estimate, not a measurement. Owner: task 026 (026b, on the reference board once 026b-01 names it), which measures, with the implementation the firmware ships, the time to run the per-packet rules on a default packet and to verify one default slice — 1 178 covered bytes. Falsifier: the chosen algorithm is too slow on the reference embedded target — the per-packet rules plus the verification of one default slice exceed 10 µs (C-164), more than 2 % of the device's CPU at 2 000 slices/s, with every implementation the board offers (hardware CRC unit, slice-by-8 tables). A falsified estimate reopens the algorithm, and a different algorithm or width is a major change (Versioning, Minor and major changes) `[decision]`.
+
+### Worked example
+
+One small slice for task 007, chosen to be readable rather than default-sized `[decision]`: stream 3 of domain 1, session 0x12345678, timeline epoch 7, flags 0x70 (degraded, announcement present, measurement present), copy index 0, position 96 000, 2 frames of a 2-channel stream as f32 samples 0.5, −0.5, 0.25, −0.25 (16 bytes of content), packet index 0 of a packet count of 1, send timestamp 1 000 000 000 123 ns, one announcement — a timeline epoch switch (type code 2, length 10) to epoch 8 at position 102 144 — and a measurement extension of hop count 1, residence 1 500 ns and declared delay 48 samples.
+
+Input (54 bytes) — the covered bytes in order, one line per part: packet header bytes 0 to 13, the masked flags byte (0x70 AND 0xC0 = 0x40), slice header bytes 16 to 25, the announcement container (count 1 and the 12-byte announcement), then the 16 content bytes `[decision]`:
+
+```
+4e 4d 00 01 01 00 03 00 78 56 34 12 07 00
+40
+00 77 01 00 00 00 00 00 02 00
+01 02 0a 00 8f 01 00 00 00 00 00 08 00
+00 00 00 3f 00 00 00 bf 00 00 80 3e 00 00 80 be
+```
+
+Expected checksum: 0xD75ABFE5, stored little-endian as e5 bf 5a d7. checks/004-13.sh recomputes it from the stated parameters on every CI run, and it was cross-checked with a second, table-free implementation of the Rocksoft model `[measured]`.
+
+The whole 80-byte packet as sent: headers 0 to 37, the container 38 to 50, the extension 51 to 59, the content 60 to 75, and the checksum trailing at payload length − 4 = 76 `[decision]`:
+
+```
+ 0: 4e 4d 00 01 01 00 03 00 78 56 34 12 07 00 70 00
+16: 00 77 01 00 00 00 00 00 02 00 00 00 01 00 7b 10
+32: a5 d4 e8 00 00 00 01 02 0a 00 8f 01 00 00 00 00
+48: 00 08 00 01 dc 05 00 00 30 00 00 00 00 00 00 3f
+64: 00 00 00 bf 00 00 80 3e 00 00 80 be e5 bf 5a d7
+```
+
+The same slice sent as copy 1, with another send timestamp, or with the measurement counters rewritten by a later hop carries the same checksum 0xD75ABFE5, because none of those bytes is covered; a path on which the sender omits the announcement has a different container and therefore its own checksum (Who computes and who verifies) `[decision]`.
 
 ## Size budget
 
