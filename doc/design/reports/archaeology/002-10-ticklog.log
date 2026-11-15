@@ -1,0 +1,186 @@
+# 002-10 evidence: ticklog lines (mixer, sender) of both runs, the flood probe summary, and the derived statistics.
+# Baseline run: hadropoc loopback --duration 30 --csv /tmp/opencode/002-10-baseline.csv --no-tui --group 239.72.68.44:44410 --port 45300 (exit 0)
+# Flooded run:  hadropoc loopback --duration 30 --csv /tmp/opencode/002-10-flooded.csv  --no-tui --group 239.72.68.44:44411 --port 45400 (exit 0)
+#               flood-send --target 127.0.0.1:45431 --rate 20000 --duration 28
+
+== flood probe summary ==
+flood: t=1.0s sent=20001 achieved=20001 datagrams per second
+flood: t=2.0s sent=40001 achieved=20000 datagrams per second
+flood: t=3.0s sent=60001 achieved=20000 datagrams per second
+flood: t=4.0s sent=80001 achieved=20000 datagrams per second
+flood: t=5.0s sent=100001 achieved=20000 datagrams per second
+flood: t=6.0s sent=120001 achieved=20000 datagrams per second
+flood: t=7.0s sent=140001 achieved=20000 datagrams per second
+flood: t=8.0s sent=160001 achieved=20000 datagrams per second
+flood: t=9.0s sent=180001 achieved=20000 datagrams per second
+flood: t=10.0s sent=200001 achieved=20000 datagrams per second
+flood: t=11.0s sent=220001 achieved=20000 datagrams per second
+flood: t=12.0s sent=240001 achieved=20000 datagrams per second
+flood: t=13.0s sent=260001 achieved=20000 datagrams per second
+flood: t=14.0s sent=280001 achieved=20000 datagrams per second
+flood: t=15.0s sent=300001 achieved=20000 datagrams per second
+flood: t=16.0s sent=320001 achieved=20000 datagrams per second
+flood: t=17.0s sent=340001 achieved=20000 datagrams per second
+flood: t=18.0s sent=360001 achieved=20000 datagrams per second
+flood: t=19.0s sent=380001 achieved=20000 datagrams per second
+flood: t=20.0s sent=400001 achieved=20000 datagrams per second
+flood: t=21.0s sent=420001 achieved=20000 datagrams per second
+flood: t=22.0s sent=440001 achieved=20000 datagrams per second
+flood: t=23.0s sent=460001 achieved=20000 datagrams per second
+flood: t=24.0s sent=480001 achieved=20000 datagrams per second
+flood: t=25.0s sent=500001 achieved=20000 datagrams per second
+flood: t=26.0s sent=520001 achieved=20000 datagrams per second
+flood: t=27.0s sent=540001 achieved=20000 datagrams per second
+flood: t=28.0s sent=560001 achieved=20000 datagrams per second
+flood: sent 560001 datagrams in 28.000s, achieved 20000 datagrams per second (target 20000), 0 send errors
+
+== baseline ticklog: mixer ==
+[   0.0s] ticklog module=mixer in0=1890 in1=1888 in2=1888 wake_n=5666 wake_p50_us=5.0 wake_p99_us=20.0 wake_max_us=130.476
+[   1.0s] ticklog module=mixer in0=1999 in1=1999 in2=2000 wake_n=5998 wake_p50_us=6.0 wake_p99_us=18.0 wake_max_us=190.467
+[   2.0s] ticklog module=mixer in0=2000 in1=2001 in2=2000 wake_n=6001 wake_p50_us=6.0 wake_p99_us=23.0 wake_max_us=275.219
+[   3.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=17.0 wake_max_us=460.795
+[   4.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=17.0 wake_max_us=53.531
+[   5.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=22.0 wake_max_us=225.160
+[   6.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=24.0 wake_max_us=71.179
+[   7.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=19.0 wake_max_us=205.317
+[   8.0s] ticklog module=mixer in0=2000 in1=2000 in2=1999 wake_n=5999 wake_p50_us=7.0 wake_p99_us=20.0 wake_max_us=142.156
+[   9.0s] ticklog module=mixer in0=2000 in1=2000 in2=2001 wake_n=6001 wake_p50_us=7.0 wake_p99_us=18.0 wake_max_us=67.035
+[  10.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=20.0 wake_max_us=389.889
+[  11.0s] ticklog module=mixer in0=2000 in1=2000 in2=1999 wake_n=5999 wake_p50_us=7.0 wake_p99_us=25.0 wake_max_us=177.403
+[  12.0s] ticklog module=mixer in0=2000 in1=1999 in2=2001 wake_n=6000 wake_p50_us=7.0 wake_p99_us=21.0 wake_max_us=81.200
+[  13.0s] ticklog module=mixer in0=2000 in1=2001 in2=1999 wake_n=6000 wake_p50_us=6.0 wake_p99_us=20.0 wake_max_us=72.526
+[  14.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=22.0 wake_max_us=72.618
+[  15.0s] ticklog module=mixer in0=2000 in1=2000 in2=2001 wake_n=6001 wake_p50_us=7.0 wake_p99_us=26.0 wake_max_us=69.794
+[  16.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=21.0 wake_max_us=100.073
+[  17.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=22.0 wake_max_us=75.174
+[  18.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=21.0 wake_max_us=55.856
+[  19.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=20.0 wake_max_us=135.098
+[  20.0s] ticklog module=mixer in0=2000 in1=2000 in2=1999 wake_n=5999 wake_p50_us=6.0 wake_p99_us=19.0 wake_max_us=247.413
+[  21.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=23.0 wake_max_us=80.460
+[  22.0s] ticklog module=mixer in0=2000 in1=2000 in2=2001 wake_n=6001 wake_p50_us=7.0 wake_p99_us=18.0 wake_max_us=60.933
+[  23.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=24.0 wake_max_us=74.406
+[  24.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=22.0 wake_max_us=59.849
+[  25.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=23.0 wake_max_us=71.452
+[  26.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=21.0 wake_max_us=85.369
+[  27.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=16.0 wake_max_us=66.156
+[  28.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=17.0 wake_max_us=65.952
+[  29.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=20.0 wake_max_us=68.103
+
+== baseline ticklog: sender ==
+[   0.0s] ticklog module=sender in0=5664 wake_n=5664 wake_p50_us=11.0 wake_p99_us=63.0 wake_max_us=539.069 tick_n=1961 tick_p50_us=2.0 tick_p99_us=5.0 tick_max_us=67.146
+[   1.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=12.0 wake_p99_us=68.0 wake_max_us=75.228 tick_n=2000 tick_p50_us=3.0 tick_p99_us=6.0 tick_max_us=16.952
+[   2.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=4.0 wake_p99_us=65.0 wake_max_us=221.816 tick_n=2000 tick_p50_us=2.0 tick_p99_us=4.0 tick_max_us=15.581
+[   3.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=30.0 wake_p99_us=65.0 wake_max_us=79.587 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=12.409
+[   4.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=11.0 wake_p99_us=66.0 wake_max_us=76.401 tick_n=2000 tick_p50_us=2.0 tick_p99_us=7.0 tick_max_us=9.659
+[   5.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=13.0 wake_p99_us=69.0 wake_max_us=77.575 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=84.959
+[   6.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=11.0 wake_p99_us=69.0 wake_max_us=73.812 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=9.641
+[   7.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=13.0 wake_p99_us=66.0 wake_max_us=73.289 tick_n=2000 tick_p50_us=3.0 tick_p99_us=6.0 tick_max_us=16.588
+[   8.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=52.0 wake_max_us=238.763 tick_n=2000 tick_p50_us=2.0 tick_p99_us=6.0 tick_max_us=13.760
+[   9.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=32.0 wake_p99_us=75.0 wake_max_us=78.325 tick_n=2000 tick_p50_us=4.0 tick_p99_us=7.0 tick_max_us=13.262
+[  10.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=21.0 wake_p99_us=81.0 wake_max_us=83.937 tick_n=2000 tick_p50_us=4.0 tick_p99_us=8.0 tick_max_us=12.915
+[  11.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=13.0 wake_p99_us=78.0 wake_max_us=254.319 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=212.739
+[  12.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=12.0 wake_p99_us=69.0 wake_max_us=76.775 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=10.239
+[  13.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=14.0 wake_p99_us=74.0 wake_max_us=93.673 tick_n=2000 tick_p50_us=3.0 tick_p99_us=6.0 tick_max_us=16.230
+[  14.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=74.0 wake_max_us=80.525 tick_n=2000 tick_p50_us=2.0 tick_p99_us=6.0 tick_max_us=16.855
+[  15.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=5.0 wake_p99_us=65.0 wake_max_us=78.011 tick_n=2000 tick_p50_us=2.0 tick_p99_us=6.0 tick_max_us=16.398
+[  16.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=68.0 wake_max_us=73.300 tick_n=2000 tick_p50_us=2.0 tick_p99_us=6.0 tick_max_us=10.593
+[  17.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=12.0 wake_p99_us=60.0 wake_max_us=66.107 tick_n=2000 tick_p50_us=3.0 tick_p99_us=6.0 tick_max_us=11.520
+[  18.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=4.0 wake_p99_us=74.0 wake_max_us=85.330 tick_n=2000 tick_p50_us=2.0 tick_p99_us=5.0 tick_max_us=9.374
+[  19.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=60.0 wake_max_us=65.761 tick_n=2000 tick_p50_us=2.0 tick_p99_us=6.0 tick_max_us=10.751
+[  20.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=6.0 wake_p99_us=46.0 wake_max_us=59.152 tick_n=2000 tick_p50_us=2.0 tick_p99_us=5.0 tick_max_us=12.669
+[  21.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=12.0 wake_p99_us=77.0 wake_max_us=87.933 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=13.508
+[  22.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=11.0 wake_p99_us=73.0 wake_max_us=79.788 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=11.953
+[  23.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=11.0 wake_p99_us=65.0 wake_max_us=77.197 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=14.302
+[  24.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=12.0 wake_p99_us=61.0 wake_max_us=66.785 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=17.758
+[  25.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=11.0 wake_p99_us=71.0 wake_max_us=79.585 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=14.673
+[  26.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=11.0 wake_p99_us=75.0 wake_max_us=79.598 tick_n=2000 tick_p50_us=3.0 tick_p99_us=6.0 tick_max_us=9.955
+[  27.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=20.0 wake_p99_us=76.0 wake_max_us=90.096 tick_n=2000 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=13.315
+[  28.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=12.0 wake_p99_us=61.0 wake_max_us=72.326 tick_n=2000 tick_p50_us=3.0 tick_p99_us=6.0 tick_max_us=9.073
+[  29.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=4.0 wake_p99_us=69.0 wake_max_us=75.947 tick_n=2000 tick_p50_us=2.0 tick_p99_us=4.0 tick_max_us=16.263
+
+== flooded ticklog: mixer ==
+[   0.0s] ticklog module=mixer in0=1889 in1=1888 in2=1887 wake_n=5664 wake_p50_us=5.0 wake_p99_us=20.0 wake_max_us=178.581
+[   1.0s] ticklog module=mixer in0=2000 in1=2000 in2=2000 wake_n=6000 wake_p50_us=5.0 wake_p99_us=22.0 wake_max_us=174.181
+[   2.0s] ticklog module=mixer in0=21440 in1=2000 in2=2000 wake_n=25440 wake_p50_us=3.0 wake_p99_us=21.0 wake_max_us=281.183
+[   3.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=20.0 wake_max_us=244.370
+[   4.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=22.0 wake_max_us=70.505
+[   5.0s] ticklog module=mixer in0=21997 in1=2000 in2=2000 wake_n=25997 wake_p50_us=4.0 wake_p99_us=20.0 wake_max_us=659.138
+[   6.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=21.0 wake_max_us=111.926
+[   7.0s] ticklog module=mixer in0=21945 in1=2000 in2=2000 wake_n=25945 wake_p50_us=4.0 wake_p99_us=21.0 wake_max_us=2430.928
+[   8.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=22.0 wake_max_us=129.998
+[   9.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=21.0 wake_max_us=45.170
+[  10.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=26.0 wake_max_us=103.654
+[  11.0s] ticklog module=mixer in0=21942 in1=2000 in2=2000 wake_n=25942 wake_p50_us=6.0 wake_p99_us=25.0 wake_max_us=3314.501
+[  12.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=26.0 wake_max_us=227.736
+[  13.0s] ticklog module=mixer in0=21933 in1=2000 in2=2000 wake_n=25933 wake_p50_us=6.0 wake_p99_us=24.0 wake_max_us=3558.403
+[  14.0s] ticklog module=mixer in0=21941 in1=2000 in2=2000 wake_n=25941 wake_p50_us=6.0 wake_p99_us=27.0 wake_max_us=3271.758
+[  15.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=23.0 wake_max_us=102.725
+[  16.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=24.0 wake_max_us=136.018
+[  17.0s] ticklog module=mixer in0=21930 in1=2000 in2=2000 wake_n=25930 wake_p50_us=6.0 wake_p99_us=27.0 wake_max_us=3782.955
+[  18.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=26.0 wake_max_us=67.282
+[  19.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=26.0 wake_max_us=71.282
+[  20.0s] ticklog module=mixer in0=21989 in1=2000 in2=2000 wake_n=25989 wake_p50_us=6.0 wake_p99_us=24.0 wake_max_us=892.606
+[  21.0s] ticklog module=mixer in0=21966 in1=2000 in2=2000 wake_n=25966 wake_p50_us=6.0 wake_p99_us=25.0 wake_max_us=2279.765
+[  22.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=28.0 wake_max_us=370.601
+[  23.0s] ticklog module=mixer in0=21924 in1=2000 in2=2000 wake_n=25924 wake_p50_us=6.0 wake_p99_us=19.0 wake_max_us=3217.617
+[  24.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=22.0 wake_max_us=271.018
+[  25.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=27.0 wake_max_us=96.675
+[  26.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=24.0 wake_max_us=69.744
+[  27.0s] ticklog module=mixer in0=21936 in1=2000 in2=2000 wake_n=25936 wake_p50_us=6.0 wake_p99_us=23.0 wake_max_us=3436.961
+[  28.0s] ticklog module=mixer in0=21977 in1=2000 in2=2000 wake_n=25977 wake_p50_us=6.0 wake_p99_us=24.0 wake_max_us=1582.010
+[  29.0s] ticklog module=mixer in0=22000 in1=2000 in2=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=26.0 wake_max_us=79.483
+
+== flooded ticklog: sender ==
+[   0.0s] ticklog module=sender in0=5662 wake_n=5662 wake_p50_us=10.0 wake_p99_us=65.0 wake_max_us=322.052 tick_n=1961 tick_p50_us=2.0 tick_p99_us=5.0 tick_max_us=54.512
+[   1.0s] ticklog module=sender in0=6000 wake_n=6000 wake_p50_us=10.0 wake_p99_us=52.0 wake_max_us=278.928 tick_n=2000 tick_p50_us=3.0 tick_p99_us=5.0 tick_max_us=14.631
+[   2.0s] ticklog module=sender in0=25445 wake_n=25445 wake_p50_us=3.0 wake_p99_us=69.0 wake_max_us=213.852 tick_n=2000 tick_p50_us=0.0 tick_p99_us=3.0 tick_max_us=104.525
+[   3.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=67.0 wake_max_us=247.098 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=42.234
+[   4.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=68.0 wake_max_us=392.419 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=50.304
+[   5.0s] ticklog module=sender in0=25997 wake_n=25997 wake_p50_us=4.0 wake_p99_us=69.0 wake_max_us=550.847 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=134.957
+[   6.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=68.0 wake_max_us=108.227 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=0.171
+[   7.0s] ticklog module=sender in0=25945 wake_n=25945 wake_p50_us=4.0 wake_p99_us=72.0 wake_max_us=694.194 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=310.093
+[   8.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=68.0 wake_max_us=81.568 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=2.589
+[   9.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=4.0 wake_p99_us=74.0 wake_max_us=3800.582 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=3463.315
+[  10.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=92.0 wake_max_us=113.788 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=8.374
+[  11.0s] ticklog module=sender in0=25942 wake_n=25942 wake_p50_us=5.0 wake_p99_us=101.0 wake_max_us=142.087 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=4.794
+[  12.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=94.0 wake_max_us=108.911 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=8.622
+[  13.0s] ticklog module=sender in0=25933 wake_n=25933 wake_p50_us=5.0 wake_p99_us=94.0 wake_max_us=721.475 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=651.289
+[  14.0s] ticklog module=sender in0=25941 wake_n=25941 wake_p50_us=5.0 wake_p99_us=99.0 wake_max_us=379.095 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=145.209
+[  15.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=97.0 wake_max_us=739.624 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=520.276
+[  16.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=94.0 wake_max_us=147.867 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=20.072
+[  17.0s] ticklog module=sender in0=25930 wake_n=25930 wake_p50_us=5.0 wake_p99_us=88.0 wake_max_us=182.566 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=5.469
+[  18.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=103.0 wake_max_us=119.440 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=0.518
+[  19.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=102.0 wake_max_us=3992.506 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=4005.560
+[  20.0s] ticklog module=sender in0=25989 wake_n=25989 wake_p50_us=5.0 wake_p99_us=91.0 wake_max_us=149.654 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=5.914
+[  21.0s] ticklog module=sender in0=25966 wake_n=25966 wake_p50_us=5.0 wake_p99_us=103.0 wake_max_us=156.822 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=102.742
+[  22.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=94.0 wake_max_us=380.190 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=248.204
+[  23.0s] ticklog module=sender in0=25924 wake_n=25924 wake_p50_us=5.0 wake_p99_us=92.0 wake_max_us=287.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=149.395
+[  24.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=85.0 wake_max_us=1021.706 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=902.440
+[  25.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=95.0 wake_max_us=113.749 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=2.160
+[  26.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=101.0 wake_max_us=114.975 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=0.293
+[  27.0s] ticklog module=sender in0=25936 wake_n=25936 wake_p50_us=5.0 wake_p99_us=98.0 wake_max_us=137.299 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=28.874
+[  28.0s] ticklog module=sender in0=25977 wake_n=25977 wake_p50_us=6.0 wake_p99_us=94.0 wake_max_us=114.083 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=4.731
+[  29.0s] ticklog module=sender in0=26000 wake_n=26000 wake_p50_us=5.0 wake_p99_us=95.0 wake_max_us=132.931 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=40.481
+
+== derived statistics ==
+== nominal (baseline mixer in0 per full second, warmup skipped) ==
+windows=28 values=[2000.0] median=2000.0
+== flooded input drained (mixer in0, seconds 3..29) ==
+windows=27 min=21924.0 median=22000.0 max=22000.0
+== CSV tx_late_ns ==
+baseline: rows=59968 used=59968 median_ns=3362 p99_ns=7035 max_ns=212739
+flooded (real-seq rows only): rows=559227 used=60070 median_ns=65 p99_ns=3679 max_ns=4005560
+flooded CSV flood-source rows (seq >= 900000000): 499157 over 28 s = 17827/s
+== ticklog pooled: median-of-per-second-medians, worst per-second p99/max-of-max (µs) ==
+baseline  sender tick_p50  median=     3.0 worst=    4.000 windows=28
+baseline  sender tick_p99  median=     6.5 worst=    8.000 windows=28
+baseline  sender tick_max  median=    13.3 worst=  212.739 windows=28
+baseline  mixer  wake_p50  median=     7.0 worst=    7.000 windows=28
+baseline  mixer  wake_p99  median=    21.0 worst=   26.000 windows=28
+baseline  mixer  wake_max  median=    74.8 worst=  460.795 windows=28
+flooded   sender tick_p50  median=     0.0 worst=    0.000 windows=28
+flooded   sender tick_p99  median=     0.0 worst=    3.000 windows=28
+flooded   sender tick_max  median=    41.4 worst= 4005.560 windows=28
+flooded   mixer  wake_p50  median=     6.0 worst=    6.000 windows=28
+flooded   mixer  wake_p99  median=    24.0 worst=   28.000 windows=28
+flooded   mixer  wake_max  median=   257.7 worst= 3782.955 windows=28

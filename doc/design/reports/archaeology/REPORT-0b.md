@@ -404,7 +404,52 @@ The control-plane timers of the constants table, C-30 to C-33, are not in these 
 
 ## (e) Run confirmations
 
-To be filled by ticket 002-14 and successors.
+Filled per ticket as run confirmations land; the section verdict line stays pending until 002-13 closes the epic.
+
+### 002-10 — flood test of the unbounded drain
+
+**Run provenance.** Both runs are `hadropoc loopback` runs of the scratch copy at `/home/dorian/workspace/hadronyche/poc-scratch`, whose content is the `poc-untouched` tree plus exactly two committed logging-only patches (002-07's hoplog and this ticket's ticklog, kept beside this report), so the runs are poc-untouched-equivalent: neither patch changes any behaviour, both only accumulate figures and print [measured]. The frozen tree at `/home/dorian/workspace/hadropoc` was neither run nor written: it carries the epic-003 fixes (003-03, 003-04), and the pacing fix does not touch the drain behaviour these runs measure — the drain loop there is the `poc-untouched` one (module.rs:1653) [code].
+
+**Diagnostic logging** (002-07 convention): the mixer-side and ticker distributions below were read from a per-second histogram summary (`ticklog`) added to the scratch copy for this ticket. The logging lived in the scratch copy only, never in the frozen tree, and the companion diff `002-10-scratch.diff` beside this report is logging-only — one new module plus nine call sites that accumulate counts and print one line per second; no behaviour change [code]. The ticklog evidence lines of both runs and the derived statistics are kept beside this report at `002-10-ticklog.log` [measured].
+
+Baseline run (no flood), 30 s, unprivileged, isolated group and port [measured]:
+```console
+$ cd /home/dorian/workspace/hadronyche/poc-scratch
+$ ./target/release/hadropoc loopback --duration 30 --csv /tmp/opencode/002-10-baseline.csv --no-tui --group 239.72.68.44:44410 --port 45300
+$ echo $?
+0
+```
+[measured]
+
+Flooded run, 30 s with the same flags otherwise (isolated group and port), the flood sustained 28 s, from run second 2 to the end [measured]:
+```console
+$ cd /home/dorian/workspace/hadronyche/poc-scratch
+$ ./target/release/hadropoc loopback --duration 30 --csv /tmp/opencode/002-10-flooded.csv --no-tui --group 239.72.68.44:44411 --port 45400 &
+$ probes/flood-send/target/release/flood-send --target 127.0.0.1:45431 --rate 20000 --duration 28
+```
+[measured]
+
+**Rates.** The nominal rate of the mixer's feed input is 2 000 datagrams per second [measured] — the ticklog counts 2 000 on every full second of the baseline run (28 of 28 windows), and the baseline packet CSV agrees (59 968 rows in 30 s). The flood achieved 20 000 datagrams per second, sustained over the full 28 s (560 001 datagrams sent, 0 send errors), exactly 10× the nominal rate [measured]. The flooded input kept draining everything the socket offered: 22 000 datagrams per second (the 20 000 flood datagrams plus the 2 000 real feed datagrams; between 21 924 and 22 000 in every full second), with the two unflooded inputs unchanged at their own 2 000/s [measured].
+
+**Distributions** — median, p99 and max of both metrics for both runs [measured]. For the ticklog quantities, the median and p99 are taken over the run's 28 full-second windows (median of the per-second medians, worst per-second p99) and the max is the run maximum; the TX pacing rows come from the packet CSV's `tx_late_ns` column — the lateness stamped at sender.rs:308 and echoed back per returned record — with the flooded CSV's flood-source rows excluded (seq ≥ 900 000 000, the probe's own sequence space; 499 157 such rows carried the probe's tx_late of 0, leaving 60 070 real rows) [measured].
+
+| metric | run | median | p99 | max |
+|---|---|---|---|---|
+| TX pacing lateness (packet CSV `tx_late_ns`) | baseline | 3.4 µs | 7.0 µs | 212.7 µs |
+| TX pacing lateness (packet CSV `tx_late_ns`) | flooded | 0.1 µs | 3.7 µs | 4005.6 µs |
+| Ticker lateness, sender fire (scratch ticklog) | baseline | 3.0 µs | 8.0 µs | 212.7 µs |
+| Ticker lateness, sender fire (scratch ticklog) | flooded | 0.0 µs | 3.0 µs | 4005.6 µs |
+| Mixer data-thread wake lateness (the mixer declares no ticker — scratch ticklog) | baseline | 7.0 µs | 26.0 µs | 460.8 µs |
+| Mixer data-thread wake lateness (the mixer declares no ticker — scratch ticklog) | flooded | 6.0 µs | 28.0 µs | 3783.0 µs |
+[measured]
+
+**The mixer has no ticker.** The ticket's "mixer's ticker lateness" presupposes a mixer tick; there is none: `mixer::module` declares inputs and an output but never calls `.every()` (mixer.rs:46-50), and a module's data thread has a deadline only when a ticker is declared (module.rs:1636) [code]. The only ticker in the loopback graph is the sender's block timer, one `fire` per 0.5 ms block (sender.rs:203), whose lateness is exactly the TX pacing lateness stamped at sender.rs:308 — which is why the ticker and TX pacing rows above agree to the microsecond, two independent instruments (scratch log vs packet CSV) [code]. As the mixer-side quantity this ticket asks for, the table therefore reports the mixer data thread's datagram wake lateness — kernel receive timestamp against userspace receive (module.rs:1654-1656) — the only per-datagram timing figure its deadline-free thread produces [code].
+
+**Starvation: refuted** at 10× nominal on this host [measured]. Mechanism: the drain loop at module.rs:1653 (frozen line numbers) does empty every input socket before the deadline check at module.rs:1671, exactly as read from code — but at 22 000 datagrams per second on the flooded input the per-datagram drain cost stays far below the arrival budget, so no queue builds anywhere: the mixer's wake lateness (datagrams queueing in its socket) reads median 6 µs and p99 28 µs flooded against 7 µs and 26 µs baseline, and the sender's ticker keeps its 0.5 ms schedule at median 0.1 µs, p99 3.7 µs — better than baseline (3.4 µs, 7.0 µs) because the constant arrival stream makes the drain loop iterate continuously, so the deadline check runs within a microsecond of the deadline, where the baseline loop wakes from `ppoll` on the deadline itself and drains the queued batch first (module.rs:1643-1653) [measured]. Only the run maximum grows: isolated late ticks of up to 4005.6 µs flooded against 212.7 µs baseline (p99 unchanged at ≤ 8 µs), on the scale of one scheduler tick at CONFIG_HZ=250 (Environment), after which the loop re-fires on schedule — the skip threshold of 20 block periods (module.rs:1681) is never reached [measured]. The sender's TX pacing correspondingly does not degrade at median or p99 while the mixer takes the flood; the claim that one flooding input starves the ticker does not hold at this rate on this host, and nothing here bounds a flood high enough to saturate the drain itself [measured]. The runtime does not inherit this loop: it bounds the drain per input per cycle to twice the admitted packets per slice (C-16, C-156) [code].
+
+**Flood source.** The flood source is the throwaway probe `probes/flood-send` of this repository (C-133), a standalone dependency-free crate, workspace-excluded like `probes/linux-peer` [decision]. It sends well-formed feed datagrams — the POC's exact wire layout, the 88-byte header of proto.rs plus one 48-frame, 48-channel f32 audio message — from its own session (0x5EC0F100) with an advancing sequence number (from 900 000 000, so the drain keeps finding more) at a configurable rate to the mixer input's UDP port, discovered from the loopback wiring (the mixer binds its clock, inputs and outputs consecutively from `--port` + 30, main.rs:492, module.rs:1114-1136, verified live with `ss -ulpn`: 45431 = feed) [code]. Its header stamps wall-clock nanoseconds in `t1` where the POC stamps its media clock, which garbles only the echoed timing figures, never the drain path [code].
+
+**Frozen tree.** The frozen-tree fingerprint from 002-01 is unchanged: `bash checks/002-01.sh` passes 24 of 24 on this branch today, 2026-11-15, so the recorded fingerprint still matches and the frozen tree was neither run nor written [measured].
 
 **verdict: pending**
 
