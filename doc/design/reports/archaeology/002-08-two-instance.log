@@ -1,0 +1,58 @@
+002-08 — two-instance reproduction excerpts (ticket 002-08, 2026-11-15)
+
+Every line below is verbatim from stderr/stdout of `hadropoc loopback` runs
+made from the instrumented scratch copy (the 002-07 hoplog build), unprivileged,
+at --group 239.72.68.44:44433 (probe) and 239.72.68.44:44555 (staggered run).
+The frozen POC at /home/dorian/workspace/hadropoc was neither run nor written.
+
+Probe — two simultaneous instances, 22 s each, same group. Each instance's
+hello map shows 8 modules; the first instance's modules receive no data
+traffic at all (its stderr carries only hop=5 display records) while the
+second instance's synth1/synth2 are fed by both senders:
+
+[   1s] map: 8 modules · clock: nobody · transport reference: nobody
+[  21.7s] hop=1 module=mixer stream=1 seq=43425 first=1 highest=43425 rx_count=86849 lost=0
+[  21.8s] hop=1 module=synth1 stream=0 seq=43659 first=43659 highest=43659 rx_count=1 lost=0
+[  21.9s] hop=1 module=synth1 stream=0 seq=43859 first=43859 highest=43859 rx_count=1 lost=0
+[  21.9s] hop=1 module=synth2 stream=0 seq=43856 first=43856 highest=43856 rx_count=1 lost=0
+
+The poisoned instance's check families over the whole probe — music and
+transport inert, audio bit-exact, playhead never known:
+
+music 32 voices on synth2: NO DATA (steady: 0 of 0 over epsilon, max level error 0.0e0; moving: 0 of 0 over, max 0.0e0)
+transport: NO DATA (1 changes, 1 pulses, 0 repeats sent; synth playhead identical for 0/0 datagrams, 0 changes arrived late)
+audio 48 ch: mixer-vs-sender identical (2054/2054 windows exact, 0 lost, 1 sender gaps)
+"playhead: no transport state yet" on all 22 display lines of the run
+
+Staggered run — instance A: --duration 820; instance B: --duration 110,
+started 700 s into A's run (B's mixer in1 is born at A's sequence 1 400 008);
+instance C (--duration 80, launch slot +730 s) ran last with an uncrossed
+graph — its synth inputs count a single sender's volume (synth1
+rx_count=160030 against highest=160030) and its display reads lost 1
+(fwd 1) — one more demonstration that the cross-wiring is a resolution
+race, not a certainty:
+[  80.0s] hop=1 module=synth1 stream=0 seq=160030 first=1 highest=160030 rx_count=160030 lost=0
+[  80.0s] hop=5 module=tui display sent=160071 lost=1 (fwd=1) dropped-at-sender=0
+
+B's mixer input holds both
+sequence clusters fully sampled; its lost=0 hangs entirely on `first` having
+been captured from the older cluster:
+
+[ 109.9s] hop=1 module=mixer stream=1 seq=219713 first=1400008 highest=1619721 rx_count=439428 lost=0
+[ 110.0s] hop=1 module=synth1 stream=0 seq=219903 first=219903 highest=219903 rx_count=1 lost=0
+
+A's display before B joined and at A's end; the loss figure appears only after
+B joins. This run carried real overload loss (two graphs' feeds and events
+through one synth and one mixer): 10316 audio windows lost:
+
+[ 702.0s] hop=5 module=tui display sent=1404029 lost=0 (fwd=0) dropped-at-sender=0
+[ 820.1s] hop=5 module=tui display sent=1640103 lost=220033 (fwd=220033) dropped-at-sender=0
+audio 48 ch: mixer-vs-sender identical (66558/66558 windows exact, 10316 lost, 1 sender gaps)
+
+The poisoned value at every hop of the chain in A's last second:
+
+[ 820.0s] hop=1 module=mixer stream=1 seq=1640061 first=1 highest=1640061 rx_count=1420028 lost=220033
+[ 820.0s] hop=2 module=mixer stream=1 seq=1640061 rx_lost=220033 rx_lost_bytes=81 5b 03 00
+[ 820.0s] hop=3 module=sender stream=0 seq=1640069 rx_lost=220033 rx_lost_bytes=81 5b 03 00
+[ 820.0s] hop=4 module=stats stream=0 seq=1639717 rx_lost=220033 lost_fwd=220033
+[ 820.1s] hop=5 module=tui display sent=1640103 lost=220033 (fwd=220033) dropped-at-sender=0
