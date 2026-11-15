@@ -347,7 +347,7 @@ The announcements start at byte 38 of the UDP payload, directly after the 22-byt
 | 38 | 1 | u8 | announcement count: how many announcements follow the count field | 0 to 4 `[decision]` (Maximums) |
 | +0 | 1 | u8 | type code of the announcement: which of the four types follows (Type codes) | 0 to 3 in v1; a same-major receiver skips a value it does not know by length |
 | +1 | 1 | u8 | length: the announcement's body length in bytes after this field — the length prefix that makes an announcement skippable without knowing its type | 10 in v1: the 8-byte position plus the 2-byte payload |
-| +2 | 8 | u64 | position: the announcement's named future position — samples at 96 000 Hz (C-01) counted from the domain epoch in the packet header's timeline epoch (C-10), the slice header's position form | any 64-bit value; a valid announcement names a position at least the lead ahead of the packet's slice position (Sender obligations) |
+| +2 | 8 | u64 | position: the announcement's named future position — samples at 96 000 Hz (C-01) counted from the domain epoch in the packet header's timeline epoch (C-10), the slice header's position form | any 64-bit value; a valid announcement names a position after the packet's slice position (Validity rules) `[decision]` |
 | +10 | 2 | u16 | payload: the announcement's type-specific payload, laid out by the per-type tables below; in v1 only the epoch switch fills it | the new timeline epoch for type code 2; 0 for type codes 0, 1 and 3 `[decision]` |
 
 The announcement fields repeat, back to back with no separator, up to the count field's value: the second announcement starts at byte 51, the third at byte 63, the fourth at byte 75, and the container ends at byte 38 + 1 + 12 × count. A count above its maximum of 4, and an announcement whose length runs past the end of the packet, are rejections (Validity rules) `[decision]`. The machine-readable tables carry the same layout: the media packet message grows by the count field and a counted entry region of one 12-byte entry per element, and an announcement message lays one entry out (wire.toml) `[decision]`.
@@ -371,7 +371,7 @@ The sender will address no position of the stream at or after the named position
 
 | Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
 |---|---|---|---|---|
-| +0 | 8 | u64 | position: the stream's last position — the end-of-stream boundary of the content the sender will address, counted in the packet header's timeline epoch (C-10) | any 64-bit value; a valid announcement names a future position at least the lead ahead (Sender obligations) |
+| +0 | 8 | u64 | position: the stream's last position — the end-of-stream boundary of the content the sender will address, counted in the packet header's timeline epoch (C-10) | any 64-bit value; a valid announcement names a position after the packet's slice position (Validity rules) |
 | +8 | 2 | u16 | payload: unused by this type in v1 | 0 only |
 
 ### Re-alignment (type code 1)
@@ -380,7 +380,7 @@ The stream's output re-aligns at the named position: from it the sender's output
 
 | Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
 |---|---|---|---|---|
-| +0 | 8 | u64 | position: the re-alignment position — the first position the sender's output addresses on the new alignment | any 64-bit value; a valid announcement names a future position at least the lead ahead (Sender obligations) |
+| +0 | 8 | u64 | position: the re-alignment position — the first position the sender's output addresses on the new alignment | any 64-bit value; a valid announcement names a position after the packet's slice position (Validity rules) |
 | +8 | 2 | u16 | payload: unused by this type in v1 | 0 only |
 
 ### Timeline epoch switch (type code 2)
@@ -389,7 +389,7 @@ The timeline epoch switch moves the timeline to a new epoch at the named positio
 
 | Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
 |---|---|---|---|---|
-| +0 | 8 | u64 | position: the first position the sender counts in the new timeline epoch | any 64-bit value; a valid announcement names a future position at least the lead ahead (Sender obligations) |
+| +0 | 8 | u64 | position: the first position the sender counts in the new timeline epoch | any 64-bit value; a valid announcement names a position after the packet's slice position (Validity rules) |
 | +8 | 2 | u16 | payload: the new timeline epoch (C-10) | the new epoch; the packet header's timeline epoch field carries it from the switch on |
 
 ### Transport reference change (type code 3)
@@ -398,7 +398,7 @@ The stream's transport reference change moves the output to a new transport refe
 
 | Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
 |---|---|---|---|---|
-| +0 | 8 | u64 | position: the first position at which the output follows the changed transport reference | any 64-bit value; a valid announcement names a future position at least the lead ahead (Sender obligations) |
+| +0 | 8 | u64 | position: the first position at which the output follows the changed transport reference | any 64-bit value; a valid announcement names a position after the packet's slice position (Validity rules) |
 | +8 | 2 | u16 | payload: unused by this type in v1 | 0 only |
 
 ### Maximums
@@ -407,7 +407,7 @@ The stream's transport reference change moves the output to a new transport refe
 
 ### Sender obligations
 
-**Sender obligations.** A sender that must announce a future change starts announcing one lead ahead: C-43's lead is 64 slices, flat — 64 × 0.5 ms = 32 ms at the C-02 defaults — so the first announcement of a change goes out at least 64 slices before the named position, as an obligation of the sender, never a receiver courtesy `[decision]`. The sender re-issues the announcement every 16 slices (C-44) until the named position passes, in every bundle member it sends — C-08 bounds a bundle at 32 members, so a pending change rides in up to 32 outputs per re-issue step — and the container never blocks that cadence: the cap of 4 covers every constructible combination of pending kinds (Maximums), so every pending announcement is re-issued on schedule `[decision]`.
+**Sender obligations.** A sender that must announce a future change starts announcing one lead ahead: C-43's lead is 64 slices, flat — 64 × 0.5 ms = 32 ms at the C-02 defaults — so the first announcement of a change goes out at least 64 slices before the named position, as an obligation of the sender, never a receiver courtesy `[decision]`. The sender re-issues the announcement every 16 slices (C-44) until the named position passes, in every bundle member it sends — C-08 bounds a bundle at 32 members, so a pending change rides in up to 32 outputs per re-issue step — and the container never blocks that cadence: the cap of 4 covers every constructible combination of pending kinds (Maximums), so every pending announcement is re-issued on schedule `[decision]`. A re-issue inside the lead is valid: C-43's lead binds the sender's first issue of a change only, and the re-issues C-44 requires of a change first announced exactly one lead ahead name a position 48, 32 and 16 slices ahead of the slices that carry them `[decision]`. A receiver cannot tell a first issue from a re-issue, so it does not police the lead: it accepts any announcement whose position lies after the packet's slice position and rejects only a position that is not in the future (Validity rules, C-43, C-44) `[decision]`.
 
 **Announced positions stand until they pass.** Once a sender has announced a kind's position, that position stands until it passes: the sender never withdraws it, never moves it, and never announces a second position of the same kind while it is pending, so at most one announcement of each kind is pending at any moment (C-43, C-44) `[decision]`. A further change of the same kind is first announced only after the pending position has passed, and like every announcement it names a position at least one lead (C-43, 64 slices) ahead of the slice that first carries it and is re-issued every 16 slices until that position passes (C-44) `[decision]`. Withdrawal is excluded rather than given a lead of its own because a withdrawal would travel the same lossy path as the announcement it withdraws, and is omitted with it on a C-137 fallback path: a consumer that heard the first position and missed the withdrawal would act at a position the sender had abandoned, which breaks the promise C-43 and C-44 make to every consumer — learn of a change one lead ahead, repeated every 16 slices. With positions that stand, any one announcement a consumer hears is enough to act at the right position `[decision]`. A consumer therefore never has to reconcile two positions of one kind; a sender that announces a different position of a kind while that kind's earlier position is still pending violates this obligation, and how a receiver detects and handles that across packets belongs to announcement ordering and loss (006-12), since one packet's container already rejects a duplicate kind (Validity rules) `[decision]`.
 
@@ -422,13 +422,12 @@ Every malformed announcement is dropped with its packet — or skipped, for the 
 | unknown type code within the same major version (a code outside 0 to 3): a same-major receiver skips the announcement by its length field and reads on with the next; the type space is open within a major version (Versioning, 004-04) | skip by length — the announcement is ignored and nothing is counted; this form is never a rejection `[decision]` |
 | length overrun: an announcement's length field runs past the end of the packet, so the body it declares does not fit | drop and count under BadLength |
 | named position not in the future: the announced position lies at or before the slice position the packet carries, so it has already passed | drop and count under BadLength `[decision]` — see the note below |
-| named position closer than the lead: the announced position lies inside the C-43 lead of 64 slices (32 ms at the C-02 defaults) ahead of the packet's slice position | drop and count under BadLength `[decision]` — see the note below |
 | duplicate type in one packet: the count declares two announcements of the same type code, so the container disagrees with its own rule of one announcement per kind | drop and count under BadLength `[decision]` |
 | announcement in a gap slice: cannot occur — the packet header's validity rules already reject the announcement-present flag on a gap slice under BadLength (Media packet header, Validity rules), so no announcement-specific outcome exists | none — the case cannot occur `[decision]` |
 | count above the maximum: the count field exceeds 4 | drop and count under BadLength |
 | announcement-present flag set with a zero count: the flag promises at least one announcement and the container carries none, so the declared shape disagrees with itself | drop and count under BadLength `[decision]` |
 
-**Why BadLength for the two position forms.** The closed enumeration offers no announcement-specific reason: WrongEpoch is about the packet's own timeline epoch, not the announced position, and no other member describes a value that is well-formed but unusable. BadLength is the enumeration's declared-shape member — the slice header already uses it for a packet count of 0, and the packet header for a presence flag on a gap slice — and a valid announcement declares its own shape: a future position at least a lead ahead. A position in the past or inside the lead disagrees with what the announcement declares, exactly as a zero packet count disagrees with the slice header's own rules; the behavioural side of an announcement a receiver had already acted on belongs to the state machines of epics 005 and 006 and is out of scope here `[decision]`.
+**Why BadLength for a position that is not in the future.** The closed enumeration offers no announcement-specific reason: WrongEpoch is about the packet's own timeline epoch, not the announced position, and no other member describes a value that is well-formed but unusable. BadLength is the enumeration's declared-shape member — the slice header already uses it for a packet count of 0, and the packet header for a presence flag on a gap slice — and a valid announcement declares its own shape: a position in the future. A position at or before the packet's slice position disagrees with what the announcement declares, exactly as a zero packet count disagrees with the slice header's own rules. The lead is not a receiver rule: it binds the sender's first issue of a change (C-43, Sender obligations), and a re-issue (C-44) inside it is valid, so a position that is in the future but less than 64 slices ahead is accepted. The behavioural side of an announcement a receiver had already acted on belongs to the state machines of epics 005 and 006 and is out of scope here `[decision]`.
 
 ### Open items
 
@@ -527,7 +526,7 @@ The covered bytes — the checksum input — are, for each packet of the slice i
 | Slice header bytes 16 to 25: position and frames | covered, 10 bytes of every packet, as on the wire | the slice's address on the domain line and its length; a corrupted position would play correct samples at the wrong time, which no other rule detects |
 | Slice header bytes 26 to 29: packet index and packet count | excluded | packetisation, not content: the index differs per packet, and both are already checked (BadPacketIndex, BadLength); the packet-index order of the concatenation carries the index's role |
 | Slice header bytes 30 to 37: send timestamp | excluded | per packet: the pacer writes it at the moment of sending, after the checksum exists (Send timestamp; 01-architecture.md § 3.4) |
-| Announcement container: the count byte and every announcement | covered, 1 + 12 × count bytes of every packet, as sent on the path | an announcement steers every consumer at a future position (an epoch switch, an end of stream), and a corruption that still passes the announcement's own validity rules — a flipped epoch-switch payload, a shifted end-of-stream position that stays a lead ahead — would otherwise be acted on (Announcements, Sender obligations); covering it closes that gap |
+| Announcement container: the count byte and every announcement | covered, 1 + 12 × count bytes of every packet, as sent on the path | an announcement steers every consumer at a future position (an epoch switch, an end of stream), and a corruption that still passes the announcement's own validity rules — a flipped epoch-switch payload, a shifted end-of-stream position that stays in the future — would otherwise be acted on (Announcements, Sender obligations); covering it closes that gap |
 | Measurement extension (004-10) | excluded | mutable per hop: each processor rewrites it from its critical input's values, and its residence time is measured up to the send timestamp, after the checksum exists (Measurement extension, Forwarding update rule) |
 | Content region: the audio payload and every content message (004-11, 004-12) | covered, every byte as on the wire | the slice's content: 1 152 bytes of audio in a default slice (C-04) |
 | The checksum field itself | excluded | it carries the result |
