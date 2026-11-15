@@ -1,0 +1,49 @@
+diff --git a/src/clock.rs b/src/clock.rs
+index 95f8a89..609cbc3 100644
+--- a/src/clock.rs
++++ b/src/clock.rs
+@@ -240,6 +240,8 @@ pub struct Servo {
+     win_start: i64,
+     dmin_hist: VecDeque<(i64, i64)>,
+     ema_err: f64,
++    // Ticket 002-11 logging: (pred, err, alpha, w, dt, drift before) of the last update.
++    lg: (i64, f64, f64, f64, f64, f64),
+     /// Wi-Fi profile: longer measurement windows and a much slower loop, to
+     /// ride through bursts of delay instead of following them.
+     wifi: bool,
+@@ -262,6 +264,7 @@ impl Servo {
+             win_start: 0,
+             dmin_hist: VecDeque::new(),
+             ema_err: 0.0,
++            lg: (0, 0.0, 0.0, 0.0, 0.0, 0.0),
+             wifi,
+         }
+     }
+@@ -315,6 +318,19 @@ impl Servo {
+     }
+ 
+     fn update(&mut self, ex: Exchange) {
++        // Ticket 002-11 logging: the published theta0 immediately before and after each update.
++        let (th0, st0, up0, t_mono) = (self.view.theta0, self.view.state, self.view.updates, mono_ns());
++        self.lg = (0, 0.0, 0.0, 0.0, 0.0, 0.0);
++        self.update_inner(ex);
++        let (pred, err, alpha, w, dt, drift0) = self.lg;
++        eprintln!(
++            "SERVOLOG t_mono_ns={} thread={:?} tm={} updates_before={} updates_after={} state_before={} state_after={} theta0_before={} theta0_after={} pred={} err={} alpha={} w={} dt={} drift_before={} drift_after={} ema_err={} err_ns={} delay_ns={}",
++            t_mono, std::thread::current().id(), ex.t2, up0, self.view.updates, st0.label(), self.view.state.label(),
++            th0, self.view.theta0, pred, err, alpha, w, dt, drift0, self.view.drift, self.ema_err, self.view.err_ns, self.view.delay_ns
++        );
++    }
++
++    fn update_inner(&mut self, ex: Exchange) {
+         let m = ((ex.t2 - ex.t1) - (ex.t4 - ex.t3)) / 2;
+         let d = ex.rtt() / 2;
+         let tm = ex.t2;
+@@ -359,6 +375,7 @@ impl Servo {
+         let (a_min, b_min) = if self.wifi { (0.04, 0.0008) } else { (0.1, 0.005) };
+         let alpha = (2.0 * (2.0 * n - 1.0) / (n * (n + 1.0))).clamp(a_min, 1.0);
+         let beta = (6.0 / (n * (n + 1.0))).clamp(b_min, 1.0);
++        self.lg = (pred, err, alpha, w, dt, v.drift);
+         v.theta0 = pred + (alpha * w * err) as i64;
+         v.drift = (v.drift + beta * w * err / dt).clamp(-MAX_DRIFT_PPB, MAX_DRIFT_PPB);
+         v.tref = tm;
