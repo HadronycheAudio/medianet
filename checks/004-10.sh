@@ -1003,12 +1003,19 @@ def toml_key(name):
             return key
     return None
 
-if media_msg is not None and container_end_bits is not None:
+# The extension's window in wire.toml: from the container's maximum end for
+# the byte size wire.md states (the sum of its field widths). Fields after the
+# window (004-13's checksum, a later ticket's fields) are not extension fields.
+ext_window_bits = None
+if all(k in ext and ext[k]["bits"] for k in ("hop", "residence", "delay")) and container_end_bits is not None:
+    ext_window_bits = sum(ext[k]["bits"] for k in ("hop", "residence", "delay"))
+if media_msg is not None and container_end_bits is not None and ext_window_bits is not None:
     for f in media_msg.get("field", []) or []:
         if not isinstance(f, dict) or not isinstance(f.get("offset"), int):
             continue
         key = toml_key(f.get("name", ""))
-        if key is not None and f["offset"] >= container_end_bits and key not in toml_ext:
+        in_window = container_end_bits <= f["offset"] < container_end_bits + ext_window_bits
+        if key is not None and in_window and key not in toml_ext:
             toml_ext[key] = (media_msg, f)
             form = "media"
 if meas_msg is not None and not toml_ext:
@@ -1095,28 +1102,40 @@ else:
     if carrying is not None and container_end_bits is not None:
         base_bytes = container_end_bits // 8
         max_size = carrying.get("max_size")
-        want = base_bytes + toml_bytes if form == "media" else toml_bytes
+        # The invariant, not a snapshot: the media packet's declared maximum
+        # holds the container's maximum end and the extension (it fits), and
+        # stays inside the C-137 header cap of 100 bytes, which later tickets
+        # fill with the checksum (004-13) and nothing else.
+        HEADER_CAP = 100
         if not isinstance(max_size, int) or isinstance(max_size, bool):
             fail(5, f"message {carrying.get('name')!r}: max_size is not an integer")
             ac5_ok = False
-        elif form == "media" and max_size != want:
+        elif form == "section" and max_size != toml_bytes:
+            fail(5, f"message {carrying.get('name')!r}: max_size {max_size} != extension bytes {toml_bytes}")
+            ac5_ok = False
+        elif form == "media" and max_size < base_bytes + toml_bytes:
             fail(
                 5,
-                f"media packet max_size {max_size} does not equal the container's maximum "
-                f"end ({base_bytes} bytes) plus the extension ({toml_bytes} bytes) = {want}",
+                f"media packet max_size {max_size} does not hold the container's maximum "
+                f"end ({base_bytes} bytes) plus the extension ({toml_bytes} bytes)",
             )
-            ac5_ok = False
-        elif form == "section" and max_size != want:
-            fail(5, f"message {carrying.get('name')!r}: max_size {max_size} != extension bytes {want}")
             ac5_ok = False
         if form == "section":
             media_max = media_msg.get("max_size") if media_msg else None
-            if media_max != base_bytes + toml_bytes:
+            if not isinstance(media_max, int) or isinstance(media_max, bool) or media_max < base_bytes + toml_bytes:
                 fail(
                     5,
-                    f"media packet max_size {media_max} does not grow to "
-                    f"{base_bytes + toml_bytes} with the extension",
+                    f"media packet max_size {media_max} does not hold the container's "
+                    f"maximum end plus the extension ({base_bytes + toml_bytes} bytes)",
                 )
+                ac5_ok = False
+        if isinstance(max_size, int) and not isinstance(max_size, bool) and max_size > HEADER_CAP:
+            fail(5, f"message {carrying.get('name')!r}: max_size {max_size} exceeds the C-137 header cap of {HEADER_CAP} bytes")
+            ac5_ok = False
+        if form == "section" and media_msg is not None:
+            media_max = media_msg.get("max_size")
+            if isinstance(media_max, int) and not isinstance(media_max, bool) and media_max > HEADER_CAP:
+                fail(5, f"media packet max_size {media_max} exceeds the C-137 header cap of {HEADER_CAP} bytes")
                 ac5_ok = False
 
     reasons = carrying.get("rejection_reasons") if carrying is not None else None
