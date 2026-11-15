@@ -272,8 +272,8 @@ Splitting the epics into tickets exposed holes in the design. These rules close 
 | ID | Fact | Value | Tag |
 |---|---|---|---|
 | P-01 | POC default feed | 48 channels, about 9.6 KB per datagram, 7 IP fragments at MTU 1500, about 150 Mbit/s | `[code]` |
-| P-02 | POC sync rate achieved at `--sync-hz 50` / `1000` | 37 / 77 completed exchanges per second | `[measured]` |
+| P-02 | POC sync rate achieved at `--sync-hz 50` / `1000` (and at `10` / `200`, the ends of the C-112 range) | 36.1 / 71.4 completed exchanges per second per follower (at `10` / `200`: 9.34 / 71.5), duration-corrected; POC figures from clean single-writer metrics files of unprivileged `poc-untouched` runs without strict mode (C-147), 3 runs of 35 s per rate, CONFIG_HZ=250 (P-03); they replace the figures read from the corrupt metrics file (evidence appendix M-1; REPORT-0b section (e)) | `[measured]` |
 | P-03 | Kernel tick on the measuring machine | `CONFIG_HZ=250` | `[measured]` |
-| P-04 | POC lock threshold | smoothed error below max(20 µs, path delay / 4), after at least 8 windows | `[code]` |
+| P-04 | POC lock threshold | smoothed error below max(20 µs, path delay / 4), after at least 8 windows; a servo already Locked stays Locked while the smoothed error is below 4 × that threshold (exit hysteresis, `clock.rs:375-376` at `poc-untouched`) | `[code]` |
 | P-05 | POC holder rotation | after 2 mandates (retired) | `[code]` |
 | P-06 | POC id | 31 effective bits from wall time, pid and monotonic time (retired) | `[code]` |
