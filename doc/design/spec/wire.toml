@@ -204,7 +204,7 @@ meaning = "the stream number names no stream this consumer admits"
 [[reject]]
 name = "UnadmittedSource"
 value = 6
-meaning = "the source's module id has no admitted connection at this consumer"
+meaning = "the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply)"
 
 [[reject]]
 name = "BadLength"
@@ -224,7 +224,7 @@ meaning = "the packet index lies outside the packet count its slice declares"
 [[reject]]
 name = "WrongEpoch"
 value = 10
-meaning = "the timeline epoch is not the consumer's current epoch (C-10): counted under this reason — the per-connection other-epoch counter (C-135, C-159) — and never a miss (C-102)"
+meaning = "the timeline epoch is not the consumer's current epoch (C-10): counted under this reason — the per-connection other-epoch counter (C-135, C-159) — and never a miss (C-102); on the sync layer, a reply whose epoch differs from the follower's current epoch and that answers a request sent no later than the follower adopted that epoch, counted per socket (Sync request and reply)"
 
 [[reject]]
 name = "OversizeControl"
@@ -250,7 +250,7 @@ outcome = "no value is non-conforming in v1 (receivers accept 0 to 3); dedup is 
 
 [[reserved]]
 name = "authentication_scheme"
-message = "control messages (C-12, placed by 004-16 to 004-18)"
+message = "control messages (C-12, placed by 004-16 to 004-18) and sync messages (004-19)"
 width = 8
 value = 0
 meaning = "0 (none) in v1 (C-115): wire space for a later authentication scheme"
@@ -258,16 +258,16 @@ outcome = "a non-zero scheme is dropped and counted as ReservedNonZero"
 
 [[reserved]]
 name = "message_counter"
-message = "control messages (C-12, placed by 004-16 to 004-18)"
+message = "control messages (C-12, placed by 004-16 to 004-18) and sync messages (004-19)"
 width = 64
 value = "live"
 live = true
-meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message and is not a reserved zero field"
+meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message and is not a reserved zero field; in sync messages (004-19) it counts the sender's sync messages and is live without being the liveness counter"
 outcome = "any value is conforming in v1; the counter is not a reserved zero field and never produces ReservedNonZero"
 
 [[reserved]]
 name = "authentication_tag"
-message = "control messages (C-12, placed by 004-16 to 004-18)"
+message = "control messages (C-12, placed by 004-16 to 004-18) and sync messages (004-19)"
 width = 128
 value = "zero"
 meaning = "128 zero bits in v1 (C-115)"
@@ -716,3 +716,198 @@ count = "length"
 max_count = 16383
 meaning = "one 4-byte value in the stream's sample format, f32 or Q1.31 (004-26); the values run controller by controller, (frames / stride) x 4 bytes per controller (192 at one value per frame in a default slice), in controller-map order with no id; no initial-value field (C-158); the count is (length - 3) / 4"
 valid = "count x (frames / stride) values, at most 16 383 (65 532 bytes); count at most 255"
+
+# Sync request and reply (ticket 004-19): the machine-readable copy of
+# wire.md's "Sync request and reply" section, which is the authority. Both
+# messages are 74 bytes; the request reaches the reply's size by explicit
+# padding. Neither carries a DSCP or a request-rate field (C-152, C-204).
+
+[[message]]
+name = "sync request"
+layer = "sync"
+dscp = 48
+max_size = 74
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in bits 15..8, minor in bits 7..0; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor; senders write 0x0100"
+
+[[message.field]]
+name = "domain"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type, scoped to the sync layer: 1 = sync request"
+valid = "1 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), incremented by one for every sync message the follower sends"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "send_timestamp"
+offset = 256
+width = 64
+type = "u64"
+meaning = "send timestamp: the follower's local monotonic clock in nanoseconds when it sends the request; opaque to the holder, which echoes it verbatim"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "padding"
+offset = 320
+width = 272
+type = "pad"
+meaning = "padding to the reply's size: the room the reply's receive and send timestamps, holder module id, epoch origin and timeline epoch take; senders write zero (004-05 general rule)"
+valid = "0 only"
+
+[[message]]
+name = "sync reply"
+layer = "sync"
+dscp = 48
+max_size = 74
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "ReservedNonZero", "UnadmittedSource", "WrongEpoch"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in bits 15..8, minor in bits 7..0; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor; senders write 0x0100"
+
+[[message.field]]
+name = "domain"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type, scoped to the sync layer: 2 = sync reply"
+valid = "2 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), incremented by one for every sync message the holder sends"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "echoed_send_timestamp"
+offset = 256
+width = 64
+type = "u64"
+meaning = "echoed send timestamp: the request's send timestamp, echoed verbatim; the follower's clock, never the holder's"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "receive_timestamp"
+offset = 320
+width = 64
+type = "u64"
+meaning = "receive timestamp: the holder's monotonic clock in nanoseconds when the request was received"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "send_timestamp"
+offset = 384
+width = 64
+type = "u64"
+meaning = "send timestamp: the holder's monotonic clock in nanoseconds when the reply is sent"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "holder_module_id"
+offset = 448
+width = 64
+type = "u64"
+meaning = "holder module id (C-11): the module id of the holder that answers"
+valid = "any 64-bit value; a follower accepts only the holder it follows"
+
+[[message.field]]
+name = "epoch_origin"
+offset = 512
+width = 64
+type = "i64"
+meaning = "epoch origin: origin_ns of the current timeline epoch's line, nanoseconds of network time on the holder's scale (timeline.md)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "timeline_epoch"
+offset = 576
+width = 16
+type = "u16"
+meaning = "timeline epoch (C-10): the holder's current timeline epoch"
+valid = "any 16-bit value; acceptance at a follower per wire.md, Sync request and reply"
