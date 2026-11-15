@@ -210,7 +210,63 @@ Any padding or reserved bits a later ticket adds to any message follow one rule:
 
 ## Media packet header
 
-To be filled by 004-06 (media packet header layout).
+A media packet carries the content of one stream for one stretch of media time — the slice content, one packet per slice by default — and travels by UDP unicast at DSCP EF 46 (C-13) `[decision]`. Its header is 16 bytes (128 bits) long and counts against the header cap of C-137 (a default slice fits 1 252 bytes of UDP payload: 1 152 bytes of audio plus at most 100 bytes for all headers and the checksum), leaving 84 bytes of the cap for the slice header, the in-band announcements, the measurement extension and the checksum that 004-08, 004-09, 004-10 and 004-13 place after it; those tickets extend this message and grow its declared maximum size, and this section's table does not move [decision]. The header carries no sample-rate field: the wire has one rate, the domain's 96 000 Hz (C-01), so the rate is a property of the domain, not of a packet [decision].
+
+### Field table
+
+Little-endian (Byte order), packed with no padding (Alignment and padding), bits numbered 7..0 within a byte (Bit-field numbering); offsets are byte distances from the first byte of the UDP payload [decision]:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | 0x0100 in v1 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
+| 6 | 2 | u16 | Stream number at the source (C-10); the stream is identified by the source address pinned at admission plus this number, never by a destination (rule 7) | 0 to 255 (at most 256 streams per source, C-09) |
+| 8 | 4 | u32 | Session number (C-19): assigned by the source, one per stream, bumped on restart and on timeline-epoch change, and every consumer of a stream sees the same value — a stream property, not a per-receiver field | any 32-bit value |
+| 12 | 2 | u16 | Timeline epoch: the epoch the packet's media-time positions are counted in (C-10) | the consumer's current epoch |
+| 14 | 1 | u8 | Flags: gap (bit 7), degraded (bit 6; C-122: the flag follows the content — an output at position p is degraded if its input at p − L was gapped), announcement present (bit 5), measurement extension present (bit 4), bits 3..0 reserved | see the flag bits below |
+| 15 | 2 bits | uint | Copy index (C-07), bits 1..0 of byte 15: wire space for the deferred duplication feature, not a flag and not a count (Reserved fields) | 0 to 3 in v1: senders emit 0, receivers accept all four values |
+| 15 | 6 bits | uint | Reserved, bits 7..2 of byte 15: senders write zero (004-05 general rule) | 0 only; any value set here is counted under ReservedNonZero |
+
+The fields tile the 16 bytes contiguously with no gap and no overlap: bytes 0 to 13 are the six multi-byte fields above, byte 14 is the flags, and byte 15 is shared by the 2-bit copy index (bits 1..0) and the 6 reserved bits (bits 7..2) [decision].
+
+### The flags byte
+
+Bit 7 first (Bit-field numbering); every flag describes the content the packet carries, never the receiver [decision]:
+
+| Bit | Name | Meaning |
+|---|---|---|
+| 7 | gap | the packet carries a gap slice: header-only, marking positions the sender did not produce or receive (rule 10) |
+| 6 | degraded | the slice was computed from a gapped input: the output at position p is degraded if the input at p − L was gapped, the flag travelling with the content, delayed by L (C-122) |
+| 5 | announcement | an in-band announcement follows the header (placed by 004-09); a consumer that does not know an announcement type skips it by length (C-43) |
+| 4 | measurement | the measurement extension follows the header (placed by 004-10); it fits inside the header cap or is omitted on a fallback path (C-137) |
+| 3..0 | reserved | sent zero (004-05 general rule); a receiver that sees one set drops the packet and counts ReservedNonZero |
+
+### What the header does not carry
+
+Field by field, the header carries no module id, no destination address and no per-receiver acknowledgement (rules 7 and 8) [decision]. No field of the table names a module: streams are identified by the source address pinned at admission plus the stream number, and the 64-bit module id is not in media packets (rule 7). No field names a destination or is per-receiver: the receiver demultiplexes on the source address and the stream number, and every field of the table — domain, stream number, session, timeline epoch, copy index, flags — describes the stream and its content, so every consumer of a stream reads the same values. No field acknowledges anything: forward packets carry no per-receiver state, and round-trip closure uses the measurement path (rule 8); the POC's per-receiver `F_ACK` flags and its direction-overloaded `ack_seq`, `ack_t4` and `path_delay` fields are all retired `[code]`. The session is per stream, one value for every consumer of the stream (C-19) `[decision]`.
+
+### Don't fragment
+
+Don't-fragment (rule 11): the sender must set the IPv4 DF bit on every media packet it sends (C-100: IPv4 only in v1); IP fragmentation is forbidden. The DF bit is a sender obligation on the IP header, outside this header — the header carries no fragmentation field of its own `[decision]`.
+
+### Validity rules
+
+Every malformed header is dropped — or ignored, for the unconfigured domain — and counted under one member of the closed Rejection reasons enumeration; nothing is dropped silently (Rejection reasons) `[decision]`. The header's invalid forms and their required outcomes:
+
+| Invalid form | Required outcome |
+|---|---|
+| shorter than the 16-byte header | drop and count under TooShort: dropped before any field is read |
+| bad magic (the leading bytes are not 0x4d4e) | drop and count under BadMagic |
+| version mismatch (the version field is not 0x0100) | drop and count under VersionMismatch, and raise the VersionMismatch event — a version mismatch is never a silent drop (Versioning, Receiver behaviour) |
+| foreign domain (a non-zero domain other than the local domain, C-11) | drop and count under ForeignDomain (C-173: a different non-zero domain) |
+| domain 0 (the unconfigured domain, C-11) | ignore and count under UnconfiguredDomain — never ForeignDomain (C-173) |
+| stream number unknown for the pinned source (no such stream at this consumer) | drop and count under UnknownStream |
+| source not admitted (no admitted connection for the source at this consumer) | drop and count under UnadmittedSource |
+| wrong epoch (the timeline epoch is not the consumer's current epoch, C-10) | drop and count under WrongEpoch — an other-epoch slice is never a miss (C-102, C-135) |
+| reserved bits set (any reserved bit of byte 15 or of the flags byte is non-zero) | drop and count under ReservedNonZero (Reserved fields, 004-05) |
+| gap flag with a non-empty payload (a gap slice is header-only, rule 10, so the packet's length is wrong for its declared kind) | drop and count under BadLength |
+| invalid flags combination (a presence bit — announcement or measurement — set on a gap slice, which carries no optional part; the declared shape disagrees with the header-only rule) | drop and count under BadLength [decision] |
 
 ## Slice header
 

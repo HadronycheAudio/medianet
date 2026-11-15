@@ -309,3 +309,95 @@ width = 24
 type = "uint"
 meaning = "example 24-bit sequence number (placeholder; replaced by the real message tables)"
 valid = "0 to 16777215"
+
+# ---------------------------------------------------------------------------
+# Media packet header (ticket 004-06): the machine-readable copy of wire.md's
+# "Media packet header" field table, which is the human-readable authority.
+# Appended after the 004-02 example message, kept separated for merge
+# friendliness.
+#
+# The [[message]] below declares the packet HEADER only: 004-08 (slice header,
+# which adds BadPacketIndex) and 004-13 (checksum, which adds BadChecksum)
+# extend this message and grow its declared max_size; for now max_size is the
+# header's 16 bytes [decision].
+# ---------------------------------------------------------------------------
+
+[[message]]
+name = "media packet"
+layer = "media"
+dscp = 46
+max_size = 16
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource", "WrongEpoch", "BadLength", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in bits 15..8, minor in bits 7..0; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "0x0100 in v1"
+
+[[message.field]]
+name = "domain"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured"
+
+[[message.field]]
+name = "stream_number"
+offset = 48
+width = 16
+type = "u16"
+meaning = "stream number at the source (C-10); the stream is identified by the source address pinned at admission plus this number, never by a destination (rule 7)"
+valid = "0 to 255 (at most 256 streams per source, C-09)"
+
+[[message.field]]
+name = "session"
+offset = 64
+width = 32
+type = "u32"
+meaning = "session number (C-19): assigned by the source, one per stream, bumped on restart and on timeline-epoch change, and every consumer of a stream sees the same value — a stream property, not a per-receiver field"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "timeline_epoch"
+offset = 96
+width = 16
+type = "u16"
+meaning = "timeline epoch: the epoch the packet's media-time positions are counted in (C-10)"
+valid = "the consumer's current epoch"
+
+[[message.field]]
+name = "flags"
+offset = 112
+width = 8
+type = "u8"
+meaning = "flags: gap (bit 7), degraded (bit 6; C-122: the flag follows the content), announcement present (bit 5), measurement extension present (bit 4), bits 3..0 reserved"
+valid = "bits 3..0 are zero; the other combinations are constrained by wire.md's validity rules"
+
+[[message.field]]
+name = "copy_index"
+offset = 120
+width = 2
+type = "uint"
+meaning = "copy index (C-07), bits 1..0 of byte 15: wire space for the deferred duplication feature (Reserved fields)"
+valid = "0 to 3 in v1: senders emit 0, receivers accept all four values"
+
+[[message.field]]
+name = "flags_reserved"
+offset = 122
+width = 6
+type = "uint"
+meaning = "reserved, bits 7..2 of byte 15: senders write zero (004-05 general rule)"
+valid = "0 only"
+reserved = "0"
