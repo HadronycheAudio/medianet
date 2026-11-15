@@ -885,7 +885,7 @@ name = "bar_origin"
 offset = 208
 width = 32
 type = "i32"
-meaning = "bar origin: the beat, in whole beats, at which bar 0 starts under the current meter; bar = floor((beat playhead - origin) / numerator)"
+meaning = "bar origin: the beat at which bar 0 starts under the current meter, in whole beats, scaled by 2^32 when compared with the Q32.32 beat playhead: bar = floor((beat playhead - origin x 2^32) / (numerator x 2^32)), in 128-bit signed arithmetic"
 valid = "any 32-bit value"
 
 # Sync request and reply (ticket 004-19): the machine-readable copy of
