@@ -472,6 +472,82 @@ $ flood-send --target 127.0.0.1:45631 --rate 20000 --duration 28 --session <send
 
 **Frozen tree.** The frozen-tree fingerprint from 002-01 is unchanged: `bash checks/002-01.sh` passes 24 of 24 on this branch today, 2026-11-15, so the recorded fingerprint still matches and the frozen tree was neither run nor written [measured].
 
+### 002-12 — clean sync-rate baseline at 50 and 1000 Hz
+
+**Method and source.** The runs are not loopback runs: each of the four modules (sender, synth1, synth2, mixer) is its own `hadropoc` process with its own `--metrics` path, so every metrics file has exactly one writer and the POC needs no code change [measured]. The binary is a pristine extraction of the `poc-untouched` tag (commit `330feb4`), built with `cargo build --release` in `/tmp/opencode/002-12-pristine`, a scratch directory outside both the frozen tree and the scratch copy `poc-scratch` (the scratch copy was not used for these runs, and it is still at its HEAD `2f29eba`); the extraction is content-identical to the tag: its sha256 over the 002-01 fingerprint convention is `ac24375dabbc1fa7926e00c91eefd3503d6a7f23648ce7a785d55b0726ea7675`, equal to the recorded `poc-untouched` tag-tree fingerprint (Environment) [measured]. The wiring is the one `loopback` builds in-process (`main.rs`, `Loopback` arm): `--iface 127.0.0.1`, the same `--connect` pairs, and the same simulated crystals (3 ms / 20 ppm for the sender, then +250 ms and +35 ppm per module index; the flags `--sim-offset-ms 3 --sim-drift-ppm 20` are those of 003-02, kept so the figures compare) [code]. Every run had its own multicast group `239.72.68.44:<unused port>` (ports 47211 to 47236), `--no-tui`, outputs under `/tmp/opencode/002-12/`, no privileges (`warning: memory not locked` and `warning: no real-time scheduling` in every log) and no strict mode (C-147; these figures go only to the POC reference row P-02) [measured]. The frozen tree at `/home/dorian/workspace/hadropoc` was neither run nor written by this ticket (its working tree is untouched and `bash checks/002-01.sh` still passes) [measured].
+
+Each run is 35 s (`--duration 35`, at least 30 s), 3 runs at `--sync-hz 50` and 3 runs at `--sync-hz 1000`, alternating the rates: six runs of four modules give 24 metrics files [measured]. Run validity follows the rules of 003-02, applied to every run [measured]: the four logs show `map: 4 modules`, exactly one election (`election 1`, one `clock: <name> holds it` line) and exactly three `joined from` lines each; the holder has at least 2 intact windows after the first is dropped (31 or 32 were kept); no `served` value exceeds the chimera bound followers × rate × 1.10 (165 and 3300); the follower count is re-derived from the run (the three files with `asked > 0`, matching `map: 4 modules`).
+
+**Single-writer check (AC 1).** The 24 files were checked with the 002-09 checker, `cargo run --release -p hadronyche-tools --bin metrics-check -- <run dir>`, one run directory at a time [measured]:
+
+```text
+/tmp/opencode/002-12/hz50-r1/mixer.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r1/sender.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r1/synth1.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r1/synth2.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r1/mixer.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r1/sender.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r1/synth1.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r1/synth2.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r2/mixer.csv: single-writer yes (lines 35, parseable 34, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r2/sender.csv: single-writer yes (lines 35, parseable 34, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r2/synth1.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r2/synth2.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r2/mixer.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r2/sender.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r2/synth1.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r2/synth2.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r3/mixer.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r3/sender.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r3/synth1.csv: single-writer yes (lines 35, parseable 34, unix_ms violations 0)
+/tmp/opencode/002-12/hz50-r3/synth2.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r3/mixer.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r3/sender.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r3/synth1.csv: single-writer yes (lines 36, parseable 35, unix_ms violations 0)
+/tmp/opencode/002-12/hz1000-r3/synth2.csv: single-writer yes (lines 35, parseable 34, unix_ms violations 0)
+```
+
+[measured] All 24 files read single-writer yes, every data line parses (parseable = lines − 1) and there are 0 `unix_ms` violations.
+
+**Metrics column.** The rate is the clock holder's `served` column: the clock thread of the module that holds the clock increments the `served` counter once per request it answers (`module.rs:1572`) and the housekeeping thread writes it as a take-and-reset value once per `HELLO_NS` = 1 s window (`module.rs:50`, `module.rs:1426-1428`), so one `served` value is the number of exchanges completed with all followers in one window [code]. The rows used are those of the holder (rows with `holding` = 1; the holder was the sender in 3 runs, synth1 in 2 and the mixer in 1, as elected), dropping the first holder window (the partial election window); the follower's `asked` column (`module.rs:1578`) is the cross-check [code]. Rows cover 1.025 to 1.032 s, not 1 s (mean row interval of the holder files, measured from their own `unix_ms`), so the naive figure (mean `served` ÷ followers) overstates; the reported figure is the duration-corrected one: sum of `served` ÷ covered span ÷ followers, the span running from the dropped first window's stamp to the last kept row [measured].
+
+**Result (AC 2).** Per follower, 3 runs of 35 s at each rate, duration-corrected, from the holder's `served` column [measured]:
+
+- `--sync-hz 50` (50 Hz): mean 36.09 exchanges/s per follower, range 35.96–36.19, i.e. 72.2 % of the configured rate, duration-corrected [measured]
+- `--sync-hz 1000` (1000 Hz): mean 71.43 exchanges/s per follower, range 71.34–71.52, i.e. 7.14 % of the configured rate, duration-corrected [measured]
+
+The naive figures (mean `served` ÷ followers, no duration correction), for comparison with P-02 and with 003-02 (which read 38 and 75 from the intact rows of the interleaved loopback file, 2 runs each): at 50 Hz mean 37.15 exchanges/s, range 36.95–37.28 (74.3 %); at 1000 Hz mean 73.33 exchanges/s, range 73.21–73.49 (7.33 %) [measured]. The percentage and the P-02 replacement below use the corrected figures. Per run [measured]:
+
+| run [measured] | holder | windows kept | sum served | covered span (s) | naive /s | corrected /s | followers' asked /s |
+|---|---|---|---|---|---|---|---|
+| 50 Hz run 1 | sender | 32 | 3547 | 32.884 | 36.95 | 35.95 | 36.25 / 35.65 / 36.02 |
+| 50 Hz run 2 | synth1 | 32 | 3573 | 32.912 | 37.22 | 36.19 | 36.21 / 36.36 / 36.05 |
+| 50 Hz run 3 | synth1 | 31 | 3467 | 31.992 | 37.28 | 36.12 | 35.77 / 36.31 / 36.35 |
+| 1000 Hz run 1 | sender | 32 | 7036 | 32.792 | 73.29 | 71.52 | 70.34 / 71.90 / 72.26 |
+| 1000 Hz run 2 | mixer | 32 | 7028 | 32.836 | 73.21 | 71.34 | 71.48 / 70.98 / 71.57 |
+| 1000 Hz run 3 | sender | 32 | 7055 | 32.920 | 73.49 | 71.44 | 71.52 / 70.53 / 72.23 |
+
+[measured] The follower-side `asked` rates agree with the holder-derived corrected figure within 2 % in every run. The holder (sender, synth1 or mixer) does not change the rate beyond the run-to-run spread (0.7 % at 50 Hz, 0.3 % at 1000 Hz).
+
+**P-02 replacement** (for 002-13 to copy into the constants table, replacing the corrupt-file figures 37 / 77): POC sync rate achieved at `--sync-hz 50` / `1000` = **36.1 / 71.4** completed exchanges per second per follower (duration-corrected, 3 runs of 35 s each, clean single-writer files, unprivileged, `poc-untouched`; naive 37.1 / 73.3) [measured]
+
+**Effective timeout and CONFIG_HZ (AC 3).** The host runs `CONFIG_HZ=250` (a 4 ms tick; read from `/boot/config-6.12.115+deb13.1-amd64`, same as the Environment section) [measured]. The effective receive timeout of the clock thread was timed directly: one follower, synth1, was run under `strace -f -T --seccomp-bpf -e trace=recvmsg,setsockopt` (as its own child, unprivileged; the other three modules untraced; separate runs from the six above, so the rate figures carry no tracing). The clock socket's `SO_RCVTIMEO` is 5000 µs, and the effective timeout is the duration of the `recvmsg` calls of that thread that ended `EAGAIN`: at `--sync-hz 50`, 1890 timed-out calls, mean 13.2 ms (min 8.3, max 16.5), 1277 of them at 12 ms (3 ticks) and 603 at 16 ms (4 ticks); at `--sync-hz 1000`, 1764 timed-out calls, mean 14.1 ms (min 8.7, max 16.6), 789 at 12 ms and 968 at 16 ms [measured]. So the effective timeout is about 13 ms on average, not 5 ms, and it is tick-quantised, 3 or 4 ticks of 4 ms [measured]. Why 5 ms becomes 3 to 4 ticks: a socket timeout is kept in ticks (jiffies) in the kernel, 5 ms rounds up to 2 ticks of 4 ms, and the timer wheel's expiry rounding and the partly elapsed current tick add one or two more [memory]; this was not traced in the kernel, only its outcome (12 / 16 ms) was measured. This answers the open sub-question, informationally.
+
+**Pacing mechanism (AC 4).** The run confirms the mechanism read from code: the clock thread sends a request when `now >= next` and then blocks in `recvmsg` under the 5 ms socket timeout set at `module.rs:1126` (loop `module.rs:1504-1600`, `period` at `module.rs:1515`), so the request period is whatever the timeout wait makes it [code]. At 1000 Hz (period 1 ms, shorter than the timeout) a cycle is one reply plus one timed-out wait, so the rate is about 1 ÷ the effective timeout: 1000 ÷ 14.1 ms ≈ 71 against 71.43 measured [measured]. At 50 Hz (period 20 ms, longer than one timeout) the loop waits two timeouts before the next send: 2 × 13.2 ms = 26.4 ms, about 38 exchanges/s against 36.09 measured (5 % off; the traced timeouts are those of synth1 under tracing) [measured]. The pacing is by timeout, not by deadline: the achieved rate is set by the effective receive-timeout of module.rs:1126, not by `--sync-hz` [measured]. Line numbers in this subsection use `poc-untouched` numbering.
+
+**Reusable command for 002-14.** The script `doc/design/reports/archaeology/002-12-sync-rate-run.sh` is reusable for 10 and 200 Hz in 002-14 (arguments: `<sync-hz> <duration-s> <out-dir> <group-port> [poc-dir]`), and `002-12-sync-rate-analyze.py <run-dir> <sync-hz>` applies the run-validity rules and prints the naive and corrected rates. Its sender line, the other three modules differing only in name, simulated crystal and `--connect` (the whole script is committed beside this report) [decision]:
+
+```console
+$ bash doc/design/reports/archaeology/002-12-sync-rate-run.sh 50 35 /tmp/opencode/002-12/hz50-r1 47211
+$ # inside the script, per module: sender
+$ "$POC/target/release/hadropoc" sender --name sender --group 239.72.68.44:47211 --iface 127.0.0.1 --no-tui --sync-hz 50 --duration 35 --sim-offset-ms 3 --sim-drift-ppm 20 --connect events=synth1.events --connect events=synth2.events --connect audio=mixer.feed --metrics /tmp/opencode/002-12/hz50-r1/sender.csv
+$ cargo run --release -p hadronyche-tools --bin metrics-check -- /tmp/opencode/002-12/hz50-r1
+$ python3 doc/design/reports/archaeology/002-12-sync-rate-analyze.py /tmp/opencode/002-12/hz50-r1 50
+```
+
+[decision] No instrumentation or source change was needed anywhere: the companion script and analyser only start processes and read the metrics files.
+
+
 **verdict: pending**
 
 ## Open sub-questions
@@ -483,4 +559,4 @@ Copied from the Notes of ticket 002-01 (`doc/design/tickets/002/002-01-Scratch-c
 | Is the voice comparison bit-level? | This epic (ticket 002-02) | answered: **yes** — the replica-vs-returned voice/click comparison is exact bit equality (audio.rs:808-813), so the "exact tier for voices" description stands; the falsifier ("compares within tolerance only") did not hold [code] |
 | Does the I/O-pressure finding survive? | This epic (ticket 002-09) | answered: **yes** — all 16 metrics files under `experiments/` check single-writer (every data line parses, `unix_ms` monotonic, zero violations, REPORT-0b section (c)), so the eligibility rule's basis holds; the falsifier (experiment files corrupt or multi-writer) did not hold [measured] |
 | Is the 21.7 M value a decoding error or a display error? | This epic (ticket 002-08) | Neither; the value is a real counter and the loss accounting is wrong |
-| Why does a 5 ms timeout behave as about 13 ms? | This epic (ticket 002-12; informational only) | None needed; the runtime paces by deadline |
+| Why does a 5 ms timeout behave as about 13 ms? | This epic (ticket 002-12; informational only) | answered: the timeout is tick-quantised on this `CONFIG_HZ=250` host — timed `recvmsg` waits of the clock thread are 12 ms (3 ticks) or 16 ms (4 ticks), mean 13.2 ms at 50 Hz and 14.1 ms at 1000 Hz (section (e), 002-12) [measured]; the kernel's rounding path was not traced [memory]; none needed; the runtime paces by deadline |
