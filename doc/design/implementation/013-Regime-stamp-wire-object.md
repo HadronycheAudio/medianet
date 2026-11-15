@@ -14,7 +14,7 @@ Define and implement the **regime stamp** in `hadronyche-core`: a compact, versi
 
 ### Why this exists `[measured]`
 
-The proof of concept's first measured run (25 s loopback, unprivileged, kernel 6.12) produced: a corrupt metrics file (about 6 parseable lines of about 80, because four modules each opened the same path); a garbage "lost" counter of about 21.7 million on a run with zero loss; two check families reporting "0 of 0 windows" on a run that looked green; and an achieved sync rate of 37/s where 50 was configured. A run where real-time scheduling silently failed looked identical to a good one. Numbers governance is therefore first-class surface, not a logging detail.
+The proof of concept's first measured run (25 s loopback, unprivileged, kernel 6.12) produced: a corrupt metrics file (about 6 parseable lines of about 80, because four modules each opened the same path); a garbage "lost" counter of about 21.7 million on a run with zero loss; two check families reporting "0 of 0 windows" on a run that looked green; and an achieved sync rate of 37/s where 50 was configured (read from that corrupt file; superseded by the clean 36.1/s, P-02, REPORT-0b section (e)). A run where real-time scheduling silently failed looked identical to a good one. Numbers governance is therefore first-class surface, not a logging detail.
 
 ### Stamp contents `[decision]`
 
