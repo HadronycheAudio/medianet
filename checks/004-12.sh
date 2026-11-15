@@ -695,12 +695,12 @@ for _, hdr, rows in parse_tables(new_text):
 
 
 def declared_units(text):
-    """Units that DECLARE an open item: their first prose line begins 'Open item'."""
+    """Units that DECLARE an open item: their first prose line begins 'Open item' or 'Open items'."""
     out = []
     for u in units(text):
         body = [ln.strip().lstrip("*_ ").strip() for ln in u.splitlines()
                 if ln.strip() and not ln.lstrip().startswith(("#", "|"))]
-        if body and re.match(r"open\s+item\b", body[0], re.I):
+        if body and re.match(r"open\s+items?\b", body[0], re.I):
             out.append(u)
     return out
 
