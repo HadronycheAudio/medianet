@@ -19,10 +19,11 @@
 #      message's first line references a 003-XX ticket id;
 #   4. the POC working tree is clean vs HEAD, except while an orchestrated
 #      epic-003 write is in flight.  For that window the orchestrator
-#      commits `swarm/poc-write-in-flight` in THIS repository; when present,
-#      the tree-cleanliness assertion alone is SKIPPED (loudly) and never
-#      fails.  State is restored between commits, so the assertion is
-#      meaningful again once the marker is removed.
+#      commits `swarm/poc-write-in-flight` in the machine-local swarm state
+#      directory at the shared checkout; when present, the tree-cleanliness
+#      assertion alone is SKIPPED (loudly) and never fails.  State is
+#      restored between commits, so the assertion is meaningful again once
+#      the marker is removed.
 # Epic 003 is the only task allowed to modify the POC, hence rule 3.
 # Override the marker location with MARKER_PATH=/path.
 #
@@ -63,7 +64,8 @@
 #        (f) tree cleanliness: `git status --porcelain` is empty, i.e. HEAD
 #            is committed and nothing but ignored paths is untracked.  When
 #            the orchestrator marker `swarm/poc-write-in-flight` exists in
-#            this repository (or at $MARKER_PATH), this single assertion is
+#            the machine-local swarm state directory at the shared checkout
+#            (or at $MARKER_PATH), this single assertion is
 #            reported as SKIP and does not fail: a serialised epic-003
 #            write is in flight and the tree is expected to be dirty.
 #      Note: with a root commit `git show --name-status` necessarily lists
@@ -90,9 +92,13 @@ export LC_ALL=C
 
 POC="${HADROPOC:-/home/dorian/workspace/hadropoc}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HERE/.." && pwd)"
+# The swarm state directory is machine-local: it lives at the shared
+# checkout (SHARED_ROOT, overridable), not in this worktree — the swarm/
+# tree is untracked by the design owner's directive (2026-11-14), so
+# worktrees do not carry it.
+SHARED_ROOT="${SHARED_ROOT:-/home/dorian/workspace/hadronyche/medianet}"
 MANIFEST="$HERE/003-01-pre-ticket.sha256"
-MARKER_PATH="${MARKER_PATH:-$REPO_ROOT/swarm/poc-write-in-flight}"
+MARKER_PATH="${MARKER_PATH:-$SHARED_ROOT/swarm/poc-write-in-flight}"
 TMPROOT="${TMPDIR:-/tmp/opencode}"
 mkdir -p "$TMPROOT" 2>/dev/null || TMPROOT=/tmp
 TMP="$(mktemp -d "$TMPROOT/003-01.XXXXXX")" || { echo "FAIL  cannot create temp dir"; exit 1; }
