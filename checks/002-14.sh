@@ -35,7 +35,8 @@
 #   within 0.6 percentage point; the mark is "within 2 %" exactly when
 #   |mean - rate| / rate <= 0.02, else "not within 2 %". The 50 and 1000 Hz
 #   means must equal the corrected means stated in the 002-12 subsection
-#   (within 0.05).
+#   (within 0.05). The 1000 Hz row is outside C-112 (10 to 200) and may read
+#   "n/a (outside C-112)" instead of a mark; a bare "within 2 %" never passes.
 # * (AC 2, runs.) "3 runs" (or "three runs") in the subsection; each run >= 30 s
 #   (e.g. "--duration 30", "30 s", "at least 30"); "unprivileged" and "strict"
 #   (C-147) both stated; the figures go to the POC reference rows ("reference
@@ -52,7 +53,8 @@
 #   --no-tui) and is not run from the frozen tree; any paragraph saying
 #   "open item" also names an owner and a falsifier.
 # * (Section (e) verdict, as checks/002-12.sh.) Section (e) keeps EXACTLY ONE
-#   "verdict:" line in an allowed form; the 002-14 subsection adds none.
+#   "verdict:" line in an allowed form, and it is the LAST non-blank line of
+#   the section (subsections go above it); the 002-14 subsection adds none.
 #
 # Exit status: 0 when every check passes, 1 otherwise.
 
@@ -224,6 +226,18 @@ else
     ok "section (e) has exactly one verdict line (final form, explanation)"
   else
     bad "section (e) has one verdict line but it is not in an allowed form: $verdict_line"
+  fi
+fi
+
+# Position: the section's LAST non-blank line is its verdict line, so a
+# subsection added to (e) goes above the verdict, never below it (002-14
+# review, finding 2). Every accepted verdict form passes this, pending or final.
+if [ "$verdict_count" -eq 1 ]; then
+  last_nb=$(printf '%s\n' "$SECTION" | grep -n '[^[:space:]]' | tail -n 1 | cut -d: -f2-)
+  if printf '%s\n' "$last_nb" | grep -Eq '^[[:space:]]*(\*\*)?verdict:'; then
+    ok "section (e) ends with its verdict line (the last non-blank line of the section is the verdict)"
+  else
+    bad "section (e) verdict line is not the last non-blank line of the section (last line: $last_nb); the verdict stays last and new subsections go above it"
   fi
 fi
 
@@ -614,7 +628,11 @@ for R in RATES:
         low = mark.lower()
         says_not = re.search(r"not\s+within", low) is not None
         says_within = re.search(r"within\s*2\s*%", low) is not None
-        mark_ok = (within_exp and says_within and not says_not) or ((not within_exp) and says_not)
+        # AC 3 asks for the mark only at 10, 50 and 200 Hz (C-112 range 10-200):
+        # the 1000 Hz row may read "n/a (outside C-112)" instead. A bare
+        # "within 2 %" on that row still fails below.
+        na_1000 = R == 1000 and re.search(r"n/a|not applicable", low) is not None and not says_within
+        mark_ok = na_1000 or (within_exp and says_within and not says_not) or ((not within_exp) and says_not)
         if not mark_ok:
             errs.append("AC 3: the %d Hz row (line %d) is marked '%s', but its corrected mean %.2f is %.2f %% from %d Hz, so it must read '%s'"
                         % (R, n, mark, mean, dev * 100, R,
@@ -631,7 +649,7 @@ for R in RATES:
                 print("FAIL: " + e)
         else:
             print("PASS: AC 2/3: %d Hz row (line %d): mean %.2f corrected, range %.2f-%.2f, %.1f %% of configured, mark '%s' consistent (|mean - %d| / %d = %.2f %%)"
-                  % (R, n, mean, rg[0], rg[1], pct, "within 2 %" if within_exp else "not within 2 %", R, R, dev * 100))
+                  % (R, n, mean, rg[0], rg[1], pct, mark.strip(), R, R, dev * 100))
 PY
 )
 
