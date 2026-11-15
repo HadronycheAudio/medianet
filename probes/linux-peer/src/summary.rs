@@ -66,7 +66,11 @@ impl RunSummary {
         format!(
             "sent {} datagrams in {:.6} s: achieved rate {:.1} pps, \
              UDP payload {} bytes, assumed wire size {} bytes",
-            self.count, elapsed_s, self.achieved_rate_pps(), self.udp_payload_len, self.wire_size,
+            self.count,
+            elapsed_s,
+            self.achieved_rate_pps(),
+            self.udp_payload_len,
+            self.wire_size,
         )
     }
 }

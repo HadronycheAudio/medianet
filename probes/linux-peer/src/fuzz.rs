@@ -36,7 +36,7 @@ impl FuzzOutcome {
 
 /// Seed corpus committed with the probe: the payloads the unit tests encode.
 pub fn seed_corpus() -> Vec<Vec<u8>> {
-    use crate::payload::{encode, HEADER_LEN, DEFAULT_UDP_PAYLOAD_LEN};
+    use crate::payload::{DEFAULT_UDP_PAYLOAD_LEN, HEADER_LEN, encode};
     vec![
         encode(0, 0, DEFAULT_UDP_PAYLOAD_LEN),
         encode(1_234, 5_000_000_123, DEFAULT_UDP_PAYLOAD_LEN),
@@ -74,13 +74,11 @@ pub fn run(duration: Duration, seed: &[Vec<u8>]) -> FuzzOutcome {
     let start = std::time::Instant::now();
     // Seed from the wall clock; the mutations stay deterministic within a
     // run thanks to the xorshift state.
-    let mut rng = Rng(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0x9E37_79B9_7F4A_7C15)
-            | 1,
-    );
+    let mut rng = Rng(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9E37_79B9_7F4A_7C15)
+        | 1);
     let mut executions: u64 = 0;
     let mut crashes: u64 = 0;
 
@@ -88,7 +86,9 @@ pub fn run(duration: Duration, seed: &[Vec<u8>]) -> FuzzOutcome {
         // Build one input: mostly a mutated seed, sometimes fresh noise.
         let mut buf = if rng.below(4) == 0 || seed.is_empty() {
             let len = rng.below(1_400);
-            (0..len).map(|_| (rng.next() & 0xff) as u8).collect::<Vec<u8>>()
+            (0..len)
+                .map(|_| (rng.next() & 0xff) as u8)
+                .collect::<Vec<u8>>()
         } else {
             let mut buf = seed[rng.below(seed.len())].clone();
             // A few mutations per input: truncation, byte pokes, bit flips.

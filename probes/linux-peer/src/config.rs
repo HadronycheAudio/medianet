@@ -29,7 +29,9 @@ pub struct PeerConfig {
 impl Default for PeerConfig {
     fn default() -> Self {
         Self {
-            dest: DEFAULT_DEST.parse().expect("default dest is a valid SocketAddr"),
+            dest: DEFAULT_DEST
+                .parse()
+                .expect("default dest is a valid SocketAddr"),
             rate_pps: DEFAULT_RATE_PPS,
             count: DEFAULT_COUNT,
             udp_payload_len: DEFAULT_UDP_PAYLOAD_LEN,
@@ -59,43 +61,44 @@ impl PeerConfig {
             let arg = arg.as_ref();
             match arg {
                 "--rate" => {
-                    let value = args.next().ok_or(ConfigError::MissingValue { flag: "--rate" })?;
+                    let value = args
+                        .next()
+                        .ok_or(ConfigError::MissingValue { flag: "--rate" })?;
                     let value = value.as_ref();
-                    config.rate_pps = value
-                        .parse()
-                        .map_err(|_| ConfigError::InvalidValue {
-                            flag: "--rate",
-                            value: value.to_string(),
-                        })?;
+                    config.rate_pps = value.parse().map_err(|_| ConfigError::InvalidValue {
+                        flag: "--rate",
+                        value: value.to_string(),
+                    })?;
                 }
                 "--count" => {
-                    let value = args.next().ok_or(ConfigError::MissingValue { flag: "--count" })?;
+                    let value = args
+                        .next()
+                        .ok_or(ConfigError::MissingValue { flag: "--count" })?;
                     let value = value.as_ref();
-                    config.count = value
-                        .parse()
-                        .map_err(|_| ConfigError::InvalidValue {
-                            flag: "--count",
-                            value: value.to_string(),
-                        })?;
+                    config.count = value.parse().map_err(|_| ConfigError::InvalidValue {
+                        flag: "--count",
+                        value: value.to_string(),
+                    })?;
                 }
                 "--payload-len" => {
-                    let value = args.next().ok_or(ConfigError::MissingValue { flag: "--payload-len" })?;
+                    let value = args.next().ok_or(ConfigError::MissingValue {
+                        flag: "--payload-len",
+                    })?;
                     let value = value.as_ref();
-                    config.udp_payload_len = value
-                        .parse()
-                        .map_err(|_| ConfigError::InvalidValue {
+                    config.udp_payload_len =
+                        value.parse().map_err(|_| ConfigError::InvalidValue {
                             flag: "--payload-len",
                             value: value.to_string(),
                         })?;
                 }
-                _ if arg.starts_with("--") => return Err(ConfigError::UnknownFlag(arg.to_string())),
+                _ if arg.starts_with("--") => {
+                    return Err(ConfigError::UnknownFlag(arg.to_string()));
+                }
                 _ if dest.is_none() => {
-                    let addr: SocketAddr = arg
-                        .parse()
-                        .map_err(|_| ConfigError::InvalidValue {
-                            flag: "dest",
-                            value: arg.to_string(),
-                        })?;
+                    let addr: SocketAddr = arg.parse().map_err(|_| ConfigError::InvalidValue {
+                        flag: "dest",
+                        value: arg.to_string(),
+                    })?;
                     if !addr.is_ipv4() {
                         // C-100: IPv4 only in v1.
                         return Err(ConfigError::InvalidValue {
@@ -109,7 +112,7 @@ impl PeerConfig {
                     return Err(ConfigError::InvalidValue {
                         flag: "dest",
                         value: arg.to_string(),
-                    })
+                    });
                 }
             }
         }

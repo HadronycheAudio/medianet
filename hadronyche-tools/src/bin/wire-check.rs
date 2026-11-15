@@ -26,12 +26,7 @@ fn main() {
             );
         }
         Err(error) => {
-            eprintln!(
-                "{}: {:?}: {}",
-                path.display(),
-                error.kind,
-                error.message
-            );
+            eprintln!("{}: {:?}: {}", path.display(), error.kind, error.message);
             std::process::exit(1);
         }
     }

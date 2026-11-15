@@ -103,8 +103,18 @@ fn states_single_writer_verdict(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     let names_the_rule = lower.contains("single-writer") || lower.contains("single writer");
     let states_a_verdict = [
-        "yes", "no", "true", "false", "intact", "corrupt", "clean", "broken", "pass", "fail",
-        "ok", "violation",
+        "yes",
+        "no",
+        "true",
+        "false",
+        "intact",
+        "corrupt",
+        "clean",
+        "broken",
+        "pass",
+        "fail",
+        "ok",
+        "violation",
     ]
     .iter()
     .any(|word| lower.contains(word));
@@ -128,7 +138,10 @@ fn metrics_header_matches_the_poc_definition() {
     );
     let clean = String::from_utf8(read("clean.csv")).expect("the clean fixture is UTF-8");
     assert_eq!(
-        clean.lines().next().expect("the clean fixture has a header"),
+        clean
+            .lines()
+            .next()
+            .expect("the clean fixture has a header"),
         METRICS_HEADER,
         "fixtures must carry the byte-for-byte POC header"
     );
@@ -224,7 +237,10 @@ fn duplicate_header_is_not_single_writer() {
 #[test]
 fn wrong_column_type_is_not_parseable() {
     let clean = String::from_utf8(read("clean.csv")).expect("the clean fixture is UTF-8");
-    let first_data = clean.lines().nth(1).expect("the clean fixture has a data row");
+    let first_data = clean
+        .lines()
+        .nth(1)
+        .expect("the clean fixture has a data row");
     let unix_ms = first_data
         .split(',')
         .next()
@@ -243,7 +259,11 @@ fn wrong_column_type_is_not_parseable() {
 #[test]
 fn a_line_without_a_trailing_newline_still_counts() {
     let mut content = read("clean.csv");
-    assert_eq!(content.last(), Some(&b'\n'), "the fixture ends with a newline");
+    assert_eq!(
+        content.last(),
+        Some(&b'\n'),
+        "the fixture ends with a newline"
+    );
     content.pop();
     let report = check_bytes(&content);
     assert_eq!(
@@ -336,7 +356,10 @@ fn run_lists_each_file_name_with_its_verdict() {
     place(&scratch, "non-monotonic.csv", "broken.csv");
 
     let text = run(scratch.path());
-    let lines: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty()).collect();
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
     assert_eq!(
         lines.len(),
         2,
@@ -361,7 +384,8 @@ fn run_lists_each_file_name_with_its_verdict() {
 #[test]
 fn fuzz_budget_defaults_to_sixty_seconds() {
     assert_eq!(FUZZ_SECONDS_PER_CHANGE, 60, "C-95 per-change budget");
-    let default = duration_from_args(Vec::<String>::new()).expect("the empty argument list uses the default");
+    let default =
+        duration_from_args(Vec::<String>::new()).expect("the empty argument list uses the default");
     assert_eq!(default.as_secs(), FUZZ_SECONDS_PER_CHANGE);
     let explicit = duration_from_args(["--duration-secs", "1"]).expect("an explicit duration");
     assert_eq!(explicit.as_secs(), 1);
