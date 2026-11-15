@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the no_std target
+        run: rustup target add aarch64-unknown-none
+      - name: Unit tests (workspace)
+        run: cargo test --workspace --all-targets --quiet
+      - name: Unit tests (probes)
+        run: |
+          for d in probes/*/; do
+            [ -f "$d/Cargo.toml" ] || continue
+            (cd "$d" && cargo test --all-targets --quiet)
+          done
+      - name: no_std build gate (hadronyche-vectors)
+        run: cargo build -p hadronyche-vectors --target aarch64-unknown-none --quiet
+
+  lint:
+    name: linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy (workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: clippy (probes)
+        run: |
+          for d in probes/*/; do
+            [ -f "$d/Cargo.toml" ] || continue
+            (cd "$d" && cargo clippy --all-targets -- -D warnings)
+          done
+      - name: rustfmt (workspace)
+        run: cargo fmt --all -- --check
+      - name: rustfmt (probes)
+        run: |
+          for d in probes/*/; do
+            [ -f "$d/Cargo.toml" ] || continue
+            (cd "$d" && cargo fmt -- --check)
+          done
+      - name: Function length (max 100 code lines)
+        run: python3 scripts/function-length.py
+      - name: Design set check
+        run: python3 doc/kickoff/check-design.py doc/design
+      - name: Conflict-marker guard
+        run: |
+          if grep -rlE '^(<<<<<<< |>>>>>>> |=======$)' doc/ checks/ scripts/ 2>/dev/null | grep -q .; then
+            echo "conflict markers present in the files above" >&2
+            exit 1
+          fi
+
+  coverage:
+    name: code coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Add llvm-tools
+        run: rustup component add llvm-tools-preview
+      - name: Coverage (workspace + probes, lcov)
+        run: |
+          set -e
+          rm -f lcov-*.info
+          cargo llvm-cov --workspace --all-targets --lcov --output-path lcov-workspace.info
+          for d in probes/*/; do
+            [ -f "$d/Cargo.toml" ] || continue
+            name=$(basename "$d")
+            (cd "$d" && cargo llvm-cov --all-targets --lcov --output-path "../../lcov-$name.info")
+          done
+          cat lcov-*.info > lcov.info
+      - name: Coverage summary
+        run: python3 scripts/coverage-summary.py lcov.info
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov*.info
