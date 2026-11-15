@@ -1,8 +1,10 @@
 //! flood-send — throwaway probe for ticket 002-10 (flood test of the
 //! unbounded drain, C-133). It sends well-formed `hadropoc` feed datagrams —
-//! the exact wire format of the POC's sender→mixer audio feed, with its own
-//! session and an advancing sequence number — to one mixer input at a
-//! configurable rate, and prints the rate it actually achieved.
+//! the wire format of the POC's sender→mixer audio feed (88-byte header,
+//! the 48-channel audio message with its channel ids, the controller
+//! message: 9 421 bytes for 48 channels of 48 frames), with an advancing
+//! sequence number — to one mixer input at a configurable rate, and prints
+//! the rate it actually achieved.
 //!
 //! Standard use, against a loopback run started with `--port P` (the mixer's
 //! feed input is then UDP port P + 31; the mixer binds its clock, inputs and
@@ -11,6 +13,11 @@
 //! ```console
 //! $ flood-send --target 127.0.0.1:45431 --rate 20000 --duration 28
 //! ```
+//!
+//! `--session` (default 0x5EC0F100) is stamped in the header's `session` and,
+//! unless `--ack-seq` says otherwise, in `ack_seq`, as the POC's sender
+//! stamps its own id in both (sender.rs:299, :307). Pass the real sender's id
+//! to make the flood indistinguishable from the sender's own feed.
 
 mod pacer;
 mod wire;
@@ -26,6 +33,7 @@ struct Config {
     rate: f64,
     duration: f64,
     session: u32,
+    ack_seq: Option<u32>,
     seq_start: u32,
     frames: u16,
     channels: u8,
@@ -34,7 +42,7 @@ struct Config {
 fn print_usage() {
     eprintln!(
         "usage: flood-send --target IP:PORT --rate PER_SECOND [--duration S] \
-         [--session N] [--seq-start N] [--frames N] [--channels N]"
+         [--session N] [--ack-seq N] [--seq-start N] [--frames N] [--channels N]"
     );
 }
 
@@ -44,6 +52,7 @@ fn parse_args(args: &[String]) -> Option<Config> {
         rate: 0.0,
         duration: 30.0,
         session: 0x5EC0_F100,
+        ack_seq: None,
         seq_start: 900_000_000,
         frames: 48,
         channels: 48,
@@ -56,12 +65,17 @@ fn parse_args(args: &[String]) -> Option<Config> {
             "--rate" => cfg.rate = value.parse().ok()?,
             "--duration" => cfg.duration = value.parse().ok()?,
             "--session" => cfg.session = value.parse().ok()?,
+            "--ack-seq" => cfg.ack_seq = Some(value.parse().ok()?),
             "--seq-start" => cfg.seq_start = value.parse().ok()?,
             "--frames" => cfg.frames = value.parse().ok()?,
             "--channels" => cfg.channels = value.parse().ok()?,
             _ => return None,
         }
         idx += 2;
+    }
+    // Blocks start on a controller tick boundary (a multiple of 4 frames).
+    if cfg.frames == 0 || !cfg.frames.is_multiple_of(4) || cfg.channels == 0 {
+        return None;
     }
     if cfg.target.is_empty() || cfg.rate <= 0.0 || cfg.duration <= 0.0 {
         return None;
@@ -76,16 +90,17 @@ fn epoch_ns() -> i64 {
         .map_or(0, |d| d.as_nanos() as i64)
 }
 
-/// One paced datagram: re-stamp the volatile header fields and send it.
+/// One paced datagram: re-stamp the volatile header fields and send it. The
+/// messages after the header were built once and never change.
 fn send_one(sock: &UdpSocket, buf: &mut [u8], cfg: &Config, seq: u32, sample_pos: u64) -> bool {
     let head = wire::FloodHeader {
         session: cfg.session,
+        ack_seq: cfg.ack_seq.unwrap_or(cfg.session),
         frames: cfg.frames,
         channels: cfg.channels,
         path_delay: PATH_DELAY,
     };
     head.encode(buf, seq, sample_pos, epoch_ns());
-    wire::encode_audio_msg(buf, cfg.channels, cfg.frames, 0);
     sock.send_to(buf, &cfg.target).is_ok()
 }
 
@@ -93,6 +108,14 @@ fn run(cfg: &Config) {
     let sock = UdpSocket::bind("0.0.0.0:0").expect("bind ephemeral UDP socket");
     let len = wire::datagram_len(cfg.frames, cfg.channels);
     let mut buf = vec![0u8; len];
+    assert_eq!(
+        wire::encode_body(&mut buf, cfg.channels, cfg.frames, PATH_DELAY),
+        len
+    );
+    println!(
+        "flood: datagram {len} bytes (audio payload {} bytes)",
+        wire::payload_len(cfg.channels, cfg.frames)
+    );
     let mut pacer = pacer::Pacer::new(cfg.rate);
     let deadline = Instant::now() + Duration::from_secs_f64(cfg.duration);
     let t0 = Instant::now();
