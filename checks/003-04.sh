@@ -141,8 +141,9 @@
 # AC4  "The ticket's diff touches only the clock-thread wait code; wire
 #      format, servo and analyzer files are unchanged."  Encoding, over
 #      THE COMMITS OF THIS TICKET: the commits after 7a2d2e4 whose first line
-#      references 003-04 (token rule: `003-04:` prefix or `type(003-04):`
-#      scope).  A diff from 7a2d2e4 would also measure later epic-003 commits
+#      belongs to 003-04 (anchored rule: first line `003-04: ...` or
+#      `type(003-04): ...`; a later subject that merely names 003-04 does not
+#      count).  A diff from 7a2d2e4 would also measure later epic-003 commits
 #      (003-06 touches src/main.rs), so every measure below is the union over
 #      these commits (or the per-commit hunk geometry):
 #        (a) at least one 003-04 commit exists — an empty set cannot satisfy
@@ -604,11 +605,11 @@ fi
 # -------------------------------------------------------------------- AC 4
 echo "-- AC4 diff of this ticket's commits limited to the clock-thread wait code"
 # THIS TICKET'S commits: the commits after BASE whose first line references
-# 003-04 (token rule).  Later epic-003 commits (003-06 touches src/main.rs) are
+# 003-04 (anchored rule).  Later epic-003 commits (003-06 touches src/main.rs) are
 # judged by their own checks, so the bound is the union of the 003-04 diffs,
 # not a diff from BASE (which would age as later tickets land).
 t04_commits="$(gitpoc log --reverse --format='%H%x09%s' "$BASE"..HEAD 2>/dev/null \
-  | awk -F'\t' '$2 ~ /(^|[^0-9A-Za-z])003-04($|[^0-9])/ { print $1 }')"
+  | awk -F'\t' '$2 ~ /^(003-04([: ]|$)|[a-z]+\(003-04\)!?: )/ { print $1 }')"
 if [ -z "$t04_commits" ]; then
   bad "AC4 no commit after $BASE references 003-04: the clock-wait fix is not committed in the POC; AC4 cannot be satisfied by an empty diff"
 else
