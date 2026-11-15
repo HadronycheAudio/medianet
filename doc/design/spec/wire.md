@@ -175,14 +175,14 @@ The lower-minor row is this section's choice: a minor change only adds optional 
 
 ## Reserved fields
 
-A reserved field is wire space of a fixed width that this specification fixes at a required value, so a later version can give the space a meaning without moving any other field: reserved space is a named field with a required value, never alignment filler (Alignment and padding). Two reserved fields are fixed now — the copy index of the media packet header (C-07) and the authentication reservation of the control messages (C-12) — and the general rule below covers every padding or reserved field a later ticket adds. A reserved value that does not conform is a malformed case like any other: the receiver drops the packet and counts it under `ReservedNonZero` (Rejection reasons, value 12), the reason that enumeration reserves for exactly this case `[decision]`.
+A reserved field is wire space of a fixed width that this specification fixes at a required value, so a later version can give the space a meaning without moving any other field: reserved space is a named field with a required value, never alignment filler (Alignment and padding). Two reserved fields are fixed now — the copy index of the media packet header (C-07) and the authentication reservation of the control and sync messages (C-12) — and the general rule below covers every padding or reserved field a later ticket adds. A reserved value that does not conform is a malformed case like any other: the receiver drops the packet and counts it under `ReservedNonZero` (Rejection reasons, value 12), the reason that enumeration reserves for exactly this case `[decision]`.
 
 | Field | Location | Width | Required value in v1 | Receiver outcome |
 |---|---|---|---|---|
 | Copy index (C-07) | media packet header (004-06 places it) | 2 bits | 0 — v1 senders emit 0 only | v1 receivers accept all four values 0 to 3 [decision]; no copy-index value is a malformed case in v1 |
-| Authentication scheme (C-12) | control messages (004-16 to 004-18 place it) | 8 bits | 0 (none) | a non-zero scheme: drop and count as ReservedNonZero |
-| Message counter (C-12) | control messages | 64 bits | live — the liveness counter (C-115); any value | never ReservedNonZero: the counter is not a reserved zero field |
-| Authentication tag (C-12) | control messages | 128 bits | 128 zero bits | a non-zero tag: drop and count as ReservedNonZero |
+| Authentication scheme (C-12) | control messages (004-16 to 004-18 place it) and sync messages (Sync request and reply) | 8 bits | 0 (none) | a non-zero scheme: drop and count as ReservedNonZero |
+| Message counter (C-12) | control messages and sync messages (Sync request and reply) | 64 bits | live — the liveness counter (C-115) in control messages; in sync messages it counts the sender's sync messages and is live without being the liveness counter; any value | never ReservedNonZero: the counter is not a reserved zero field |
+| Authentication tag (C-12) | control messages and sync messages (Sync request and reply) | 128 bits | 128 zero bits | a non-zero tag: drop and count as ReservedNonZero |
 
 ### Copy index (C-07)
 
@@ -811,7 +811,7 @@ Little-endian (Byte order), packed with no padding for alignment (Alignment and 
 | Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
 |---|---|---|---|---|
 | 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
-| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | 0x0100 in v1 |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100 |
 | 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
 | 6 | 1 | u8 | Message type: 1 = sync request (Message type codes) | 1 only |
 | 7 | 1 | u8 | Authentication scheme (C-12); 0 = none in v1 (C-115) | 0 only |
@@ -827,7 +827,7 @@ Same conventions as the request; bytes 0 to 31 are the common header, the echoed
 | Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
 |---|---|---|---|---|
 | 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
-| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | 0x0100 in v1 |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100 |
 | 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
 | 6 | 1 | u8 | Message type: 2 = sync reply (Message type codes) | 2 only |
 | 7 | 1 | u8 | Authentication scheme (C-12); 0 = none in v1 (C-115) | 0 only |
@@ -860,7 +860,7 @@ The follower's fourth instant, its receive stamp of the reply, never travels: it
 
 **Who the holder is.** A follower knows the holder it follows from the election and discovery messages of epic 005 (004-16, 004-17); the reply's holder module id is the wire's statement of who answered, and the follower compares it with the module id of the holder it follows `[decision]`. A reply whose holder module id differs — a former holder still answering after a takeover, a module that is not the holder, or a stray reply — is dropped and counted under UnadmittedSource `[decision]`. UnadmittedSource is the closest member of the closed enumeration: its meaning is a source whose module id has no admitted connection at this receiver, and on the sync layer the holder the follower follows is its one admitted source of time; its Layers cell now names sync, and its meaning names this case, which adds no reason to the enumeration (Rejection reasons, Closed enumeration) `[decision]`. The source address is not part of the rule: the module id is the identity the wire states, and how a follower learns its holder is election behaviour, epic 005's `[decision]`.
 
-**Which epochs a follower accepts.** The reply is how a follower learns the holder's current epoch: the epoch changes on an election in which no candidate has usable time (C-113, C-213) and on a holder stall (C-136), and a takeover by a candidate with usable time keeps it (C-213), so an epoch different from the follower's is not by itself wrong `[decision]`. The follower holds its current epoch E together with A, the reading of its own monotonic clock at which it adopted E — from a sync reply, an epoch-switch announcement or admission (Media packet header, Timeline epoch width and wrap) — and judges a reply from the holder it follows, carrying epoch e, by the echoed send timestamp, which is a reading of the same clock `[decision]`:
+**Which epochs a follower accepts.** The reply is how a follower learns the holder's current epoch: the epoch changes on an election in which no candidate has usable time (C-113, C-213) and on a holder stall (C-136), and a takeover by a candidate with usable time keeps it (C-213), so an epoch different from the follower's is not by itself wrong `[decision]`. The follower holds its current epoch E together with A, the reading of its own local monotonic clock at which it adopted E — from a sync reply, an epoch-switch announcement or admission — and judges a reply from the holder it follows, carrying epoch e, by the echoed send timestamp, which is a reading of the same local clock `[decision]`. A is held on the follower's local monotonic clock, beside the network-time adoption instant that the wrap section keeps for the epoch's tenure (Media packet header, Timeline epoch width and wrap), not in its place: A is compared only with echoed send timestamps, which are on that same local clock, and never with a network time, so the two clocks are never compared with each other `[decision]`:
 
 1. e equals E: accepted.
 2. e differs from E and the echoed send timestamp is later than A: accepted. The request was sent after the follower adopted E, so the holder answered it with its epoch as it stood after that adoption, and the reply is the follower's evidence of a bump; what the follower then does with the new epoch and origin — line reconstruction, the switch its sources announce — belongs to epic 006 (006-04, 006-11) `[decision]`.
@@ -881,7 +881,7 @@ Every malformed sync message is dropped — or ignored, for the unconfigured dom
 
 | Invalid form | Required outcome |
 |---|---|
-| datagram too short to hold the two leading fields every message starts with (under 4 octets) | drop and count under TooShort: dropped before any field is read `[decision]` |
+| datagram too short to hold the two leading fields every message starts with (under 4 bytes) | drop and count under TooShort: dropped before any field is read `[decision]` |
 | bad magic (the leading two bytes are not 0x4d4e) | drop and count under BadMagic |
 | version mismatch (the version's major, its high byte, is not 1: a different major) | drop and count under VersionMismatch, and raise the VersionMismatch event — never a silent drop (Versioning, Receiver behaviour) |
 | datagram size not equal to the 74-byte fixed size, at 4 bytes or more | drop and count under BadLength: the body does not fill the fixed size `[decision]` |
@@ -902,7 +902,7 @@ No value of the message counter or of any timestamp, origin or module id field i
 
 **Open item 1 — the reply's line fields.** The reply carries the epoch origin (i64) beside the epoch and the holder module id, ahead of 006-04's field list, because a field added later is a major change. Owner: epic 006, ticket 006-04 (sync reply contents and choice of epoch origin), which confirms the list. Falsifier: 006-04's list names a field the reply does not carry or a width other than the one laid out here (epoch 16 bits, origin 64 bits signed, module id 64 bits), or shows the origin is not needed in the reply; either reopens this layout `[decision]`.
 
-**Open item 2 — epoch acceptance and message-type outcome.** Cases 1 to 4 of Timeline epoch and holder identity are the wire's minimal rule for a follower's epoch acceptance; 006-04 asks for a serial comparison of epochs, which the wrap section declines. Owner: epic 006, ticket 006-04 (and 006-11 for consumer-side adoption) for the epoch rule; ticket 004-21, the validity-rules completeness audit, for the BadLength outcome of an unexpected message type. Falsifier: 006-04's adoption rule adopts a reply this section counts under WrongEpoch, or two followers reconstruct different lines from the same replies under cases 1 to 4; or 004-21 finds a member of the closed enumeration that names an unexpected message type better than BadLength `[decision]`.
+**Open item 2 — epoch acceptance and message-type outcome.** Cases 1 to 4 of Timeline epoch and holder identity are the wire's minimal rule for a follower's epoch acceptance; 006-04's ticket asks for a serial comparison of epochs "from 006-03", while the landed wrap section (004-07, Media packet header, Timeline epoch width and wrap) declines serial-number arithmetic; the landed specification stands, and 006-04 resolves that tension under this item. Owner: epic 006, ticket 006-04 (and 006-11 for consumer-side adoption) for the epoch rule; ticket 004-21, the validity-rules completeness audit, for the BadLength outcome of an unexpected message type. Falsifier: 006-04's adoption rule adopts a reply this section counts under WrongEpoch, or two followers reconstruct different lines from the same replies under cases 1 to 4; or 004-21 finds a member of the closed enumeration that names an unexpected message type better than BadLength `[decision]`.
 
 ## Receiver report
 

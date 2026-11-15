@@ -250,7 +250,7 @@ outcome = "no value is non-conforming in v1 (receivers accept 0 to 3); dedup is 
 
 [[reserved]]
 name = "authentication_scheme"
-message = "control messages (C-12, placed by 004-16 to 004-18)"
+message = "control messages (C-12, placed by 004-16 to 004-18) and sync messages (004-19)"
 width = 8
 value = 0
 meaning = "0 (none) in v1 (C-115): wire space for a later authentication scheme"
@@ -258,16 +258,16 @@ outcome = "a non-zero scheme is dropped and counted as ReservedNonZero"
 
 [[reserved]]
 name = "message_counter"
-message = "control messages (C-12, placed by 004-16 to 004-18)"
+message = "control messages (C-12, placed by 004-16 to 004-18) and sync messages (004-19)"
 width = 64
 value = "live"
 live = true
-meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message and is not a reserved zero field"
+meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message and is not a reserved zero field; in sync messages (004-19) it counts the sender's sync messages and is live without being the liveness counter"
 outcome = "any value is conforming in v1; the counter is not a reserved zero field and never produces ReservedNonZero"
 
 [[reserved]]
 name = "authentication_tag"
-message = "control messages (C-12, placed by 004-16 to 004-18)"
+message = "control messages (C-12, placed by 004-16 to 004-18) and sync messages (004-19)"
 width = 128
 value = "zero"
 meaning = "128 zero bits in v1 (C-115)"
@@ -743,7 +743,7 @@ offset = 16
 width = 16
 type = "u16"
 meaning = "protocol version, major in bits 15..8, minor in bits 7..0; v1 packs 1.0 as 0x0100 (004-04)"
-valid = "0x0100 in v1"
+valid = "major 1, any minor; senders write 0x0100"
 
 [[message.field]]
 name = "domain"
@@ -822,7 +822,7 @@ offset = 16
 width = 16
 type = "u16"
 meaning = "protocol version, major in bits 15..8, minor in bits 7..0; v1 packs 1.0 as 0x0100 (004-04)"
-valid = "0x0100 in v1"
+valid = "major 1, any minor; senders write 0x0100"
 
 [[message.field]]
 name = "domain"
