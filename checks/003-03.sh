@@ -72,7 +72,7 @@
 #
 # AC6  "The diff of this ticket touches only the metrics writer code."
 #      Encoding (approximate by design; exact judgement is at review):
-#        (a) the commits whose first line references 003-03 (token rule)
+#        (a) the commits whose first line belongs to 003-03 (anchored rule)
 #            change at least one path — otherwise the criterion would pass
 #            vacuously on an unfixed tree;
 #        (b) at most 3 paths differ.  The ticket's own edits are module.rs
@@ -365,13 +365,15 @@ fi
 # -------------------------------------------------------------------- AC 6
 echo "-- AC6 diff of this ticket's commits limited to the metrics writer"
 # The bound applies to THIS TICKET'S commits: those whose first line references
-# 003-03 (token rule: `003-03:` prefix or `type(003-03):` scope).  A diff from
+# 003-03 (anchored: first line `003-03: ...` or `type(003-03): ...`; an id
+# appearing later in a subject does not attribute the commit).  A diff from
 # poc-untouched would also pick up later sanctioned epic-003 commits (003-04,
-# 003-06 touching src/main.rs), which their own checks judge.  The untracked
-# files of a not-yet-committed write are not part of a ticket's commits and
-# are covered by the tree-cleanliness assertion instead.
+# 003-06 touching src/main.rs), which their own checks judge.  Untracked files
+# of a not-yet-committed write are not part of any ticket commit; they are
+# covered by 003-01 AC3(f) ("working tree clean vs HEAD") and by 003-06 TREE
+# ("POC working tree clean vs HEAD"), not by this assertion.
 gitpoc log --reverse --format='%H%x09%s' poc-untouched..HEAD 2>/dev/null \
-  | awk -F'\t' '$2 ~ /(^|[^0-9A-Za-z])003-03($|[^0-9])/ { print $1 }' > "$TMP/t03-commits"
+  | awk -F'\t' '$2 ~ /^(003-03([: ]|$)|[a-z]+\(003-03\)!?: )/ { print $1 }' > "$TMP/t03-commits"
 n_commits="$(sed '/^$/d' "$TMP/t03-commits" | wc -l | tr -d ' ')"
 : > "$TMP/changed"
 while IFS= read -r c; do
