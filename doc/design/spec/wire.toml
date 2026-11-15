@@ -593,14 +593,23 @@ valid = "any 32-bit value; a value that differs from the recomputed CRC is BadCh
 # Content messages (ticket 004-11): wire.md's "Content messages" field tables
 # are the human-readable authority. Every content message starts with the
 # 3-byte common header (kind u8, length u16); offsets below are relative to
-# the message's own first byte, as for the announcement entry. The common
-# header is a section of the media packet. The audio and dense controller
-# messages carry no section_of: the checker applies the 1 252-byte bound of
-# C-17 to every section, and these two messages have fixed maximums above it
-# (a multi-packet slice's message continues across packets), so they are
-# declared as media-layer messages of their own [decision]. Their counted
-# element is modelled at the default slice: one channel's or one
-# controller's 48 values of 4 bytes, 192 bytes [decision].
+# the message's own first byte, as for the announcement entry.
+#
+# None of the three carries section_of. On wire grounds a content message
+# belongs to the slice's content, laid over the concatenated content regions
+# of its packets, and may continue from one packet into the next, so it is
+# not a part of one packet [decision]. The choice is also forced for the
+# audio and dense messages: the checker applies the 1 252-byte bound of C-17
+# to every message with section_of, and their maximums exceed it. The
+# relation is provisional pending a tooling item on that checker rule
+# (004-02) [decision].
+#
+# The sample and value runs are one 4-byte element counted by the length, so
+# max_size is the true maximum a parser sizes for: 16 383 elements (65 532
+# bytes) under the u16 length; 3 + 65 532 = 65 535 bytes for audio and
+# 6 + 65 532 = 65 538 for dense (at the default 48 frames: 65 475 and
+# 48 966). The schema has no union type: type = "f32" stands for either
+# sample format, f32 or Q1.31, as the stream's manifest declares (004-26).
 # ---------------------------------------------------------------------------
 
 [[message]]
@@ -608,7 +617,6 @@ name = "content-message header"
 layer = "media"
 dscp = 46
 max_size = 3
-section_of = "media packet"
 rejection_reasons = ["BadLength"]
 
 [[message.field]]
@@ -631,7 +639,7 @@ valid = "0 to 65 535; the body must end inside the content region, else BadLengt
 name = "audio message"
 layer = "media"
 dscp = 46
-max_size = 65475
+max_size = 65535
 rejection_reasons = ["BadLength"]
 
 [[message.field]]
@@ -651,20 +659,20 @@ meaning = "length: frames x channels x 4, the samples that follow; the channel c
 valid = "1 152 in a default slice (48 frames x 6 channels x 4); at most 65 535"
 
 [[message.field]]
-name = "channel_samples"
+name = "sample"
 offset = 24
-width = 1536
+width = 32
 type = "f32"
 count = "length"
-max_count = 341
-meaning = "one channel's samples, frames x 4 bytes (192 per channel per default slice, C-04), planar, channels in the manifest's channel-map order with no per-channel id byte; f32 or Q1.31 as the stream's manifest declares (004-26, C-03); the count is length / 192 in a default slice"
-valid = "1 to 341 channels at the default 48 frames (65 535 / 192)"
+max_count = 16383
+meaning = "one 4-byte sample, f32 or Q1.31 as the stream's manifest declares (004-26, C-03); the samples run channel by channel, frames x 4 bytes per channel (192 per channel per default slice, C-04), channels in the manifest's channel-map order with no per-channel id byte; the count is length / 4"
+valid = "at most 16 383 samples (65 532 bytes); 1 to 341 channels at the default 48 frames"
 
 [[message]]
 name = "dense controller message"
 layer = "media"
 dscp = 46
-max_size = 48966
+max_size = 65538
 rejection_reasons = ["BadLength"]
 
 [[message.field]]
@@ -700,11 +708,11 @@ meaning = "stride: frames per value; 1 is one value per frame, a larger stride i
 valid = "1 to frames, dividing frames"
 
 [[message.field]]
-name = "controller_values"
+name = "value"
 offset = 48
-width = 1536
+width = 32
 type = "f32"
-count = "count"
-max_count = 255
-meaning = "one controller's values, (frames / stride) x 4 bytes (192 at one value per frame in a default slice), controller after controller in controller-map order with no id; 4 bytes each in the stream's sample format, f32 or Q1.31 (004-26); no initial-value field (C-158)"
-valid = "count controllers, at most 255"
+count = "length"
+max_count = 16383
+meaning = "one 4-byte value in the stream's sample format, f32 or Q1.31 (004-26); the values run controller by controller, (frames / stride) x 4 bytes per controller (192 at one value per frame in a default slice), in controller-map order with no id; no initial-value field (C-158); the count is (length - 3) / 4"
+valid = "count x (frames / stride) values, at most 16 383 (65 532 bytes); count at most 255"
