@@ -4,15 +4,15 @@
 # RED-phase document check. It validates the two new subsections of the
 # "Content messages" section of doc/design/spec/wire.md and the two new
 # [[message]] tables of doc/design/spec/wire.toml against every acceptance
-# criterion of the ticket, and re-runs the 004-02 checker, the wire_tables
-# tests, the design checker and the other 004-* checks (except 004-11, whose
-# sibling loop this check does not repeat).
+# criterion of the ticket, and re-runs the 004-02 checker (cargo run --bin
+# wire-check and the wire_tables tests) and the design checker once each.
+# It does not run the other checks/004-*.sh: the per-change suite runs every
+# file in checks/, so a sibling loop here would be quadratic.
 #
 # WIRE_MD / WIRE_TOML may override the paths. The overrides are for
 # self-testing on throwaway fixtures only: when either document path is
-# overridden the repository-level checks (cargo, the design checker and the
-# sibling 004-* checks) are skipped with a NOTE, because they always target
-# the real repository.
+# overridden the repository-level checks (cargo and the design checker) are
+# skipped with a NOTE, because they always target the real repository.
 #
 # Where the new text lives: every heading of the Content messages section
 # whose title names "sparse", "keyed" or "transport" is a new subsection, and
@@ -1179,22 +1179,7 @@ print("OK: 4/4 acceptance criteria for 004-12, the consistency rules and the DoD
 PY
 PY_RC=$?
 
-SIB_RC=0
-if [ -z "${WIRE_MD:-}" ] && [ -z "${WIRE_TOML:-}" ]; then
-    for f in checks/004-*.sh; do
-        [ "$(basename "$f")" = "004-12.sh" ] && continue
-        [ "$(basename "$f")" = "004-11.sh" ] && continue
-        if ! out=$(bash "$f" 2>&1); then
-            echo "FAIL sibling $(basename "$f"):"
-            printf '%s\n' "$out" | tail -n 4
-            SIB_RC=1
-        fi
-    done
-else
-    echo "NOTE siblings: document paths overridden; sibling 004-* checks skipped"
-fi
-
-if [ "$PY_RC" -ne 0 ] || [ "$SIB_RC" -ne 0 ]; then
+if [ "$PY_RC" -ne 0 ]; then
     exit 1
 fi
 exit 0
