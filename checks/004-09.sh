@@ -69,7 +69,11 @@
 # receiver rejects (BadLength) only a named position that is NOT in the
 # future. The check fails while a table row, a field-table cell, a prose
 # sentence or a wire.toml field string makes the lead a validity condition,
-# and requires the statement that a re-issue inside the lead is valid.
+# and requires the statement that a re-issue inside the lead is valid. A
+# Validity-rules row whose invalid-form cell names the lead and whose outcome
+# rejects fails with no exemption; the Sender obligations text must state the
+# stop rule at the named position (ruling R6: no announcement rides in a slice
+# at or after the position it names).
 #
 # DoD also: every block of the new section carries an evidence tag ([code],
 # [measured], [kernel-doc], [standard], [memory], [decision]); the design
@@ -1489,6 +1493,44 @@ REJECT_RE = re.compile(
 )
 VALID_RE = re.compile(r"\bvalid\b", re.I)
 AT_LEAST_RE = re.compile(r"\bat\s+least\b", re.I)
+# the lead named in an invalid-form cell (the Validity-rules first column)
+LEAD_FORM_RE = re.compile(
+    r"\blead\b|C-43|\bcloser\b|\bnearer\b|64\s+slices|within\s+the\s+lead"
+    r"|inside\s+the\s+lead|less\s+than\s+a\s+lead",
+    re.I,
+)
+EVERY_ISSUE_RE_1 = re.compile(
+    r"\b(?:lead|C-43)\b[^.;]{0,80}\bbinds?\b[^.;]{0,40}\b(?:every|each|all|any)\s+(?:re-?)?issues?\b",
+    re.I,
+)
+EVERY_ISSUE_RE_2 = re.compile(
+    r"\b(?:every|each|all|any)\s+(?:re-?)?issues?\b[^.;]{0,40}\b(?:bind|binds|bound|applies|apply|governs?)\b"
+    r"[^.;]{0,40}\b(?:lead|C-43)\b",
+    re.I,
+)
+# R6 stop rule: the position passes once the sender's slice position reaches it
+R6_STOP_RE = re.compile(
+    r"\b(?:no|nothing|none)\b[^.;]{0,80}\b(?:rides?|carr(?:y|ies|ied)|re-?issued?|sent|issued|goes?\s+out|travels?)\b"
+    r"[^.;]{0,80}\bslices?\b[^.;]{0,60}\b(?:at\s+or\s+after|at\s+or\s+beyond|on\s+or\s+after)\b",
+    re.I,
+)
+R6_REACH_RE = re.compile(
+    r"\bslice\s+position\s+reach(?:es)?\b|\breach(?:es)?\s+(?:it|the\s+named\s+position|the\s+position)\b",
+    re.I,
+)
+R6_PASS_RE = re.compile(r"\bpass(?:es|ed)?\b", re.I)
+
+
+def prose_sentences(block_pattern=None):
+    """Sentences of the section's prose blocks (tables skipped), optionally only
+    blocks matching block_pattern."""
+    for b in blks:
+        if b.lstrip().startswith("|"):
+            continue
+        if block_pattern and not re.search(block_pattern, b, re.I):
+            continue
+        for sent in re.split(r"(?<=[.;])\s+", b):
+            yield sent.strip()
 
 
 def lead_as_rejection(seg, cell=False):
@@ -1515,9 +1557,20 @@ if not placeholder:
                     if lead_as_rejection(cell, cell=(idx == 4)):
                         fail("defect", "a field-table cell makes the lead a validity condition: " + cell[:110])
                         defect_ok = False
-            elif lead_as_rejection(" | ".join(row)):
-                fail("defect", "a table row rejects or invalidates a position for the lead: " + " | ".join(row)[:110])
-                defect_ok = False
+            else:
+                # no exemption: a row whose invalid-form cell names the lead
+                # and whose outcome rejects is a validity rule, whatever else
+                # the row says (first issue, re-issue, C-44, negation)
+                if len(row) >= 2 and LEAD_FORM_RE.search(row[0]) and REJECT_RE.search(" | ".join(row[1:])):
+                    fail(
+                        "defect",
+                        "a Validity-rules row rejects an announcement for sitting inside "
+                        "the lead (no exemption): " + " | ".join(row)[:110],
+                    )
+                    defect_ok = False
+                if lead_as_rejection(" | ".join(row)):
+                    fail("defect", "a table row rejects or invalidates a position for the lead: " + " | ".join(row)[:110])
+                    defect_ok = False
 
     for b in blks:
         if b.lstrip().startswith("|"):
@@ -1544,17 +1597,49 @@ if not placeholder:
                 )
                 defect_ok = False
 
+    # sentence level: a sentence must itself say a re-issue inside the lead is
+    # valid (a sentence about the receiver that merely says "accepts" does not)
     if not any(
-        re.search(r"re-?issu", b, re.I)
-        and LEAD_RE.search(b)
-        and re.search(r"\bvalid\b|\baccept|not\s+(?:be\s+)?(?:rejected|dropped|counted)", b, re.I)
-        for b in blks
-        if not b.lstrip().startswith("|")
+        re.search(r"re-?issu", s, re.I)
+        and LEAD_RE.search(s)
+        and re.search(r"\bvalid\b|\baccepted\b|not\s+(?:be\s+)?(?:rejected|dropped|counted)", s, re.I)
+        for s in prose_sentences()
     ):
         fail(
             "defect",
             "no statement that a re-issue (C-44) inside the lead is valid; the "
             "receiver rejects only a position that is not in the future",
+        )
+        defect_ok = False
+
+    # the lead binds the FIRST issue only: no sentence may say it binds every,
+    # each or all issues (or re-issues), in either word order
+    for s in prose_sentences():
+        if EVERY_ISSUE_RE_1.search(s) or EVERY_ISSUE_RE_2.search(s):
+            fail(
+                "defect",
+                "the lead is stated to bind every issue of a change (C-43 binds the "
+                "sender's FIRST issue only): " + s[:110],
+            )
+            defect_ok = False
+            break
+
+    # R6 (ruling): the position has passed once the sender's slice position
+    # reaches it; no announcement rides in a slice at or after the position it
+    # names. Must be a sentence of the Sender obligations text.
+    r6_ok = False
+    for s in prose_sentences(r"^\s*\**Sender obligations"):
+        if not re.search(r"sender|re-?issu|carr|ride", s, re.I):
+            continue
+        if R6_STOP_RE.search(s) or (R6_REACH_RE.search(s) and R6_PASS_RE.search(s)):
+            r6_ok = True
+            break
+    if not r6_ok:
+        fail(
+            "defect R6",
+            "the Sender obligations text does not state the stop rule at the named "
+            "position: the position passes once the sender's slice position reaches "
+            "it, so no announcement rides in a slice at or after the position it names",
         )
         defect_ok = False
 
