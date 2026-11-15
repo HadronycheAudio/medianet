@@ -33,15 +33,19 @@
 # -------------------------------------------------
 # AC0  History: BASE is an ancestor of HEAD; poc-untouched is an ancestor of
 #      HEAD; every commit after poc-untouched has a first line matching
-#      003-NN; every commit in BASE..HEAD references 003-NN; at least one commit
-#      in BASE..HEAD references 003-06 (red: none, so this FAILS now).
-#      "References 003-NN" is a token rule applied to the first line: the id
-#      003-NN as a whole token, either as the legacy prefix `003-NN: ...` or as
-#      a Conventional Commits scope `type(003-NN): ...`.  Same rule as 003-01
-#      and 003-03/003-04 (`[^0-9A-Za-z]003-NN([^0-9]|$)`).
+#      003-NN (anchored, below); every commit in BASE..HEAD carries an id; at
+#      least one commit in BASE..HEAD belongs to 003-06 (red: none, so this
+#      FAILS now).
+#      ANCHORED ID RULE (same in 003-01, 003-03, 003-04, 003-05, 003-06): a
+#      commit BELONGS to ticket 003-NN when its first line matches
+#        ^003-NN([: ]|$)                 legacy prefix, e.g. `003-04: ...`
+#        ^[a-z]+\(003-NN\)!?:         Conventional Commits scope, e.g. `fix(003-06): ...`
+#      An id that merely appears later in the subject (`feat(003-07): ... the
+#      003-06 exit status`) does NOT attribute the commit to 003-06.
 #
 # AC1  Inert case (system AC-9, epic 003-AC4): `loopback --duration 1 --no-tui`
-#      with the untouched smoke flags.  At 1 s music and transport have 0
+#      with NO sim flags (only --group and --iface defaults; it is not the
+#      smoke command).  At 1 s music and transport have 0
 #      windows (C-32 listen delay and settle horizon, REPORT-0b section (a)),
 #      audio does not.  The check reads the families at zero FROM THE RUN'S OWN
 #      FINAL SUMMARY, then requires:
@@ -59,8 +63,11 @@
 #      1 s prints no summary line at all, so 1 s is the shortest duration that
 #      can be judged; no shorter duration is tried.
 #
-# AC2  Healthy case: `loopback --duration 25 --no-tui` with the untouched smoke
-#      flags exits 0, prints NO zero-family line on stderr, and its final
+# AC2  Healthy case: `loopback --duration 25 --sim-offset-ms 3 --sim-drift-ppm 20
+#      --no-tui` (the epic's smoke command, 003-POC-smoke-fixes deliverable 5,
+#      minus --csv/--metrics, which do not affect the verdict, and plus
+#      --no-tui, which the headless path needs) exits 0, prints NO zero-family
+#      line on stderr, and its final
 #      summary shows all three denominators (audio, music, transport) > 0.  A
 #      zero family in this run is reported as a failure of the run.
 #
@@ -86,6 +93,11 @@
 #      `test transport::tests::scenario ... ok` are present, and no test
 #      result line reports a failure.
 #
+# AC6  F1 (lone process, no analyzer): `synth --name synth1 --iface 127.0.0.1
+#      --no-tui --duration 2` exits 0, names no check family, and reaches its
+#      [   2s] line.  A process without an analyzer has no check family, so the
+#      family gate must not fire on it.
+#
 # TREE  The POC working tree is clean vs HEAD (git status --porcelain empty),
 #      except while the orchestrator marker swarm/poc-write-in-flight exists
 #      in the shared checkout: then this one assertion is a loud SKIP.
@@ -110,12 +122,15 @@ BIN="$POC/target/release/hadropoc"
 OUT=/tmp/opencode/003-06
 mkdir -p "$OUT" || { echo "FAIL  cannot create $OUT"; exit 1; }
 
-# Isolated discovery groups/ports (never the default group).  The two runs of
-# this check use different ports, both in 47501-47540.
-PORT_SHORT=$(( 47501 + ($$ % 40) ))
-PORT_HEALTHY=$(( 47501 + (($$ + 20) % 40) ))
+# Isolated discovery groups/ports (never the default group).  The three runs
+# of this check use different ports (offsets 0, 20 and 10 mod 40), all in
+# 47621-47660.
+PORT_SHORT=$(( 47621 + ($$ % 40) ))
+PORT_HEALTHY=$(( 47621 + (($$ + 20) % 40) ))
+PORT_SYNTH=$(( 47621 + (($$ + 10) % 40) ))
 GROUP_SHORT="239.72.68.44:$PORT_SHORT"
 GROUP_HEALTHY="239.72.68.44:$PORT_HEALTHY"
+GROUP_SYNTH="239.72.68.44:$PORT_SYNTH"
 FAMILIES="audio music transport"
 
 fail=0
@@ -124,6 +139,10 @@ bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 note() { printf '      %s\n' "$*"; }
 
 gitpoc() { git -C "$POC" "$@"; }
+# Commit-subject id rule (anchored, see AC0): a first line carries a ticket id
+# only as the legacy prefix `003-NN:` / `003-NN ` or the Conventional Commits
+# scope `type(003-NN): `.  Matched against "<hash> <subject>" lines.
+ID_ANY='^[0-9a-f]+ (003-[0-9][0-9]([: ]|$)|[a-z]+\(003-[0-9][0-9]\)!?: )'
 
 echo "== 003-06: fail headless run on zero-sample family =="
 echo "   POC:   $POC"
@@ -150,7 +169,7 @@ fi
 # Commits of this ticket: first line references 003-06.
 ticket_commits() {
   gitpoc log --reverse --format='%H%x09%s' "$BASE..HEAD" 2>/dev/null \
-    | awk -F'\t' '$2 ~ /(^|[^0-9A-Za-z])003-06($|[^0-9])/ { print $1 }'
+    | awk -F'\t' '$2 ~ /^(003-06([: ]|$)|[a-z]+\(003-06\)!?: )/ { print $1 }'
 }
 
 # -------------------------------------------------------------------- AC 0
@@ -165,14 +184,14 @@ if gitpoc merge-base --is-ancestor "$UNTOUCHED" HEAD 2>/dev/null; then
 else
   bad "AC0 $UNTOUCHED is not an ancestor of HEAD"
 fi
-bad_ids="$(gitpoc log --format='%h %s' "$UNTOUCHED..HEAD" 2>/dev/null | grep -Ev '[^0-9A-Za-z]003-[0-9][0-9]([^0-9]|$)' || true)"
+bad_ids="$(gitpoc log --format='%h %s' "$UNTOUCHED..HEAD" 2>/dev/null | grep -Ev "$ID_ANY" || true)"
 if [ -n "$bad_ids" ]; then
   bad "AC0 commits after $UNTOUCHED without a 003-XX id in the first line:"
   printf '%s\n' "$bad_ids" | head -n 5 | while IFS= read -r l; do note "$l"; done
 else
   pass "AC0 every commit after $UNTOUCHED references a 003-XX ticket"
 fi
-bad_base="$(gitpoc log --format='%h %s' "$BASE..HEAD" 2>/dev/null | grep -Ev '[^0-9A-Za-z]003-[0-9][0-9]([^0-9]|$)' || true)"
+bad_base="$(gitpoc log --format='%h %s' "$BASE..HEAD" 2>/dev/null | grep -Ev "$ID_ANY" || true)"
 if [ -n "$bad_base" ]; then
   bad "AC0 commits after $BASE without a 003-XX id in the first line:"
   printf '%s\n' "$bad_base" | head -n 5 | while IFS= read -r l; do note "$l"; done
@@ -304,13 +323,13 @@ else
 fi
 
 # ------------------------------------------------------------------ AC 2
-echo "-- AC2 healthy case: --duration 25 --no-tui; exit 0, no zero family, all families non-zero"
+echo "-- AC2 healthy case: smoke command (--duration 25 --sim-offset-ms 3 --sim-drift-ppm 20 --no-tui); exit 0, no zero family, all families non-zero"
 if [ "$BUILD_OK" -ne 1 ]; then
   bad "AC2 not evaluated: build failed"
 else
   wait_for_poc
-  echo "   running: $BIN loopback --duration 25 --no-tui --group $GROUP_HEALTHY"
-  timeout 120 "$BIN" loopback --duration 25 --no-tui --group "$GROUP_HEALTHY" \
+  echo "   running: $BIN loopback --duration 25 --sim-offset-ms 3 --sim-drift-ppm 20 --no-tui --group $GROUP_HEALTHY"
+  timeout 120 "$BIN" loopback --duration 25 --sim-offset-ms 3 --sim-drift-ppm 20 --no-tui --group "$GROUP_HEALTHY" \
     > "$OUT/healthy.out" 2> "$OUT/healthy.err"
   rc=$?
   if [ "$rc" -eq 0 ]; then
@@ -344,6 +363,43 @@ else
       bad "AC2 the healthy run has zero windows for:$hzero ($hcounts): a failure of the run, not of the check"
     fi
   fi
+fi
+
+# ------------------------------------------------------------------ AC 6
+# F1: a process with NO analyzer (a lone `synth` or `mixer`) has no check
+# family at all.  Its headless --duration run must exit 0 and name no family:
+# the ticket's rule is "otherwise exit as today", and AC-9 names an INERT
+# family, not families that do not exist.  Command and flags: the 002-12
+# run script (doc/design/reports/archaeology/002-12-sync-rate-run.sh) starts
+# `synth --name synth1 $G ...` with G = `--group <group> --iface 127.0.0.1
+# --no-tui`; the lone run here is the same invocation, --duration 2.
+echo "-- AC6 a lone synth (no analyzer, no check family): --duration 2; exit 0, no check-family line"
+if [ "$BUILD_OK" -ne 1 ]; then
+  bad "AC6 not evaluated: build failed"
+else
+  wait_for_poc
+  echo "   running: $BIN synth --name synth1 --iface 127.0.0.1 --no-tui --duration 2 --group $GROUP_SYNTH"
+  timeout 60 "$BIN" synth --name synth1 --iface 127.0.0.1 --no-tui --duration 2 --group "$GROUP_SYNTH" \
+    > "$OUT/lone-synth.out" 2> "$OUT/lone-synth.err"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    pass "AC6 lone synth exited 0"
+  else
+    bad "AC6 lone synth exited $rc: a process with no analyzer has no check family, so it must exit 0"
+  fi
+  fam="$(grep -h -E '^check family' "$OUT/lone-synth.out" "$OUT/lone-synth.err" 2>/dev/null || true)"
+  if [ -z "$fam" ]; then
+    pass "AC6 lone synth prints no check-family line on stdout or stderr"
+  else
+    bad "AC6 lone synth names check families (none exist in a process without an analyzer):"
+    printf '%s\n' "$fam" | head -n 3 | while IFS= read -r l; do note "$l"; done
+  fi
+  if grep -Eq '^\[ *2s\]' "$OUT/lone-synth.out"; then
+    pass "AC6 lone synth reached its 2 s duration (a [   2s] line is present)"
+  else
+    bad "AC6 lone synth printed no [   2s] line: the process did not reach its duration"
+  fi
+  tail -n 2 "$OUT/lone-synth.err" | while IFS= read -r l; do note "stderr: $l"; done
 fi
 
 # ------------------------------------------------------------------ AC 3
@@ -422,31 +478,42 @@ else
       oldspec="$(printf '%s\n' "$h" | sed -nE 's/^@@ -([0-9]+)(,([0-9]+))? .*/\1 \3/p')"
       a="${oldspec%% *}"; b="${oldspec#* }"; [ "$b" = "$oldspec" ] && b=1; [ -z "$b" ] && b=1
       if [ "$b" -eq 0 ]; then lo="$a"; hi=$(( a + 1 )); else lo="$a"; hi=$(( a + b - 1 )); fi
-      if [ "$lo_s" -eq 0 ] || [ "$lo" -lt "$lo_s" ] || [ "$hi" -gt "$hi_s" ]; then
+      # F4: the change lies on the headless exit path, i.e. AFTER the
+      # run_headless( call line (an insertion after line a needs a >= hl; a
+      # changed block needs a > hl), and inside the function holding it.
+      after_bad=0
+      if [ "$b" -eq 0 ]; then
+        [ "$a" -lt "$hl" ] && after_bad=1
+      else
+        [ "$a" -le "$hl" ] && after_bad=1
+      fi
+      if [ "$lo_s" -eq 0 ] || [ "$lo" -lt "$lo_s" ] || [ "$hi" -gt "$hi_s" ] || [ "$after_bad" -eq 1 ]; then
         region_bad="$region_bad ${c:0:12}:$a,$b"
       fi
     done < <(gitpoc show -U0 --format= "$c" -- src/main.rs 2>/dev/null | grep '^@@')
   done
   if [ -z "$region_bad" ]; then
-    pass "AC4 every hunk lies inside the function holding the headless run_headless call"
+    pass "AC4 every hunk of the ticket lies after the run_headless( call, inside the function holding it (the headless exit path)"
   else
-    bad "AC4 hunk(s) outside the headless function (the diff must touch only the headless exit path):$region_bad"
+    bad "AC4 hunk(s) outside the headless exit path (must lie after the run_headless( call in its function):$region_bad"
   fi
 
-  # One family list: exactly one added line naming all three families in a
-  # bracketed literal.
+  # One family list, judged AS IT STANDS AT HEAD (F4): exactly one line of
+  # src/main.rs at HEAD is a bracketed literal naming "audio", "music" and
+  # "transport" together.  A later 003-06 commit may touch that line without
+  # tripping this check.
   added="$OUT/ticket-added.txt"
   : > "$added"
   for c in $tc; do
     gitpoc show -U0 --format= "$c" -- src/main.rs 2>/dev/null | grep '^+' | grep -v '^+++' >> "$added"
   done
-  list_lines="$(grep -F '"audio"' "$added" | grep -F '"music"' | grep -F '"transport"' | grep -F '[' | grep -F ']' || true)"
+  list_lines="$(gitpoc show HEAD:src/main.rs 2>/dev/null | grep -F '"audio"' | grep -F '"music"' | grep -F '"transport"' | grep -F '[' | grep -F ']' || true)"
   nlist="$(printf '%s' "$list_lines" | grep -c . || true)"
   if [ "$nlist" -eq 1 ]; then
-    pass "AC4 one family list in src/main.rs:"
-    note "$(printf '%s' "$list_lines" | sed 's/^+//')"
+    pass "AC4 one family list in src/main.rs at HEAD:"
+    note "$(printf '%s' "$list_lines")"
   else
-    bad "AC4 the family set is not one list: expected exactly one added line that is a bracketed literal naming \"audio\", \"music\" and \"transport\" (found $nlist)"
+    bad "AC4 the family set is not one list at HEAD: expected exactly one line of src/main.rs that is a bracketed literal naming \"audio\", \"music\" and \"transport\" (found $nlist)"
   fi
 
   if grep -q 'duration' "$added"; then
