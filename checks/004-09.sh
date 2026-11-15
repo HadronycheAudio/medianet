@@ -1535,15 +1535,27 @@ REISSUE_VALID_RES = [
     re.compile(r"re-?issu\w*[^.;]{0,60}?\b(?:valid|accepted)\b[^.;]{0,60}?" + _LEAD_SPAN, re.I),
 ]
 RECEIVER_RE = re.compile(r"\breceivers?\b|\bconsumers?\b", re.I)
-POLICE_VERB_RE = re.compile(
-    r"\b(?:polic(?:es|ing)|enforc(?:es|ing)|checks?|checking|verif(?:y|ies|ied)|requires?"
-    r"|reject(?:s|ed|ing)?|drop(?:s|ped|ping)?|discard(?:s|ed|ing)?"
-    r"|count(?:s|ed)?\s+(?:it\s+|them\s+)?under|BadLength)\b",
-    re.I,
-)
-LEAD_OBJ_RE = re.compile(
-    r"\blead\b|C-43|\bcloser\s+than\b|\bless\s+than\s+64\s+slices\b", re.I
-)
+# receiver rule (any order, any distance within the sentence): a receiver
+# sentence fails when it has an UNNEGATED reject-type verb clause AND an
+# UNNEGATED lead phrase clause. Active or passive, no first/re-issue exemption.
+REJECT_VERB_RES = [
+    re.compile(r"\breject\w*", re.I),
+    re.compile(r"\bdrop\w*", re.I),
+    re.compile(r"\bdiscard\w*", re.I),
+    re.compile(r"\bcount(?:s|ed|ing)?\s+(?:\S+\s+){0,3}?under\b", re.I),
+    re.compile(r"\bBadLength\b"),
+    re.compile(r"\bpolic\w*", re.I),
+    re.compile(r"\benforc\w*", re.I),
+    re.compile(r"\bcheck(?:s|ed|ing)?\b", re.I),
+    re.compile(r"\bverif\w*", re.I),
+    re.compile(r"\brequir(?:e|es|ed|ing)\b", re.I),
+]
+LEAD_PHRASE_RES = [
+    re.compile(r"\blead\b", re.I),
+    re.compile(r"\bcloser\s+than\b", re.I),
+    re.compile(r"\bless\s+than\s+(?:one\s+lead|a\s+lead|the\s+lead|64\s+slices)\b", re.I),
+    re.compile(r"\bC-43\b"),
+]
 
 
 def clause_around(s, a, b):
@@ -1566,17 +1578,21 @@ def every_issue_violation(s):
     return False
 
 
+def _unnegated_hit(s, rxs):
+    for rx in rxs:
+        for m in rx.finditer(s):
+            if not NEG_RE.search(clause_around(s, m.start(), m.end())):
+                return True
+    return False
+
+
 def receiver_polices_lead(s):
-    """True when a receiver sentence makes the receiver police/enforce/check the
-    lead, with no negation governing the verb."""
+    """True when a receiver/consumer sentence has an unnegated reject-type verb
+    (reject, drop, discard, count under, BadLength, police, enforce, check,
+    verify, require) AND an unnegated lead phrase, anywhere in the sentence."""
     if not RECEIVER_RE.search(s):
         return False
-    for m in POLICE_VERB_RE.finditer(s):
-        if NEG_RE.search(clause_around(s, m.start(), m.end())):
-            continue
-        if LEAD_OBJ_RE.search(s[m.end() : m.end() + 60]):
-            return True
-    return False
+    return _unnegated_hit(s, REJECT_VERB_RES) and _unnegated_hit(s, LEAD_PHRASE_RES)
 
 
 def prose_sentences(block_pattern=None):
@@ -1697,8 +1713,8 @@ if not placeholder:
         if receiver_polices_lead(s):
             fail(
                 "defect",
-                "a receiver is stated to police the lead (receivers never police it; "
-                "they reject only a position that is not in the future): " + s[:110],
+                "a receiver is stated to police or reject for the lead (receivers never "
+                "do; they reject only a position that is not in the future): " + s[:110],
             )
             defect_ok = False
             break
