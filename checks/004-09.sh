@@ -1536,10 +1536,14 @@ REISSUE_VALID_RES = [
 ]
 RECEIVER_RE = re.compile(r"\breceivers?\b|\bconsumers?\b", re.I)
 POLICE_VERB_RE = re.compile(
-    r"\b(?:polic(?:es|ing)|enforc(?:es|ing)|checks?|checking|verif(?:y|ies|ied)|requires?)\b",
+    r"\b(?:polic(?:es|ing)|enforc(?:es|ing)|checks?|checking|verif(?:y|ies|ied)|requires?"
+    r"|reject(?:s|ed|ing)?|drop(?:s|ped|ping)?|discard(?:s|ed|ing)?"
+    r"|count(?:s|ed)?\s+(?:it\s+|them\s+)?under|BadLength)\b",
     re.I,
 )
-LEAD_OBJ_RE = re.compile(r"\blead\b|C-43", re.I)
+LEAD_OBJ_RE = re.compile(
+    r"\blead\b|C-43|\bcloser\s+than\b|\bless\s+than\s+64\s+slices\b", re.I
+)
 
 
 def clause_around(s, a, b):
@@ -1553,7 +1557,11 @@ def every_issue_violation(s):
     """True when the lead is said to bind every/each/all issues, unnegated."""
     for rx in (EVERY_ISSUE_RE_1, EVERY_ISSUE_RE_2):
         for m in rx.finditer(s):
-            if not NEG_RE.search(m.group(0)):
+            q = re.search(r"\b(?:every|each|all|any)\b", m.group(0), re.I)
+            if q is None:
+                return True
+            qa = m.start() + q.start()
+            if not NEG_RE.search(clause_around(s, qa, qa + 1)):
                 return True
     return False
 
@@ -1698,7 +1706,10 @@ if not placeholder:
     # a sender sentence may not place an announcement, or the last re-issue, in
     # the slice at the named position (the position is passed by then)
     for s in prose_sentences(r"^\s*\**Sender obligations"):
-        if IN_SLICE_AT_P_RE.search(s):
+        if any(
+            not NEG_RE.search(clause_around(s, m.start(), m.end()))
+            for m in IN_SLICE_AT_P_RE.finditer(s)
+        ):
             fail(
                 "defect R6",
                 "a sender sentence places an announcement in the slice at the named "
