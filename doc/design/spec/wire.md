@@ -270,7 +270,49 @@ Every malformed header is dropped — or ignored, for the unconfigured domain �
 
 ## Slice header
 
-To be filled by 004-08 (slice header and send-timestamp format).
+Every media packet carries a slice header directly after the packet header: the address of the content the packet carries, the slice's packet layout, and the send timestamp of this packet (media rule 2). A slice is the content of one stream for one stretch of media time, addressed by position — network time counted in samples from the domain epoch, in the timeline epoch the packet header carries (C-10) — and the slice header is 22 bytes long, bytes 16 to 37 of the UDP payload, counting against the header cap of C-137 together with the packet header's 16 bytes [decision].
+
+### Field table
+
+Little-endian (Byte order), packed with no padding (Alignment and padding); offsets are byte distances from the first byte of the UDP payload and continue the packet header's 16 bytes (004-06) [decision]:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 16 | 8 | u64 | position: the content position of the slice's first frame on the domain line — samples at 96 000 Hz (C-01) counted from the domain epoch in the packet header's timeline epoch (C-10); the position half of the dedup key (rule 9) | any 64-bit value |
+| 24 | 2 | u16 | frames: how many frames of media time the slice spans | 1 to 65 535 [decision]; 48 in the default regime (C-02) |
+| 26 | 2 | u16 | packet index: this packet's index within its slice, 0-based | 0 to packet count − 1 (packet index < packet count) |
+| 28 | 2 | u16 | packet count: into how many packets the slice is split | 1 in the default regime (C-05); 2 to 65 535 in the stamped multi-packet regime |
+| 30 | 8 | u64 | send timestamp of this packet (Send timestamp) | any 64-bit value: nanoseconds of the sender's local monotonic clock |
+
+The five fields tile bytes 16 to 37 contiguously with no gap and no overlap — 22 bytes for the slice header, 38 bytes including the packet header: position 16 to 23, frames 24 to 25, packet index 26 to 27, packet count 28 to 29, send timestamp 30 to 37 [decision]. A gap slice is header-only (rule 10): its packet carries exactly these 38 bytes, and any payload beyond them is the gap-with-payload case the packet header's validity rules already reject under BadLength.
+
+### Send timestamp
+
+The send timestamp is 64 bits of nanoseconds read from the sender's local monotonic clock — the clock the sender paces its stream from, the same basis the retired POC's t1 was read from (`module.rs`) [code]. The unit is nanoseconds, one tick 1 ns [decision]. This answers the open sub-question epic 004 owned: the unit resolves one sample period at 96 000 Hz — 10 416 2/3 ns — with four orders of magnitude to spare, so no sample boundary is ever blurred by the stamp's granularity, and the clock is the one the sender's pacing already depends on, so stamping adds no new clock and no new synchronisation requirement [decision]. The wrap period is 2^64 ns, about 584 years: vastly longer than a reassembly span — 2 slice periods (C-15), 1 ms at the C-02 defaults — and longer than any alignment span (C-110, the consumer's own deadline for the position), both of which the consumer bounds by deadlines it enforces itself, so no consumer ever observes a wrapped send timestamp on a slice it is still reassembling or aligning, and no wrap handling exists anywhere in v1 [decision].
+
+### Multi-packet regime
+
+The default regime is one packet per slice: packet count = 1 (C-05). The multi-packet regime is the media side's explicit stamped regime: packet count > 1 in the slice header, the source splitting a slice that does not fit one packet into ordered packets that share the slice's position and frames and each carry their own packet index, packet count and send timestamp [decision]. A consumer reassembles and deduplicates by stream, position and packet index (rule 9); the reassembly deadlines are behaviour, not wire fields — 2 slice periods for arrival-driven inputs (C-15) and the consumer's own deadline for aligned inputs (C-110).
+
+The regime is declared only by the regime stamp (C-18): a stream uses the default regime until a regime stamp section stamps its multi-packet regime, and the hello carries only the stamp's version number. This ticket hands the following values to 004-25, which lays the multi-packet regime section out (Regime stamp): the stream number the regime applies to, the packets per slice (the slice header's packet count for that stream), the frames per slice (the slice length, which steps the stream's position grid), and the timeline epoch the stamped positions are counted in. That set is complete and documented here as the media side's requirement: with the slice header plus these stamped values, every consumer of the stream can reassemble, deduplicate and place every packet of the stream, and no further wire field carries regime state [decision].
+
+### Validity rules
+
+Every malformed slice header is dropped and counted under one member of the closed Rejection reasons enumeration; nothing is dropped silently [decision]. The slice header's invalid forms and their required outcomes:
+
+| Invalid form | Required outcome |
+|---|---|
+| packet index ≥ packet count (the index lies outside the packet count its slice declares — BadPacketIndex's own definition) | drop and count under BadPacketIndex |
+| packet count = 0 (a slice cannot consist of zero packets: the packet carrying the count is itself at least one packet of the slice, so the declared count disagrees with the message's own size rules) | drop and count under BadLength |
+| frames = 0 or frames above 65 535 (a slice spans at least one frame, and the wire never carries a slice longer than the frames field can express) | drop and count under BadLength |
+| frames inconsistent with the payload length (the content after the headers does not fill frames × channels × 4 bytes at the stream's channel count, C-03, C-04) | drop and count under BadLength |
+| packet count inconsistent across the packets of one slice (the packets disagree on the slice's declared shape, so at least one packet's index lies outside the count another packet of the same slice declares) | drop and count under BadPacketIndex |
+
+No position-grid rule applies at packet intake in v1: the position is a raw sample count, and whether it sits on the stream's position grid — the slice length the regime stamp declares — is checked where the slice is consumed (reassembly and alignment, C-15, C-110), not at intake; no member of the closed enumeration names a misaligned position, so inventing an outcome here would extend the enumeration, which only a major version may do [decision].
+
+### Receive timestamps
+
+The slice header carries no receive timestamp: when a packet arrived is a property of the receiver, not of the content. The receive-timestamp source is a per-module capability, one of kernel (hosted OS kernel stamp), userspace (clock read after receive), mac-hardware (Ethernet MAC timestamp register, embedded) or interrupt (stamped in the receive interrupt, embedded) — the four values of C-131 — and each is reported with one of the four capability states of C-129: present, absent, unverified, not requested. The source and its capability state travel in the regime stamp (004-25's receive-timestamp section, C-18), not in the slice header; the per-OS detail is completed from epic 001's report on receive timestamps and don't-fragment per OS, which is non-blocking and affects only these notes [decision].
 
 ## Announcements
 
