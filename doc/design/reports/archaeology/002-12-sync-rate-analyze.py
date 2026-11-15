@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """002-12-sync-rate-analyze.py <run-dir> <sync-hz>: sync rate of one run from its four single-writer metrics files.
-Rules of swarm/notes/003-02.md: clean 4-module run with one election, >= 2 intact holder
-windows after dropping the first, chimera guard followers x rate x 1.10, divisor re-derived
-from the run, duration correction (sum served / covered span / followers)."""
+Run validity of swarm/notes/003-02.md (clean 4-module run with one election, joins, map,
+>= 2 intact holder windows after dropping the first); the chimera guard followers x rate x 1.10,
+the divisor re-derived from the run and the duration correction (sum served / covered span /
+followers) are those of swarm/notes/003-05.md (and the 003-04 entry of swarm/status.md)."""
 import csv, glob, os, re, sys
 d, hz = sys.argv[1], int(sys.argv[2])
 mods = ['sender', 'synth1', 'synth2', 'mixer']
