@@ -23,11 +23,15 @@
 #         catalogue's.
 #   AC 2  The covered byte range is exact: the section names the packet
 #         header, the slice header and the audio payload as covered, and
-#         names as excluded (or otherwise treated) every mutable or optional
-#         field: the measurement extension (004-10), the copy index (C-07),
-#         the send timestamp, the packet index and packet count, and the
-#         announcement container. The placement is decided: in the last
-#         packet of a multi-packet slice, or in every packet.
+#         names the announcement container as covered (review ruling R3:
+#         the count byte and the announcements of every packet, in packet-
+#         index order). It names as excluded (or otherwise treated) every
+#         mutable or per-packet field: the measurement extension (004-10),
+#         the copy index (C-07), the send timestamp, and the packet index
+#         and packet count. The placement is decided: in the last packet of
+#         a multi-packet slice, or in every packet, and trailing (R1): the
+#         last 4 bytes of the UDP payload, offset = payload length - 4, and
+#         the section says it follows the content.
 #   AC 3  A worked example: a labelled input (hex bytes, with its byte count
 #         when stated) and an expected checksum. The check computes the CRC
 #         of the input with the stated parameters and requires the expected
@@ -36,12 +40,29 @@
 #         slices/s, 2 304 000 bytes/s) is stated, and the task 026
 #         performance check is an open item with an owner and a falsifier
 #         that names a too-slow result on the reference embedded target.
-#   AC 5  wire.toml's media packet message carries a checksum field whose
-#         offset and width agree with wire.md's checksum table, whose type
-#         is the unsigned integer of that width, whose rejection reasons
-#         include BadChecksum, and whose max_size equals 96 + the checksum's
-#         bytes. `cargo run --bin wire-check` passes and
+#         The falsifier must not give the CRC alone all of C-164's 10 us
+#         (review ruling R6): it mentions the per-packet rules and the
+#         verification together, or states the CRC's explicit share of the
+#         budget.
+#   AC 5  wire.toml (review ruling R2): a separate [[message]] named "slice
+#         checksum", section_of = "media packet", with exactly one field,
+#         checksum, u32, offset 0, width 32, and max_size 4. The media packet
+#         message carries NO checksum field and keeps max_size 96. BadChecksum
+#         is in the rejection_reasons of the media packet or of the checksum
+#         message. wire.md's checksum table gives the offset relative to the
+#         end (payload length - 4) and the section says it follows the content
+#         (R1). `cargo run --bin wire-check` passes and
 #         `cargo test -p hadronyche-tools --test wire_tables` stays 12/0/0.
+#
+# Detection (review ruling R4), computed, not recalled: for the stated
+# polynomial and width, with the codeword = covered bits + 32 check bits over
+# the stated default covered length plus the 49-byte maximal announcement
+# container: (i) the full generator, x^width term included, has an even
+# number of terms, so x + 1 divides it and every odd-weight error, including
+# every 1-bit and 3-bit error, is detected; (ii) the residues x^k mod G for
+# k = 0 .. codeword_bits - 1 are pairwise distinct, so no 2-bit error (x^a +
+# x^b, a != b) is a multiple of G within the codeword. The check runs one
+# residue pass with a set.
 #
 # Budget (C-137), checked as arithmetic: 16 (packet header) + 22 (slice
 # header) + 49 (maximal announcement container) + 9 (measurement extension)
@@ -777,7 +798,6 @@ if not placeholder:
         ("copy index (C-07)", r"copy[\s_-]*index"),
         ("send timestamp (per packet)", r"send[\s_-]*timestamp"),
         ("packet index / packet count (per packet)", r"packet[\s_-]*(?:index|count)"),
-        ("announcement container (optional, omittable on a fallback path)", r"announcements?"),
     )
     for label, pattern in REQUIRED_EXCLUDED:
         if not any(re.search(pattern, u, re.I) and EXCL.search(u)
@@ -785,6 +805,19 @@ if not placeholder:
             fail(2, f"the covered range does not name {label} as excluded "
                  "(or otherwise treated) in the same statement")
             ac2_ok = False
+
+    # R3: the announcement container is COVERED, in a statement that does not
+    # also exclude it.
+    cov_rows = [row for _, _, rows in parse_tables(section) for row in rows
+                if len(row) >= 2 and re.search(r"announcement", row[0], re.I)
+                and re.match(r"\s*covered\b", row[1], re.I)]
+    cov_prose = any(re.search(r"announcement container[^.;|]{0,40}\b(?:is|are) covered\b", u, re.I)
+                    for u in section_units)
+    if not (cov_rows or cov_prose):
+        fail(2, "the announcement container is not named as covered (review ruling R3: "
+             "the count byte and the announcements of every packet are covered, in "
+             "packet-index order); a statement that lists it as excluded fails")
+        ac2_ok = False
 
     if not re.search(r"placed|placement|placing", section_prose, re.I) or not re.search(
         r"last\s+packet|every\s+packet|each\s+packet|per[\s-]packet", section_prose, re.I
@@ -794,9 +827,9 @@ if not placeholder:
         ac2_ok = False
 
     if ac2_ok:
-        print("PASS AC2: covered range names the packet header, slice header and audio; "
-              "measurement extension, copy index, send timestamp, packet index/count and "
-              "announcements are excluded or treated; placement decided")
+        print("PASS AC2: covered range names the packet header, slice header, audio and "
+              "the announcement container; measurement extension, copy index, send "
+              "timestamp and packet index/count are excluded or treated; placement decided")
     AC2_OK = ac2_ok
 else:
     AC2_OK = False
@@ -896,12 +929,92 @@ if not placeholder:
              "and a falsifier that names a too-slow result on the reference embedded target")
         ac4_ok = False
 
+    # R6: the falsifier does not give the CRC alone the whole 10 us of C-164.
+    # Encoded at keyword level: the falsifier text (after the word "Falsifier")
+    # either mentions the per-packet rules together with the verification, or
+    # states an explicit CRC share of the budget.
+    fals = None
+    for b in blks:
+        m_f = re.search(r"falsifier", b, re.I)
+        if m_f and re.search(r"\b026\b", b):
+            fals = b[m_f.end():]
+            break
+    if fals is None:
+        fail(4, "the task 026 open item states no falsifier text")
+        ac4_ok = False
+    else:
+        rules_plus_verif = (re.search(r"per[\s-]packet\s+rules?|per[\s-]packet\s+checks?", fals, re.I)
+                            and re.search(r"verif", fals, re.I))
+        crc_share = re.search(
+            r"CRC[^.;]{0,80}?(share|portion|fraction|of the budget|of C-164)[^.;]{0,80}?"
+            r"(µs|us\b|%|microsecond|budget)", fals, re.I)
+        if not (rules_plus_verif or crc_share):
+            fail(4, "the falsifier gives the CRC alone the whole 10 us of C-164: it must "
+                 "mention the per-packet rules together with the verification, or state "
+                 "the CRC's explicit share of the budget (review ruling R6)")
+            ac4_ok = False
+
     if ac4_ok:
         print("PASS AC4: cost per default slice stated (1 152 bytes at 2 000 slices/s); "
-              "task 026 open item with owner and falsifier")
+              "task 026 open item with owner and a falsifier that leaves the CRC a share "
+              "of C-164's 10 us")
     AC4_OK = ac4_ok
 else:
     AC4_OK = False
+
+# ---------------------------------------------------------------------------
+# Error detection, computed (review ruling R4)
+# ---------------------------------------------------------------------------
+def detection_proof(width, poly, covered_bytes):
+    """(i) even term count of the full generator; (ii) pairwise distinct
+    residues x^k mod G for k in 0..codeword_bits-1, one pass with a set."""
+    gen = (1 << width) | poly
+    even_terms = bin(gen).count("1") % 2 == 0
+    codeword_bits = covered_bytes * 8 + width
+    seen = set()
+    r = 1
+    distinct = True
+    first_repeat = None
+    for k in range(codeword_bits):
+        if r in seen:
+            distinct = False
+            first_repeat = k
+            break
+        seen.add(r)
+        r <<= 1
+        if r >> width:
+            r ^= gen
+    return even_terms, distinct, first_repeat, codeword_bits
+
+
+if not placeholder and AC1_OK:
+    m_cov = re.search(r"covered bytes of a default slice[^=\n]*=\s*"
+                      r"([\d\s,.\u00a0\u202f]+?)\s*bytes", section_prose, re.I)
+    if m_cov is None:
+        fail("DETECTION", "the covered length of a default slice is not stated as "
+             "'covered bytes of a default slice ... = N bytes'")
+    else:
+        stated = int(re.sub(r"[\s,.\u00a0\u202f]", "", m_cov.group(1)))
+        worst = stated + 49
+        even_terms, distinct, first_repeat, cw = detection_proof(
+            params["width"], params["poly"], worst)
+        if not even_terms:
+            fail("DETECTION", f"the full generator 0x{(1 << params['width']) | params['poly']:X} "
+                 "has an odd number of terms, so x + 1 does not divide it and the "
+                 "odd-weight errors (including 3-bit errors) are not all detected")
+        if not distinct:
+            fail("DETECTION", f"x^k mod G repeats at k = {first_repeat}, within a codeword of "
+                 f"{cw} bits (covered {worst} bytes + {params['width']} check bits): some 2-bit "
+                 "error is a multiple of G, so 2-bit detection fails at this length")
+        if not re.search(r"3[- ]bit|three bits|up to 3", section_prose, re.I):
+            fail("DETECTION", "the section does not state the detection claim it rests on "
+                 "(every error of up to 3 bits over a default slice)")
+        if even_terms and distinct and not any(
+                "DETECTION" == f_[0] for f_ in fails):
+            print(f"PASS DETECTION: full generator has an even number of terms (x + 1 divides "
+                  f"it: all odd-weight errors, incl. 1- and 3-bit, detected); x^k mod G distinct "
+                  f"for k < {cw} bits (codeword over {worst} covered bytes incl. the 49-byte "
+                  f"maximal container; all 2-bit errors detected)")
 
 # ---------------------------------------------------------------------------
 # Width and the C-137 budget (arithmetic, not an AC of the ticket)
@@ -970,51 +1083,67 @@ else:
         document = None
 
 if isinstance(document, dict):
-    media = None
-    for msg in document.get("message", []) or []:
-        if isinstance(msg, dict) and norm_name(str(msg.get("name", ""))) == "mediapacket":
-            media = msg
-            break
+    msgs = [m for m in (document.get("message", []) or []) if isinstance(m, dict)]
+    media = next((m for m in msgs if norm_name(str(m.get("name", ""))) == "mediapacket"), None)
+    cks_msg = next((m for m in msgs if norm_name(str(m.get("name", ""))) == "slicechecksum"), None)
     if media is None:
         fail(5, f"{tables_path} has no media packet message")
     else:
-        cks = [f for f in media.get("field", []) or []
-               if isinstance(f, dict) and "checksum" in norm_name(str(f.get("name", "")))]
-        if not cks:
-            fail(5, "wire.toml's media packet message declares no checksum field")
+        if any(isinstance(f, dict) and "checksum" in norm_name(str(f.get("name", "")))
+               for f in (media.get("field", []) or [])):
+            fail(5, "the media packet message carries a checksum field; the checksum is a "
+                 "separate section message (review ruling R2), trailing the content (R1)")
+        if media.get("max_size") != 96:
+            fail(5, f"media packet max_size is {media.get('max_size')}; it stays 96 with the "
+                 "checksum a separate section message (review ruling R2)")
+    if cks_msg is None:
+        fail(5, f"{tables_path} has no 'slice checksum' [[message]] (review ruling R2)")
+    else:
+        if cks_msg.get("section_of") != "media packet":
+            fail(5, "the slice checksum message must declare section_of = \"media packet\"")
+        fields = [f for f in (cks_msg.get("field", []) or []) if isinstance(f, dict)]
+        ck = [f for f in fields if norm_name(str(f.get("name", ""))) == "checksum"]
+        if len(fields) != 1 or not ck:
+            fail(5, "the slice checksum message must declare exactly one field, checksum")
         else:
-            f = cks[0]
-            off = f.get("offset")
+            f = ck[0]
             wid = f.get("width")
-            typ = f.get("type")
-            if off != 768:
-                fail(5, f"the checksum field's offset is {off} bits; it follows the "
-                     "measurement extension at the maximum end of the container, bit 768 "
-                     "(byte 96)")
-            if not isinstance(wid, int) or wid % 8 != 0:
-                fail(5, f"the checksum field's width {wid} is not whole bytes")
-            else:
-                uint_of = {8: "u8", 16: "u16", 32: "u32", 64: "u64", 128: "u128"}
-                if uint_of.get(wid) != typ:
-                    fail(5, f"the checksum field of {wid} bits must be type "
-                         f"{uint_of.get(wid)}, not {typ!r}")
-                if CKSUM_BYTES is not None and wid != CKSUM_BYTES * 8:
-                    fail(5, f"wire.toml's checksum is {wid} bits; wire.md's is "
-                         f"{CKSUM_BYTES * 8} bits")
-                want_max = 96 + wid // 8
-                if media.get("max_size") != want_max:
-                    fail(5, f"media packet max_size is {media.get('max_size')}, expected "
-                         f"{want_max} (96 + the checksum's {wid // 8} bytes)")
-        reasons = media.get("rejection_reasons")
-        if not isinstance(reasons, list) or "BadChecksum" not in reasons:
-            fail(5, "the media packet's rejection_reasons do not include BadChecksum")
-        elif any(r not in ("TooShort", "BadMagic", "VersionMismatch", "ForeignDomain",
-                           "UnconfiguredDomain", "UnknownStream", "UnadmittedSource",
-                           "BadLength", "BadChecksum", "BadPacketIndex", "WrongEpoch",
-                           "OversizeControl", "ReservedNonZero") for r in reasons):
-            fail(5, "the media packet's rejection_reasons name a non-member")
+            if f.get("offset") != 0:
+                fail(5, f"the checksum field's offset is {f.get('offset')}; a section message "
+                     "starts at its own offset 0")
+            if wid != 32:
+                fail(5, f"the checksum field's width is {wid} bits, not 32 (4 bytes, C-137)")
+            if f.get("type") != "u32":
+                fail(5, f"the checksum field's type is {f.get('type')!r}, not u32")
+            if CKSUM_BYTES is not None and isinstance(wid, int) and wid != CKSUM_BYTES * 8:
+                fail(5, f"wire.toml's checksum is {wid} bits; wire.md's is {CKSUM_BYTES * 8} bits")
+        if cks_msg.get("max_size") != 4:
+            fail(5, f"the slice checksum message's max_size is {cks_msg.get('max_size')}, not 4")
+        if media is not None and isinstance(cks_msg.get("max_size"), int) \
+                and isinstance(media.get("max_size"), int) \
+                and media["max_size"] + cks_msg["max_size"] > 100:
+            fail("C-137", "media packet max_size + slice checksum max_size exceeds the 100-byte cap")
+    reasons_all = []
+    for m in (media, cks_msg):
+        if isinstance(m, dict) and isinstance(m.get("rejection_reasons"), list):
+            reasons_all += m["rejection_reasons"]
+    if "BadChecksum" not in reasons_all:
+        fail(5, "BadChecksum is in the rejection_reasons of neither the media packet nor the "
+             "slice checksum message")
+    bad = [r for r in reasons_all if r not in ("TooShort", "BadMagic", "VersionMismatch",
+           "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource",
+           "BadLength", "BadChecksum", "BadPacketIndex", "WrongEpoch", "OversizeControl",
+           "ReservedNonZero")]
+    if bad:
+        fail(5, "rejection_reasons name non-member(s): " + ", ".join(bad))
 
-if not placeholder and CKSUM_BYTES is not None:
+if not placeholder:
+    trail_ok = re.search(r"length\s*[-\u2212\u2013]\s*4|last\s+(?:4|four)\s+bytes|end\s+of\s+the\s+(?:UDP\s+)?payload", section_prose, re.I)
+    if not trail_ok:
+        fail(5, "the checksum's placement is not stated as trailing (the last 4 bytes of the "
+             "UDP payload, offset = payload length - 4; review ruling R1)")
+    if not re.search(r"(?:trail|follow)s?\s+(?:the\s+)?content|after\s+the\s+content", section_prose, re.I):
+        fail(5, "the section does not say the checksum follows the content (R1)")
     cks_row_ok = False
     for _, header, rows in parse_tables(section):
         if not is_field_table(header):
@@ -1022,13 +1151,15 @@ if not placeholder and CKSUM_BYTES is not None:
         for row in rows:
             if len(row) < 2:
                 continue
-            m_off = re.search(r"\d+", row[0])
-            if m_off and int(m_off.group(0)) == 96 and width_to_bits(row[1]) == CKSUM_BYTES * 8:
+            if re.search(r"length\s*[-\u2212\u2013]\s*4|last\s+(?:4|four)\s+bytes", row[0], re.I) \
+                    and (CKSUM_BYTES is None or width_to_bits(row[1]) == CKSUM_BYTES * 8):
                 cks_row_ok = True
     if not cks_row_ok:
-        fail(5, "wire.md's checksum field table has no row at offset 96 with the checksum's width")
-    else:
-        print("PASS AC5 (md): wire.md's checksum row agrees with the derived width and offset")
+        fail(5, "wire.md's checksum field table gives no offset relative to the end "
+             "(payload length - 4) with the checksum's width")
+    elif CKSUM_BYTES is not None:
+        print("PASS AC5 (md): wire.md's checksum row is trailing (payload length - 4) and "
+              "agrees with the derived width")
 
 if not placeholder:
     prev_tagged = True
