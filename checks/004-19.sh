@@ -53,7 +53,11 @@
 #         ReservedNonZero; bad magic BadMagic; bad version VersionMismatch;
 #         foreign domain ForeignDomain; wrong epoch WrongEpoch; size not equal
 #         to the fixed size BadLength (each exactly that one reason, as the
-#         ticket names it); reply from a non-holder must name some member of
+#         ticket names it); a datagram shorter than the minimum that carries
+#         the magic and version (too short, fewer or under N bytes or octets)
+#         must be TooShort; a size that is not the fixed size must be
+#         BadLength, and at least one such row must exist; reply from a
+#         non-holder must name some member of
 #         the closed enumeration. Every reason named in an outcome cell, and
 #         every reason after "under" in the section, must be a member of the
 #         closed enumeration parsed from wire.md's "Rejection reasons" table
@@ -78,7 +82,11 @@
 #   W4  Behaviour restated, no fields: CS6 (48) (C-13), IPv4 unicast (C-100),
 #       50 requests per second per follower (C-36) and 10 to 200 per second
 #       accepted (C-112) appear in the prose, with the constants' numbers. No
-#       table cell and no toml field names a DSCP or a rate (C-152, C-204),
+#       table cell and no toml field names a DSCP or a rate (C-152, C-204).
+#       Names are matched by token: split on underscores, dashes, spaces and
+#       camelCase, so observed_dscp and request_rate fire while generate,
+#       separate and accurate do not; a cell that negates the mention
+#       ("carries no DSCP field") does not fire,
 #       and the toml message's dscp is 48.
 #   W5  A note slot for per-OS receive-timestamp remarks exists (epic 001),
 #       the prose names C-131 and the regime stamp, and no sync table cell
@@ -1005,6 +1013,10 @@ if not placeholder:
 # AC 5 — at least 6 invalid forms with outcomes; exact reasons where the ticket
 # names one; every named reason a member of the closed enumeration
 # ---------------------------------------------------------------------------
+SHORT_FORM = (r"\btoo\s+short\b|\bshorter\s+than\b|\bfewer\s+than\b|\bless\s+than\b|"
+              r"\bunder\s+\d+\s+(?:bytes?|octets?)\b|\bsmaller\s+than\b")
+FIXED_WORD = r"fixed|not\s+equal|equal\s+to|other\s+than"
+SIZE_FORM = r"\bsize\b|\bbytes?\b|\boctets?\b|\blength\b"
 FORM_TABLE = None
 for _, header, rows in parse_tables(section):
     heads = [re.sub(r"[^a-z]", "", h.lower()) for h in header]
@@ -1022,7 +1034,8 @@ if not placeholder:
         if len(rows) < 6:
             fail(5, f"only {len(rows)} invalid form(s) with outcomes; at least 6 are required")
             ac5 = False
-        # categories, checked in this order against the form cell
+        # categories, checked in this order against the form cell. Size rows
+        # are not a category: they are classified by their outcome, below.
         CATS = [
             ("ReservedNonZero", r"\bpad|reserved", "exact"),
             ("BadMagic", r"magic", "exact"),
@@ -1030,14 +1043,19 @@ if not placeholder:
             ("ForeignDomain", r"foreign", "exact"),
             ("WrongEpoch", r"epoch", "exact"),
             ("holder", r"holder", "member"),
-            ("BadLength", r"size|bytes|length", "exact"),
         ]
         seen = {}
+        short_rows = []
+        fixed_rows = []
         for r in rows:
             form = r[0]
             outcome = " | ".join(r[1:])
             cat = next((c for c in CATS if re.search(c[1], form, re.I)), None)
             if cat is None:
+                if re.search(SHORT_FORM, form, re.I) and not re.search(FIXED_WORD, form, re.I):
+                    short_rows.append((form, outcome))
+                elif re.search(SIZE_FORM, form, re.I):
+                    fixed_rows.append((form, outcome))
                 continue
             if cat[0] in seen:
                 continue
@@ -1060,6 +1078,24 @@ if not placeholder:
             if cat[0] == "holder" and "holder" not in seen:
                 fail(5, "no invalid form for a reply from a non-holder")
                 ac5 = False
+        # size rows, by outcome: a datagram shorter than the minimum that
+        # carries the magic and the version is TooShort; a size that is not
+        # the fixed size is BadLength, and the ticket names that outcome
+        for form, outcome in short_rows:
+            if not re.search(r"\bTooShort\b", outcome) or re.search(r"\bBadLength\b", outcome):
+                fail(5, f"the invalid form '{form[:60]}' is shorter than the minimum that carries the "
+                     "magic and the version: it must be counted under TooShort: " + outcome[:90])
+                ac5 = False
+        for form, outcome in fixed_rows:
+            if re.search(r"\bTooShort\b", outcome):
+                fail(5, f"the invalid form '{form[:60]}' is a size that is not the fixed size, but it "
+                     "is mapped to TooShort; it must be counted under BadLength (the ticket names it)")
+                ac5 = False
+        if not any(re.search(r"\bBadLength\b", o) and not re.search(r"\bTooShort\b", o)
+                   for _, o in fixed_rows):
+            fail(5, "no invalid form for a size that is not the fixed size counted under BadLength "
+                 "(the ticket names it)")
+            ac5 = False
         # every outcome token must be a member; negations are not outcomes
         for r in rows:
             outcome = " | ".join(r[1:])
@@ -1095,6 +1131,25 @@ else:
 msgs = toml.get("message", []) if isinstance(toml, dict) else []
 if not isinstance(msgs, list):
     msgs = []
+
+
+def name_tokens(text):
+    """Tokens of an identifier or a cell: split on non-alphanumerics and on
+    camelCase boundaries, lower-cased. 'observed_dscp' -> observed, dscp."""
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    spaced = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", spaced)
+    return [t.lower() for t in re.split(r"[^A-Za-z0-9]+", spaced) if t]
+
+
+DSCP_RATE_TOKENS = {"dscp", "rate", "codepoint"}
+
+
+def is_dscp_or_rate(text):
+    return bool(DSCP_RATE_TOKENS & set(name_tokens(text)))
+
+
+# a cell that negates the mention ("carries no DSCP field") is not a field
+NEG_MENTION = re.compile(r"\b(?:no|not|without|never)\b[^|.;]{0,30}?\b(?:dscp|codepoint|rate)\b", re.I)
 
 
 def toml_message(pattern):
@@ -1162,8 +1217,7 @@ for name, tm, fields_md, size_md in (("sync request", T_REQ, REQ_F, REQ_SIZE),
                    for f in tfields):
             fail(1, "sync request in wire.toml has no pad field of width > 0 (the explicit padding)")
     for f in tfields if isinstance(tfields, list) else []:
-        if isinstance(f, dict) and re.search(r"\b(?:dscp|rate)\b", str(f.get("name", "")) + " " + str(f.get("meaning", "")), re.I) \
-                and not re.search(r"pad", str(f.get("name", "")), re.I):
+        if isinstance(f, dict) and is_dscp_or_rate(str(f.get("name", ""))):
             fail("W4", f"{name} in wire.toml names a DSCP or rate field ('{f.get('name')}'); "
                  "C-152 and C-204 keep both out of sync messages")
 
@@ -1219,7 +1273,8 @@ if not placeholder and REQ_F and REP_F:
              "requests per second (C-112)")
     for name, fields in (("request", REQ_F), ("reply", REP_F)):
         for f in fields:
-            if re.search(r"dscp|codepoint|\brate\b|per\s+second|per-second", f["text"], re.I):
+            cell = NEG_MENTION.sub("", f["text"])
+            if is_dscp_or_rate(cell) or re.search(r"per\s+second|per-second", cell, re.I):
                 fail("W4", f"the {name} table names a DSCP or a rate (C-152, C-204): {f['meaning'][:80]}")
 
     # --- W5: receive-timestamp note slot and the regime-stamp home ----------
