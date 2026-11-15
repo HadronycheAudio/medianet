@@ -1519,6 +1519,56 @@ R6_REACH_RE = re.compile(
     re.I,
 )
 R6_PASS_RE = re.compile(r"\bpass(?:es|ed)?\b", re.I)
+# a sender sentence that puts an announcement in the slice at the named position
+IN_SLICE_AT_P_RE = re.compile(
+    r"\bslices?\b[^.;]{0,40}?\b(?:whose\s+slice\s+position\s+(?:is|equals)|at|equal\s+to|equals)"
+    r"\s+(?:the\s+)?(?:named\s+position|position\s+it\s+names)\b",
+    re.I,
+)
+# a re-issue inside THE LEAD is valid/accepted, in one sentence (both orders)
+_LEAD_SPAN = (
+    r"(?:(?:inside|within)\s+(?:the|a|one|its)\s+lead\b"
+    r"|(?:less\s+than\s+(?:64\s+slices|(?:one|a|the)\s+lead)|closer\s+than\s+(?:the|a|one)\s+lead)\b)"
+)
+REISSUE_VALID_RES = [
+    re.compile(r"re-?issu\w*[^.;]{0,80}?\b" + _LEAD_SPAN + r"[^.;]{0,60}?\b(?:valid|accepted)\b", re.I),
+    re.compile(r"re-?issu\w*[^.;]{0,60}?\b(?:valid|accepted)\b[^.;]{0,60}?" + _LEAD_SPAN, re.I),
+]
+RECEIVER_RE = re.compile(r"\breceivers?\b|\bconsumers?\b", re.I)
+POLICE_VERB_RE = re.compile(
+    r"\b(?:polic(?:es|ing)|enforc(?:es|ing)|checks?|checking|verif(?:y|ies|ied)|requires?)\b",
+    re.I,
+)
+LEAD_OBJ_RE = re.compile(r"\blead\b|C-43", re.I)
+
+
+def clause_around(s, a, b):
+    """The clause (text between , ; :) containing the span a..b."""
+    lo = max(s.rfind(c, 0, a) for c in ",;:") + 1
+    ends = [i for i in (s.find(c, b) for c in ",;:") if i != -1]
+    return s[lo : (min(ends) if ends else len(s))]
+
+
+def every_issue_violation(s):
+    """True when the lead is said to bind every/each/all issues, unnegated."""
+    for rx in (EVERY_ISSUE_RE_1, EVERY_ISSUE_RE_2):
+        for m in rx.finditer(s):
+            if not NEG_RE.search(m.group(0)):
+                return True
+    return False
+
+
+def receiver_polices_lead(s):
+    """True when a receiver sentence makes the receiver police/enforce/check the
+    lead, with no negation governing the verb."""
+    if not RECEIVER_RE.search(s):
+        return False
+    for m in POLICE_VERB_RE.finditer(s):
+        if NEG_RE.search(clause_around(s, m.start(), m.end())):
+            continue
+        if LEAD_OBJ_RE.search(s[m.end() : m.end() + 60]):
+            return True
+    return False
 
 
 def prose_sentences(block_pattern=None):
@@ -1561,7 +1611,14 @@ if not placeholder:
                 # no exemption: a row whose invalid-form cell names the lead
                 # and whose outcome rejects is a validity rule, whatever else
                 # the row says (first issue, re-issue, C-44, negation)
-                if len(row) >= 2 and LEAD_FORM_RE.search(row[0]) and REJECT_RE.search(" | ".join(row[1:])):
+                if (
+                    len(row) >= 2
+                    and REJECT_RE.search(" | ".join(row[1:]))
+                    and any(
+                        not NEG_RE.search(clause_around(row[0], m.start(), m.end()))
+                        for m in LEAD_FORM_RE.finditer(row[0])
+                    )
+                ):
                     fail(
                         "defect",
                         "a Validity-rules row rejects an announcement for sitting inside "
@@ -1597,29 +1654,55 @@ if not placeholder:
                 )
                 defect_ok = False
 
-    # sentence level: a sentence must itself say a re-issue inside the lead is
-    # valid (a sentence about the receiver that merely says "accepts" does not)
+    # one sentence must say that a re-issue inside THE LEAD is valid or
+    # accepted: the sentence names the lead itself (inside/within the lead,
+    # less than 64 slices or one lead, closer than the lead), and valid or
+    # accepted governs the re-issue. Bare "inside" or "C-43" does not count.
     if not any(
-        re.search(r"re-?issu", s, re.I)
-        and LEAD_RE.search(s)
-        and re.search(r"\bvalid\b|\baccepted\b|not\s+(?:be\s+)?(?:rejected|dropped|counted)", s, re.I)
-        for s in prose_sentences()
+        any(rx.search(s) for rx in REISSUE_VALID_RES) for s in prose_sentences()
     ):
         fail(
             "defect",
-            "no statement that a re-issue (C-44) inside the lead is valid; the "
-            "receiver rejects only a position that is not in the future",
+            "no statement that a re-issue (C-44) inside the lead is valid (the "
+            "sentence must name the lead itself); the receiver rejects only a "
+            "position that is not in the future",
         )
         defect_ok = False
 
     # the lead binds the FIRST issue only: no sentence may say it binds every,
-    # each or all issues (or re-issues), in either word order
+    # each or all issues (or re-issues), in either word order. A negation inside
+    # the matched span ("binds the first issue only and never each re-issue")
+    # exempts it.
     for s in prose_sentences():
-        if EVERY_ISSUE_RE_1.search(s) or EVERY_ISSUE_RE_2.search(s):
+        if every_issue_violation(s):
             fail(
                 "defect",
                 "the lead is stated to bind every issue of a change (C-43 binds the "
                 "sender's FIRST issue only): " + s[:110],
+            )
+            defect_ok = False
+            break
+
+    # a receiver never polices the lead: no receiver sentence may say that it
+    # polices, enforces, checks, verifies or requires the lead without a negation
+    for s in prose_sentences():
+        if receiver_polices_lead(s):
+            fail(
+                "defect",
+                "a receiver is stated to police the lead (receivers never police it; "
+                "they reject only a position that is not in the future): " + s[:110],
+            )
+            defect_ok = False
+            break
+
+    # a sender sentence may not place an announcement, or the last re-issue, in
+    # the slice at the named position (the position is passed by then)
+    for s in prose_sentences(r"^\s*\**Sender obligations"):
+        if IN_SLICE_AT_P_RE.search(s):
+            fail(
+                "defect R6",
+                "a sender sentence places an announcement in the slice at the named "
+                "position (no announcement rides in a slice at or after it): " + s[:110],
             )
             defect_ok = False
             break
