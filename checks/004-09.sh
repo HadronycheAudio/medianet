@@ -39,14 +39,16 @@
 #   AC 3  At least 6 invalid forms are listed with outcomes, covering the
 #         ticket's list: unknown type within the same major (SKIPPABLE by
 #         length — encoded as NOT a rejection), length overrun (BadLength),
-#         named position not in the future, named position closer than the
-#         lead (with the C-43 arithmetic, 64 slices = 32 ms), duplicate type
-#         in one packet, announcement in a gap slice (if forbidden),
-#         count above maximum (BadLength). Every rejection reason named is
-#         a member of the closed 13-name enumeration; no invented reason.
+#         named position not in the future (BadLength: at or before the
+#         packet's slice position), duplicate type in one packet, announcement
+#         in a gap slice (if forbidden), count above maximum (BadLength),
+#         announcement-present flag with a zero count (BadLength). Every
+#         rejection reason named is a member of the closed 13-name
+#         enumeration; no invented reason.
 #   AC 4  C-43 (lead 64 slices, flat; 64 x 0.5 ms = 32 ms at the C-02
 #         defaults) and C-44 (re-issued every 16 slices until the named
-#         position passes, in every bundle member) restated as SENDER rules.
+#         position passes, in every bundle member) restated as SENDER rules;
+#         the lead binds the sender's FIRST issue of a change.
 #   AC 5  The proposed re-alignment and transport-reference-change payloads
 #         are recorded as OPEN ITEMS with epic 005 as the confirming owner
 #         and the ticket's falsifier (a receiver cannot act on the
@@ -61,6 +63,17 @@
 #         BadLength and name only enumeration members. `cargo run --bin
 #         wire-check` passes and `cargo test -p hadronyche-tools --test
 #         wire_tables` stays 12/0/0.
+#
+# DEFECT (004-09 amendment): the lead (C-43) is a SENDER obligation on the
+# FIRST issue of a change; a re-issue (C-44) inside the lead is valid; a
+# receiver rejects (BadLength) only a named position that is NOT in the
+# future. The check fails while a table row, a field-table cell, a prose
+# sentence or a wire.toml field string makes the lead a validity condition,
+# and requires the statement that a re-issue inside the lead is valid. A
+# Validity-rules row whose invalid-form cell names the lead and whose outcome
+# rejects fails with no exemption; the Sender obligations text must state the
+# stop rule at the named position (ruling R6: no announcement rides in a slice
+# at or after the position it names).
 #
 # DoD also: every block of the new section carries an evidence tag ([code],
 # [measured], [kernel-doc], [standard], [memory], [decision]); the design
@@ -1040,18 +1053,18 @@ if not placeholder:
         (
             "named position not in the future",
             r"position[^.;\n]{0,80}(?:not\s+(?:in\s+the\s+)?future|in\s+the\s+past|already\s+passed|past)",
-            "MEMBER",
-        ),
-        (
-            "named position closer than the lead (C-43: 64 slices = 32 ms)",
-            r"closer\s+than\s+the\s+lead|nearer\s+than\s+the\s+lead|inside\s+the\s+lead|lead[^.;\n]{0,60}(?:closer|nearer)",
-            "MEMBER",
+            "BadLength",
         ),
         ("duplicate type in one packet", r"duplicate", "MEMBER"),
         ("announcement in a gap slice (if forbidden)", r"gap", "GAP"),
         (
             "count above maximum",
             r"count[^.;\n]{0,60}(?:above|exceed|over|greater|more\s+than|larger)",
+            "BadLength",
+        ),
+        (
+            "announcement-present flag with a zero count",
+            r"zero[\s-]+count|flag[^.;\n]{0,80}\bzero\b",
             "BadLength",
         ),
     ]
@@ -1134,17 +1147,6 @@ if not placeholder:
             ac3_ok = False
             continue
         forms_with_reason += 1
-
-        # the lead arithmetic: the closer-than-the-lead form must show it
-        if "closer than the lead" in label:
-            if not (re.search(r"\b64\b", window) and re.search(r"\b32\b", window)):
-                fail(
-                    3,
-                    "the closer-than-the-lead form does not show the C-43 "
-                    "arithmetic (lead 64 slices = 32 ms at the C-02 defaults): "
-                    + hit[:110],
-                )
-                ac3_ok = False
 
     # every reason-looking token in the section must be a member
     non_member_tokens = set()
@@ -1475,6 +1477,301 @@ if not placeholder:
             f"PASS AC6: announcement fields declared in wire.toml (messages: "
             f"{names}), count/type/length/position present, reasons are "
             "enumeration members incl. BadLength"
+        )
+
+# ---------------------------------------------------------------------------
+# DEFECT — the lead is a sender obligation on the FIRST issue (C-43); a
+# re-issue (C-44) inside the lead is valid; a receiver rejects only a position
+# that is not in the future. Keyword-level detectors over the section's rows,
+# valid-range cells, prose sentences and wire.toml field strings.
+# ---------------------------------------------------------------------------
+LEAD_RE = re.compile(r"\blead|C-43|closer|nearer|inside|within|less\s+than\s+a\s+lead", re.I)
+EXEMPT_RE = re.compile(r"\bfirst\b|re-?issu|C-44", re.I)
+NEG_RE = re.compile(r"\b(?:not|never|no|nor|cannot|neither|none)\b|n't", re.I)
+REJECT_RE = re.compile(
+    r"BadLength|\bdrops?\b|\breject|\bdisagree|\binvalid|\bmalformed|\bcount\s+under", re.I
+)
+VALID_RE = re.compile(r"\bvalid\b", re.I)
+AT_LEAST_RE = re.compile(r"\bat\s+least\b", re.I)
+# the lead named in an invalid-form cell (the Validity-rules first column)
+LEAD_FORM_RE = re.compile(
+    r"\blead\b|C-43|\bcloser\b|\bnearer\b|64\s+slices|within\s+the\s+lead"
+    r"|inside\s+the\s+lead|less\s+than\s+a\s+lead",
+    re.I,
+)
+EVERY_ISSUE_RE_1 = re.compile(
+    r"\b(?:lead|C-43)\b[^.;]{0,80}\bbinds?\b[^.;]{0,40}\b(?:every|each|all|any)\s+(?:re-?)?issues?\b",
+    re.I,
+)
+EVERY_ISSUE_RE_2 = re.compile(
+    r"\b(?:every|each|all|any)\s+(?:re-?)?issues?\b[^.;]{0,40}\b(?:bind|binds|bound|applies|apply|governs?)\b"
+    r"[^.;]{0,40}\b(?:lead|C-43)\b",
+    re.I,
+)
+# R6 stop rule: the position passes once the sender's slice position reaches it
+R6_STOP_RE = re.compile(
+    r"\b(?:no|nothing|none)\b[^.;]{0,80}\b(?:rides?|carr(?:y|ies|ied)|re-?issued?|sent|issued|goes?\s+out|travels?)\b"
+    r"[^.;]{0,80}\bslices?\b[^.;]{0,60}\b(?:at\s+or\s+after|at\s+or\s+beyond|on\s+or\s+after)\b",
+    re.I,
+)
+R6_REACH_RE = re.compile(
+    r"\bslice\s+position\s+reach(?:es)?\b|\breach(?:es)?\s+(?:it|the\s+named\s+position|the\s+position)\b",
+    re.I,
+)
+R6_PASS_RE = re.compile(r"\bpass(?:es|ed)?\b", re.I)
+# a sender sentence that puts an announcement in the slice at the named position
+IN_SLICE_AT_P_RE = re.compile(
+    r"\bslices?\b[^.;]{0,40}?\b(?:whose\s+slice\s+position\s+(?:is|equals)|at|equal\s+to|equals)"
+    r"\s+(?:the\s+)?(?:named\s+position|position\s+it\s+names)\b",
+    re.I,
+)
+# a re-issue inside THE LEAD is valid/accepted, in one sentence (both orders)
+_LEAD_SPAN = (
+    r"(?:(?:inside|within)\s+(?:the|a|one|its)\s+lead\b"
+    r"|(?:less\s+than\s+(?:64\s+slices|(?:one|a|the)\s+lead)|closer\s+than\s+(?:the|a|one)\s+lead)\b)"
+)
+REISSUE_VALID_RES = [
+    re.compile(r"re-?issu\w*[^.;]{0,80}?\b" + _LEAD_SPAN + r"[^.;]{0,60}?\b(?:valid|accepted)\b", re.I),
+    re.compile(r"re-?issu\w*[^.;]{0,60}?\b(?:valid|accepted)\b[^.;]{0,60}?" + _LEAD_SPAN, re.I),
+]
+RECEIVER_RE = re.compile(r"\breceivers?\b|\bconsumers?\b", re.I)
+# receiver rule (any order, any distance within the sentence): a receiver
+# sentence fails when it has an UNNEGATED reject-type verb clause AND an
+# UNNEGATED lead phrase clause. Active or passive, no first/re-issue exemption.
+REJECT_VERB_RES = [
+    re.compile(r"\breject\w*", re.I),
+    re.compile(r"\bdrop\w*", re.I),
+    re.compile(r"\bdiscard\w*", re.I),
+    re.compile(r"\bcount(?:s|ed|ing)?\s+(?:\S+\s+){0,3}?under\b", re.I),
+    re.compile(r"\bBadLength\b"),
+    re.compile(r"\bpolic\w*", re.I),
+    re.compile(r"\benforc\w*", re.I),
+    re.compile(r"\bcheck(?:s|ed|ing)?\b", re.I),
+    re.compile(r"\bverif\w*", re.I),
+    re.compile(r"\brequir(?:e|es|ed|ing)\b", re.I),
+]
+LEAD_PHRASE_RES = [
+    re.compile(r"\blead\b", re.I),
+    re.compile(r"\bcloser\s+than\b", re.I),
+    re.compile(r"\bless\s+than\s+(?:one\s+lead|a\s+lead|the\s+lead|64\s+slices)\b", re.I),
+    re.compile(r"\bC-43\b"),
+]
+
+
+def clause_around(s, a, b):
+    """The clause (text between , ; :) containing the span a..b."""
+    lo = max(s.rfind(c, 0, a) for c in ",;:") + 1
+    ends = [i for i in (s.find(c, b) for c in ",;:") if i != -1]
+    return s[lo : (min(ends) if ends else len(s))]
+
+
+def every_issue_violation(s):
+    """True when the lead is said to bind every/each/all issues, unnegated."""
+    for rx in (EVERY_ISSUE_RE_1, EVERY_ISSUE_RE_2):
+        for m in rx.finditer(s):
+            q = re.search(r"\b(?:every|each|all|any)\b", m.group(0), re.I)
+            if q is None:
+                return True
+            qa = m.start() + q.start()
+            if not NEG_RE.search(clause_around(s, qa, qa + 1)):
+                return True
+    return False
+
+
+def _unnegated_hit(s, rxs):
+    for rx in rxs:
+        for m in rx.finditer(s):
+            if not NEG_RE.search(clause_around(s, m.start(), m.end())):
+                return True
+    return False
+
+
+def receiver_polices_lead(s):
+    """True when a receiver/consumer sentence has an unnegated reject-type verb
+    (reject, drop, discard, count under, BadLength, police, enforce, check,
+    verify, require) AND an unnegated lead phrase, anywhere in the sentence."""
+    if not RECEIVER_RE.search(s):
+        return False
+    return _unnegated_hit(s, REJECT_VERB_RES) and _unnegated_hit(s, LEAD_PHRASE_RES)
+
+
+def prose_sentences(block_pattern=None):
+    """Sentences of the section's prose blocks (tables skipped), optionally only
+    blocks matching block_pattern."""
+    for b in blks:
+        if b.lstrip().startswith("|"):
+            continue
+        if block_pattern and not re.search(block_pattern, b, re.I):
+            continue
+        for sent in re.split(r"(?<=[.;])\s+", b):
+            yield sent.strip()
+
+
+def lead_as_rejection(seg, cell=False):
+    """True when a segment makes the lead a validity condition: it names the
+    lead, is neither about the first issue or a re-issue nor negated, and
+    either rejects, or calls the lead a condition of a valid announcement (a
+    valid-range cell states the condition on the position directly)."""
+    if not LEAD_RE.search(seg) or EXEMPT_RE.search(seg) or NEG_RE.search(seg):
+        return False
+    if REJECT_RE.search(seg):
+        return True
+    if cell:
+        return bool(VALID_RE.search(seg) or AT_LEAST_RE.search(seg))
+    return bool(VALID_RE.search(seg) and AT_LEAST_RE.search(seg))
+
+
+if not placeholder:
+    defect_ok = True
+
+    for _, header, rows in all_tables:
+        for row in rows:
+            if is_field_table(header):
+                for idx, cell in enumerate(row):
+                    if lead_as_rejection(cell, cell=(idx == 4)):
+                        fail("defect", "a field-table cell makes the lead a validity condition: " + cell[:110])
+                        defect_ok = False
+            else:
+                # no exemption: a row whose invalid-form cell names the lead
+                # and whose outcome rejects is a validity rule, whatever else
+                # the row says (first issue, re-issue, C-44, negation)
+                if (
+                    len(row) >= 2
+                    and REJECT_RE.search(" | ".join(row[1:]))
+                    and any(
+                        not NEG_RE.search(clause_around(row[0], m.start(), m.end()))
+                        for m in LEAD_FORM_RE.finditer(row[0])
+                    )
+                ):
+                    fail(
+                        "defect",
+                        "a Validity-rules row rejects an announcement for sitting inside "
+                        "the lead (no exemption): " + " | ".join(row)[:110],
+                    )
+                    defect_ok = False
+                if lead_as_rejection(" | ".join(row)):
+                    fail("defect", "a table row rejects or invalidates a position for the lead: " + " | ".join(row)[:110])
+                    defect_ok = False
+
+    for b in blks:
+        if b.lstrip().startswith("|"):
+            continue
+        for sent in re.split(r"(?<=[.;])\s+", b):
+            if lead_as_rejection(sent):
+                fail("defect", "prose makes the lead a validity condition: " + sent.strip()[:110])
+                defect_ok = False
+    for line in section_prose.splitlines():
+        s = line.strip()
+        if re.match(r"^[-*]\s+", s) or re.match(r"^\d+[.)]\s+", s):
+            if lead_as_rejection(s):
+                fail("defect", "a list item makes the lead a validity condition: " + s[:110])
+                defect_ok = False
+
+    for msg, f in ann_fields:
+        for key in ("valid", "meaning"):
+            txt = f.get(key)
+            if isinstance(txt, str) and lead_as_rejection(txt, cell=(key == "valid")):
+                fail(
+                    "defect",
+                    f"wire.toml field {f.get('name')!r} ({key}) makes the lead a "
+                    "validity condition: " + txt[:110],
+                )
+                defect_ok = False
+
+    # one sentence must say that a re-issue inside THE LEAD is valid or
+    # accepted: the sentence names the lead itself (inside/within the lead,
+    # less than 64 slices or one lead, closer than the lead), and valid or
+    # accepted governs the re-issue. Bare "inside" or "C-43" does not count.
+    if not any(
+        any(rx.search(s) for rx in REISSUE_VALID_RES) for s in prose_sentences()
+    ):
+        fail(
+            "defect",
+            "no statement that a re-issue (C-44) inside the lead is valid (the "
+            "sentence must name the lead itself); the receiver rejects only a "
+            "position that is not in the future",
+        )
+        defect_ok = False
+
+    # the lead binds the FIRST issue only: no sentence may say it binds every,
+    # each or all issues (or re-issues), in either word order. A negation inside
+    # the matched span ("binds the first issue only and never each re-issue")
+    # exempts it.
+    for s in prose_sentences():
+        if every_issue_violation(s):
+            fail(
+                "defect",
+                "the lead is stated to bind every issue of a change (C-43 binds the "
+                "sender's FIRST issue only): " + s[:110],
+            )
+            defect_ok = False
+            break
+
+    # a receiver never polices the lead: no receiver sentence may say that it
+    # polices, enforces, checks, verifies or requires the lead without a negation
+    for s in prose_sentences():
+        if receiver_polices_lead(s):
+            fail(
+                "defect",
+                "a receiver is stated to police or reject for the lead (receivers never "
+                "do; they reject only a position that is not in the future): " + s[:110],
+            )
+            defect_ok = False
+            break
+
+    # a sender sentence may not place an announcement, or the last re-issue, in
+    # the slice at the named position (the position is passed by then)
+    for s in prose_sentences(r"^\s*\**Sender obligations"):
+        if any(
+            not NEG_RE.search(clause_around(s, m.start(), m.end()))
+            for m in IN_SLICE_AT_P_RE.finditer(s)
+        ):
+            fail(
+                "defect R6",
+                "a sender sentence places an announcement in the slice at the named "
+                "position (no announcement rides in a slice at or after it): " + s[:110],
+            )
+            defect_ok = False
+            break
+
+    # R6 (ruling): the position has passed once the sender's slice position
+    # reaches it; no announcement rides in a slice at or after the position it
+    # names. Must be a sentence of the Sender obligations text.
+    r6_ok = False
+    for s in prose_sentences(r"^\s*\**Sender obligations"):
+        if not re.search(r"sender|re-?issu|carr|ride", s, re.I):
+            continue
+        if R6_STOP_RE.search(s) or (R6_REACH_RE.search(s) and R6_PASS_RE.search(s)):
+            r6_ok = True
+            break
+    if not r6_ok:
+        fail(
+            "defect R6",
+            "the Sender obligations text does not state the stop rule at the named "
+            "position: the position passes once the sender's slice position reaches "
+            "it, so no announcement rides in a slice at or after the position it names",
+        )
+        defect_ok = False
+
+    if not any(
+        re.search(r"\bfirst\b", s, re.I)
+        and re.search(r"\blead|C-43|64\s+slices", s, re.I)
+        and re.search(r"sender", s, re.I)
+        for b in blks
+        if not b.lstrip().startswith("|")
+        for s in re.split(r"(?<=[.;])\s+", b)
+    ):
+        fail(
+            "defect",
+            "the lead (C-43) is not stated as the sender's obligation on the FIRST issue",
+        )
+        defect_ok = False
+
+    if defect_ok:
+        print(
+            "PASS defect: the lead binds the sender's first issue (C-43); a re-issue "
+            "inside the lead is valid (C-44); no row, cell, sentence or wire.toml "
+            "string rejects a position for being inside the lead"
         )
 
 # ---------------------------------------------------------------------------

@@ -553,7 +553,7 @@ offset = 16
 width = 64
 type = "u64"
 meaning = "position: the announcement's named future position — samples at 96 000 Hz (C-01) counted from the domain epoch in the packet header's timeline epoch (C-10), the slice header's position form"
-valid = "any 64-bit value; a valid announcement names a position at least the lead ahead of the packet's slice position (C-43)"
+valid = "any 64-bit value; a position at or before the packet's slice position is dropped under BadLength (wire.md, Announcements, Validity rules); the C-43 lead binds only the sender's first issue, so a C-44 re-issue inside it is valid [decision]"
 
 [[message.field]]
 name = "payload"
