@@ -9,11 +9,9 @@
 # statement of the old sync rate). This script reads those files and never
 # writes anywhere, never runs the POC and never touches the frozen POC.
 #
-# Overrides (fixture harness): REPORT_0B, CONSTANTS_MD, EVIDENCE_MD.
-# When CONSTANTS_MD or EVIDENCE_MD is overridden the script runs in FIXTURE
-# mode: the appendix is checked by content (no comparison with main), the
-# constants-diff check is skipped with a NOTE, and the stale-statement guard
-# scans the directory that holds CONSTANTS_MD (non-recursively).
+# Overrides (fixture harness): REPORT_0B, CONSTANTS_MD, EVIDENCE_MD, DESIGN_ROOT
+# (the root scanned by the stale-statement and loss-statement guards; default
+# doc/design). The same rules apply in every mode; no check reads any git ref.
 #
 # Conventions the author must follow (wording is free, these forms are
 # machine-checked):
@@ -34,41 +32,36 @@
 #   21.7 value; 5 ms timeout), each containing "answered" and a section
 #   reference "(x)" or "section x". Any other row without "answered" names an
 #   owner outside this epic and a falsifier.
-# * (AC 4, evidence.) Five new table rows of the evidence appendix (not present
-#   in main when the repo file is checked; all rows in fixture mode) that
-#   mention REPORT-0b or "archaeology", each with the verdict letter "(a)".."(e)"
-#   in its FIRST cell (e.g. "| REPORT-0b (a) | ... |"), exactly one per letter,
-#   each carrying an evidence tag.
-# * (AC 5, constants.) Row P-02 of the constants table holds the two figures
-#   of the line "**P-02 replacement** ..." (first bold "x / y"; the 50 Hz and
-#   1000 Hz figures), carries [measured], says "strict" or "C-147" and
-#   "unprivileged" or "POC", and no longer contains "37 / 77".
-#   Stale-statement guard: no .md under the design set (excluding any
-#   tickets/ directory and REPORT-0b.md) has a line containing "37 / 77" or
-#   "37 and 77" without one of: corrupt, earlier, originally, superseded,
-#   corrected, 36.1. Every offending file:line is printed.
-#   The "Documents changed" list names doc/design/02-constants.md and
-#   doc/design/06-evidence-appendix.md, every path in it exists, and each
-#   bullet carries a tag. In repo mode, `git diff main` of the constants
-#   table touches no line whose first cell is a C-nnn id.
-# * (AC 6, regime stamps.) A paragraph containing "regime stamp", "not
-#   applicable" and a reason ("because", "no stamp field" or "no runtime code").
-# * (AC 7, frozen tree.) The poc-untouched tag-tree fingerprint recomputed
-#   from git equals the value in the Environment section, and the 27 frozen
-#   experiment-data files match checks/002-01-frozen-data.sha256 (the same
-#   mechanism as checks/002-14.sh AC 4). A paragraph states the re-check
-#   ("re-check", "recheck" or "re-verified") with "fingerprint", says it is
-#   "unchanged", "identical" or "match", and gives the recomputed value or the
-#   002-01 value.
-# * (Hand-offs.) A heading containing "Hand-off". Blocks (bullets or
-#   paragraphs) within it: one naming 003 with "confirm" and "(a)"; one naming
-#   007 and 017 with "exact-tier" and "analyse"; one naming 011 with "I/O" and
-#   "inherit" or "dropped". Each carries a tag.
-# * (002-10 open item.) The run-1 degradation paragraph of the 002-10
-#   subsection is either closed (no "open item", "undecided" or "owner" wording,
-#   the sign-test counts "F = n" and "B = n" stated, tagged [measured]) or
-#   re-owned: its owner clause names a later ticket or milestone (not 002-),
-#   and it has a falsifier. Current text is printed when this fails.
+# * (AC 4, evidence.) Verdict entries are identified BY CONTENT in every mode,
+#   never by comparison with any git ref: a table row of the evidence appendix
+#   whose FIRST cell carries a verdict letter "(a)".."(e)" and which mentions
+#   REPORT-0b or "archaeology" is a verdict entry. At least one per letter; each
+#   carries an evidence tag. Entries for other rows (e.g. the historical M-1 row)
+#   are not verdict entries merely for mentioning REPORT-0b. No appendix row may
+#   still say "Unresolved" with "Task 002" as its resolver (M-3, M-4 must be
+#   annotated). The (e) entry must not say "not a bug".
+# * (AC 5, constants.) Row P-02 of the constants table holds the two figures of
+#   the line "**P-02 replacement** ..." (first bold "x / y"; the 50 Hz and 1000
+#   Hz figures), carries [measured], says "strict" or "C-147" and "unprivileged"
+#   or "POC", and no longer contains "37 / 77". The "Documents changed" list
+#   names doc/design/02-constants.md and doc/design/06-evidence-appendix.md, every
+#   path in it exists, and each bullet carries a tag. No check depends on any git
+#   ref (later branches may legitimately edit C- rows).
+# * (Stale sync-rate guard.) Any line of any .md under DESIGN_ROOT (default
+#   doc/design; directories named tickets/ and the file REPORT-0b.md excluded)
+#   that states 37 or 77 as an achieved sync or exchange rate (forms such as
+#   "37/s", "37 per second", "37 exchanges", "37 completed", "77/s", "37 / 77",
+#   "37 and 77"), in a line also carrying sync, exchange, configured, --sync-hz,
+#   Hz, rate or 50/1000, must carry a marker: corrupt, superseded, earlier,
+#   originally, corrected, 36.1 or 71.4. Every flagged file:line is printed.
+#   "C-37", "AC-37", "37 bytes" and line numbers are not rate statements.
+# * (Loss accounting, lead ruling.) No sentence or appendix row may say that the
+#   loss counter or loss accounting (rx_lost, lost_fwd, loss display) is fixed by
+#   task 003 ("fixed by 003", "003 fixes") without a negation in the sentence. The
+#   report must carry a paragraph starting "Open item" that concerns the loss
+#   accounting and names an owner and a falsifier.
+# * (AC 2, (e) form, lead ruling.) Section (e) verdict must start "instrument
+#   bug, mechanism:". Section (d) may use either literal form.
 # * (DoD.) Every paragraph containing "open item" names an owner and a
 #   falsifier.
 #
@@ -81,13 +74,9 @@ REPORT_REL="doc/design/reports/archaeology/REPORT-0b.md"
 REPORT="${REPORT_0B:-$REPO_ROOT/$REPORT_REL}"
 CONSTANTS="${CONSTANTS_MD:-$REPO_ROOT/doc/design/02-constants.md}"
 EVIDENCE="${EVIDENCE_MD:-$REPO_ROOT/doc/design/06-evidence-appendix.md}"
+DESIGN_ROOT="${DESIGN_ROOT:-$REPO_ROOT/doc/design}"
 POC_ROOT="/home/dorian/workspace/hadropoc"
 FROZEN_DATA_MANIFEST="$REPO_ROOT/checks/002-01-frozen-data.sha256"
-
-CONST_OVERRIDE=0; EVID_OVERRIDE=0
-[ -n "${CONSTANTS_MD:-}" ] && CONST_OVERRIDE=1
-[ -n "${EVIDENCE_MD:-}" ] && EVID_OVERRIDE=1
-if [ "$CONST_OVERRIDE" -eq 1 ]; then DESIGN_DIR=$(dirname "$CONSTANTS"); else DESIGN_DIR="$REPO_ROOT/doc/design"; fi
 
 if [ ! -f "$REPORT" ]; then
   printf 'FAIL: report missing: %s\n\n1 check(s) failed.\n' "$REPORT_REL"
@@ -96,27 +85,11 @@ fi
 for f in "$CONSTANTS" "$EVIDENCE"; do
   if [ ! -f "$f" ]; then printf 'FAIL: missing file: %s\n\n1 check(s) failed.\n' "$f"; exit 1; fi
 done
-
-# Evidence appendix as it is on main (repo mode only), and the constants diff.
-MAIN_EVID=""; MAIN_EVID_OK=0
-if [ "$EVID_OVERRIDE" -eq 0 ]; then
-  if MAIN_EVID=$(git -C "$REPO_ROOT" show "main:doc/design/06-evidence-appendix.md" 2>/dev/null); then
-    MAIN_EVID_OK=1
-  fi
-fi
-CONST_DIFF=""; CONST_DIFF_OK=0
-if [ "$CONST_OVERRIDE" -eq 0 ]; then
-  if CONST_DIFF=$(git -C "$REPO_ROOT" diff main -- doc/design/02-constants.md 2>/dev/null); then
-    CONST_DIFF_OK=1
-  fi
-fi
+if [ ! -d "$DESIGN_ROOT" ]; then printf 'FAIL: design root missing: %s\n\n1 check(s) failed.\n' "$DESIGN_ROOT"; exit 1; fi
 
 REPORT="$REPORT" CONSTANTS="$CONSTANTS" EVIDENCE="$EVIDENCE" \
-REPO_ROOT="$REPO_ROOT" DESIGN_DIR="$DESIGN_DIR" POC_ROOT="$POC_ROOT" \
+REPO_ROOT="$REPO_ROOT" DESIGN_DIR="$DESIGN_ROOT" POC_ROOT="$POC_ROOT" \
 FROZEN_DATA_MANIFEST="$FROZEN_DATA_MANIFEST" \
-EVID_OVERRIDE="$EVID_OVERRIDE" CONST_OVERRIDE="$CONST_OVERRIDE" \
-MAIN_EVID="$MAIN_EVID" MAIN_EVID_OK="$MAIN_EVID_OK" \
-CONST_DIFF="$CONST_DIFF" CONST_DIFF_OK="$CONST_DIFF_OK" \
 python3 - <<'PY'
 import os, re, subprocess, hashlib
 
@@ -124,8 +97,6 @@ E = os.environ
 REPORT, CONSTANTS, EVIDENCE = E['REPORT'], E['CONSTANTS'], E['EVIDENCE']
 REPO, DESIGN_DIR, POC = E['REPO_ROOT'], E['DESIGN_DIR'], E['POC_ROOT']
 MANIFEST = E['FROZEN_DATA_MANIFEST']
-EVID_OVERRIDE = E['EVID_OVERRIDE'] == '1'
-CONST_OVERRIDE = E['CONST_OVERRIDE'] == '1'
 
 passes = 0
 fails = 0
@@ -306,11 +277,14 @@ for L in 'abcde':
     if not re.search(r'\[(code|measured)\]', body):
         bad('AC 2: section (%s) verdict carries no [code] or [measured] tag' % L)
         continue
-    if L in 'de':
-        if not re.match(r'(instrument bug, mechanism:|not a bug, explanation:)', body):
-            bad('AC 2: section (%s) verdict must use the literal form "instrument bug, mechanism:" or '
-                '"not a bug, explanation:"' % L)
-            continue
+    if L == 'd' and not re.match(r'(instrument bug, mechanism:|not a bug, explanation:)', body):
+        bad('AC 2: section (d) verdict must use one literal form: "instrument bug, mechanism:" or '
+            '"not a bug, explanation:"')
+        continue
+    if L == 'e' and not re.match(r'instrument bug, mechanism:', body):
+        bad('AC 2: section (e) verdict must use the form "instrument bug, mechanism:" (the sync pacing is an '
+            'instrument bug in the design vocabulary: ADR 21, 00-context.md, appendix 0c); found: ' + body[:120])
+        continue
     ok('AC 2: section (%s) has one final verdict, last in its section, tagged' % L)
 
 # ---------------------------------------------------------------------------
@@ -360,32 +334,31 @@ else:
 # ---------------------------------------------------------------------------
 ev_lines = read_lines(EVIDENCE)
 ev_rows = [l for l in ev_lines if is_table_row(l) and not is_sep(l)]
-if not EVID_OVERRIDE:
-    if E.get('MAIN_EVID_OK') != '1':
-        bad('AC 4: cannot read main:doc/design/06-evidence-appendix.md to find the new entries')
-        new_rows = []
-    else:
-        main_rows = {l for l in E['MAIN_EVID'].splitlines() if is_table_row(l)}
-        new_rows = [r for r in ev_rows if r not in main_rows]
-else:
-    new_rows = ev_rows  # fixture: entries are identified by content
-cand = [r for r in new_rows if re.search(r'REPORT-0b|archaeology', r, re.I)]
-if len(cand) != 5:
-    bad('AC 4: the evidence appendix needs exactly 5 new entries for REPORT-0b (one per verdict); found %d'
-        % len(cand))
-else:
-    ok('AC 4: five new evidence-appendix entries mention REPORT-0b / archaeology / 002')
+entries = {}
+for r in ev_rows:
+    c = cells(r)
+    if not c or not re.search(r'REPORT-0b|archaeology', r, re.I):
+        continue
+    m = re.search(r'\(([a-e])\)', c[0])
+    if m:
+        entries.setdefault(m.group(1), []).append(r)
 for L in 'abcde':
-    hits = [r for r in cand if re.search(r'\(%s\)' % L, cells(r)[0] if cells(r) else '')]
-    if len(hits) != 1:
-        bad('AC 4: the entries need exactly one entry for verdict (%s) in their first cell; found %d' % (L, len(hits)))
-    elif not TAG.search(hits[0]):
-        bad('AC 4: the entry for verdict (%s) carries no evidence tag' % L)
+    rs = entries.get(L, [])
+    if not rs:
+        bad('AC 4: the evidence appendix has no verdict entry for (%s) (a row whose first cell carries "(%s)" '
+            'and that mentions REPORT-0b)' % (L, L))
+    elif not all(TAG.search(r) for r in rs):
+        bad('AC 4: the verdict entry for (%s) carries no evidence tag' % L)
     else:
         ok('AC 4: evidence entry for verdict (%s) present and tagged' % L)
-for r in cand:
-    if not TAG.search(r):
-        bad('AC 4: a new evidence entry carries no evidence tag: %s' % r[:80])
+for r in entries.get('e', []):
+    if re.search(r'not a bug', r, re.I):
+        bad('AC 4: the appendix entry for verdict (e) says "not a bug"; the sync pacing is an instrument bug')
+
+# M-3 / M-4: no appendix row still reads Unresolved with Task 002 as its resolver
+for r in ev_rows:
+    if re.search(r'\bUnresolved\b', r) and re.search(r'Task 002', r):
+        bad('AC 4: an appendix row still says "Unresolved" with "Task 002" as its resolver: ' + r[:90])
 
 # ---------------------------------------------------------------------------
 # AC 5 — P-02 row, stale-statement guard, documents-changed list, C- rows
@@ -430,25 +403,48 @@ elif x is not None:
     else:
         ok('AC 5: P-02 holds %s / %s [measured] as POC figures from runs without strict mode' % (x, y))
 
-# stale-statement guard
-STALE = ('37 / 77', '37 and 77')
-MARK = re.compile(r'corrupt|earlier|originally|superseded|corrected|36\.1', re.I)
+# stale-statement guard (sync-rate statements of 37 or 77)
+STALE_RX = re.compile(
+    r'(?<![\w.,/-])(?:37|77)(?:\s*/\s*s\b|/s\b|\s*/\s*(?:37|77)\b|\s+and\s+(?:37|77)\b|'
+    r'\s+(?:exchanges?|completed|per second)\b)|'
+    r'\b(?:achieved|reached|delivered|gives?|gave)\s+(?:37|77)\b', re.I)
+CTX_RX = re.compile(r'sync|exchange|configured|--sync-hz|\bhz\b|\brate\b|\b50\b|\b1000\b', re.I)
+MARK = re.compile(r'corrupt|superseded|earlier|originally|corrected|36\.1|71\.4', re.I)
+CLAUSE_SPLIT = r'(?<=\.)\s+|;\s+|:\s+'
+
+
+def clauses(line):
+    """A table row is split into cells; each cell and each prose line into clauses."""
+    parts = cells(line) if is_table_row(line) else [line]
+    out = []
+    for part in parts:
+        out.extend(u for u in re.split(CLAUSE_SPLIT, part) if u.strip())
+    return out
+
+
 stale_hits = []
 for root, dirs, files in os.walk(DESIGN_DIR):
-    if CONST_OVERRIDE:
-        dirs[:] = []
     dirs[:] = [d for d in dirs if d != 'tickets']
     for fn in sorted(files):
         if not fn.endswith('.md') or fn == 'REPORT-0b.md':
             continue
         path = os.path.join(root, fn)
         for n, l in enumerate(read_lines(path), 1):
-            if any(p in l for p in STALE) and not MARK.search(l):
-                stale_hits.append((os.path.relpath(path, REPO) if not CONST_OVERRIDE else fn, n, l.strip()))
+            # a table row: the marker must sit in the same cell as the rate;
+            # prose: the same clause
+            if is_table_row(l):
+                scoped = [(cl, c) for c in cells(l) for cl in re.split(CLAUSE_SPLIT, c)]
+            else:
+                scoped = [(cl, cl) for cl in re.split(CLAUSE_SPLIT, l)]
+            for cl, scope in scoped:
+                if STALE_RX.search(cl) and CTX_RX.search(cl) and not MARK.search(scope):
+                    stale_hits.append((os.path.relpath(path, DESIGN_DIR), n, cl.strip()))
+                    break
 for rel, n, text in stale_hits:
-    bad('stale sync-rate statement (37 / 77 not marked historical or corrected) %s:%d: %s' % (rel, n, text[:200]))
+    bad('stale sync-rate statement (37 or 77 stated as the achieved rate, not marked historical or corrected) '
+        '%s:%d: %s' % (rel, n, text[:220]))
 if not stale_hits:
-    ok('stale-statement guard: no design document states 37 / 77 as the achieved rate without a marker')
+    ok('stale-statement guard: no design document states 37 or 77 as the achieved rate without a marker')
 
 dc = heading_index(r'Documents changed')
 if dc < 0:
@@ -475,17 +471,59 @@ else:
     if not bad_tag and 'doc/design/02-constants.md' in listed:
         ok('AC 5: "Documents changed" lists the changed documents, paths exist, entries tagged')
 
-if E.get('CONST_OVERRIDE') == '1':
-    print('NOTE: CONSTANTS_MD is overridden; the constants-diff check (no C- row touched) is skipped')
-elif E.get('CONST_DIFF_OK') != '1':
-    bad('AC 5: cannot run git diff main on doc/design/02-constants.md')
-else:
-    c_touch = [l for l in E['CONST_DIFF'].splitlines()
-               if l[:1] in '+-' and not l.startswith(('+++', '---')) and re.match(r'^[+-]\|\s*C-\d+\s*\|', l)]
-    if c_touch:
-        bad('AC 5: the constants diff touches C- rows (only P rows may change): %s' % c_touch[0][:120])
+# ---------------------------------------------------------------------------
+# Loss accounting (lead ruling): no sentence says task 003 fixes it; open item
+# ---------------------------------------------------------------------------
+LOSS_RX = re.compile(r'loss counter|loss accounting|\brx_lost\b|\blost_fwd\b|loss display', re.I)
+FIX003_RX = re.compile(
+    r'\b(?:fix(?:e[sd])?|resolv(?:e[sd]?)|repair(?:s|ed)?)\b[^.;|]{0,40}\b003\b|'
+    r'\b003\b[^.;|]{0,60}\bfix(?:es|ed)?\b|\bfixed by (?:task |ticket )?003\b', re.I)
+NEG_RX = re.compile(r"\b(?:not|no|neither|nor|never|without|unfixed|cannot)\b|n't\b", re.I)
+
+
+def loss_findings(line):
+    """Clauses that say task 003 fixes the loss counter/accounting, with no negation
+    in the clause. A table row must mention the loss counter somewhere; its
+    fix clause is then checked cell by cell (negation is scoped to the clause)."""
+    if is_table_row(line):
+        if not LOSS_RX.search(line):
+            return []
+        cand = [cl for cell in cells(line) for cl in re.split(CLAUSE_SPLIT, cell)]
     else:
-        ok('AC 5: the constants diff touches no C- row')
+        cand = [u for u in re.split(r'(?<=\.)\s+', line) if LOSS_RX.search(u)]
+    return [cl for cl in cand if FIX003_RX.search(cl) and not NEG_RX.search(cl)
+            and (is_table_row(line) or LOSS_RX.search(cl))]
+
+
+loss_hits = []
+sources = [(REPORT, rep), (EVIDENCE, ev_lines)]
+for root, dirs, files in os.walk(DESIGN_DIR):
+    dirs[:] = [d for d in dirs if d != 'tickets']
+    for fn in sorted(files):
+        if fn.endswith('.md') and fn != 'REPORT-0b.md':
+            p = os.path.join(root, fn)
+            sources.append((p, read_lines(p)))
+seen = set()
+for path, lines in sources:
+    if path in seen:
+        continue
+    seen.add(path)
+    for n, l in enumerate(lines, 1):
+        for u in loss_findings(l):
+            loss_hits.append((os.path.basename(path), n, u.strip()))
+for fn, n, text in loss_hits:
+    bad('loss accounting stated as fixed by task 003 (no negation) %s:%d: %s' % (fn, n, text[:220]))
+if not loss_hits:
+    ok('no sentence states that task 003 fixes the POC loss counter or loss accounting')
+
+loss_open = [p for p in para_blocks(rep)
+             if re.match(r'^\W*Open item', p.strip(), re.I) and re.search(r'loss', p, re.I)]
+if not loss_open:
+    bad('no paragraph starting "Open item" about the POC loss accounting (owner and falsifier required)')
+elif not any(re.search(r'owner', p, re.I) and re.search(r'falsifier', p, re.I) for p in loss_open):
+    bad('the open item about the POC loss accounting names no owner or no falsifier')
+else:
+    ok('open item about the POC loss accounting names an owner and a falsifier')
 
 # ---------------------------------------------------------------------------
 # AC 6 — regime stamp "not applicable" line with its reason (C-125)
