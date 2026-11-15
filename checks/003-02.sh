@@ -7,18 +7,22 @@
 # them yet", but 003-05 and 003-08 need them across agent hand-offs, so they
 # are working notes; they are not a design or baseline document and
 # no figure enters doc/design/** from this ticket).  003-08 writes BASELINE.md
-# in the POC repository.  The notes live at swarm/notes/003-02.md on this
-# machine's disk; the swarm directory is untracked by the design owner's
-# directive (2026-11-14), so tracked-ness is no longer required — existence
-# and content are.
+# in the POC repository.  The swarm state directory is machine-local: it
+# lives at the shared checkout (SHARED_ROOT, default
+# /home/dorian/workspace/hadronyche/medianet), so the notes live at
+# $SHARED_ROOT/swarm/notes/003-02.md on this machine's disk; the swarm
+# directory is untracked by the design owner's directive (2026-11-14) and
+# worktrees do not carry it, so tracked-ness is no longer required —
+# existence and content are.
 #
 # The check is READ-ONLY: it never writes into the POC and never runs it.
 # Override the notes path with NOTES=/path (only sensible for self-testing)
 # and the POC location with HADROPOC=/path.
 #
 # AC4 (the POC tree-cleanliness report) honours the orchestrated epic-003
-# write window: the orchestrator commits `swarm/poc-write-in-flight` in THIS
-# repository; when present, that single assertion is reported as SKIP and
+# write window: the orchestrator commits `swarm/poc-write-in-flight` in the
+# machine-local swarm state directory at the shared checkout; when present,
+# that single assertion is reported as SKIP and
 # never fails.  State is restored between commits, so the assertion is
 # meaningful again once the marker is removed.  Override the marker location
 # with MARKER_PATH=/path.
@@ -72,9 +76,10 @@
 #      marked as pending BASELINE.md.  Encoding: the text says
 #      "working notes" and pairs `BASELINE.md` with a pending marker on one
 #      line; when the default notes path is used, the file must EXIST at
-#      swarm/notes/003-02.md with the working-notes form.  The notes live at
-#      swarm/notes/003-02.md on this machine's disk; the swarm directory is
-#      untracked by the design owner's directive (2026-11-14), so
+#      $SHARED_ROOT/swarm/notes/003-02.md with the working-notes form.  The
+#      notes live in the machine-local swarm state directory at the shared
+#      checkout; the swarm directory is untracked by the design owner's
+#      directive (2026-11-14) and worktrees do not carry it, so
 #      tracked-ness is no longer required — existence and content are.
 #      (Skipped for a NOTES override.)
 #
@@ -95,10 +100,14 @@ export LC_ALL=C
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "FAIL  cannot cd to repository root"; exit 1; }
 
-REPO_ROOT="$(pwd)"
-NOTES="${NOTES:-swarm/notes/003-02.md}"
+# The swarm state directory is machine-local at the shared checkout
+# (overridable); worktrees do not carry it (swarm/ is untracked by the
+# design owner's directive, 2026-11-14).
+SHARED_ROOT="${SHARED_ROOT:-/home/dorian/workspace/hadronyche/medianet}"
+DEFAULT_NOTES="$SHARED_ROOT/swarm/notes/003-02.md"
+NOTES="${NOTES:-$DEFAULT_NOTES}"
 POC="${HADROPOC:-/home/dorian/workspace/hadropoc}"
-MARKER_PATH="${MARKER_PATH:-$REPO_ROOT/swarm/poc-write-in-flight}"
+MARKER_PATH="${MARKER_PATH:-$SHARED_ROOT/swarm/poc-write-in-flight}"
 TMPROOT="${TMPDIR:-/tmp/opencode}"
 mkdir -p "$TMPROOT" 2>/dev/null || TMPROOT=/tmp
 TMP="$(mktemp -d "$TMPROOT/003-02.XXXXXX")" || { echo "FAIL  cannot create temp dir"; exit 1; }
@@ -455,11 +464,11 @@ if [ "$notes_present" -eq 1 ]; then
   else
     bad "L1 notes do not mark the figures as pending BASELINE.md (003-08 writes it in the POC repository)"
   fi
-  if [ "$NOTES" = "swarm/notes/003-02.md" ]; then
+  if [ "$NOTES" = "$DEFAULT_NOTES" ]; then
     if [ -f "$NOTES" ]; then
-      pass "L1 notes exist at the default path swarm/notes/003-02.md (on this machine's disk; swarm/ is untracked by the design owner's directive 2026-11-14)"
+      pass "L1 notes exist at the default path $DEFAULT_NOTES (machine-local swarm state at the shared checkout; swarm/ is untracked by the design owner's directive 2026-11-14 and worktrees do not carry it)"
     else
-      bad "L1 notes file missing at the default path swarm/notes/003-02.md (existence is required)"
+      bad "L1 notes file missing at the default path $DEFAULT_NOTES (existence is required)"
     fi
   else
     note "L1 default-path existence check skipped (NOTES override: $NOTES)"
