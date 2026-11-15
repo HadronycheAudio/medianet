@@ -72,8 +72,9 @@
 #
 # AC6  "The diff of this ticket touches only the metrics writer code."
 #      Encoding (approximate by design; exact judgement is at review):
-#        (a) at least one path differs from `poc-untouched` — otherwise the
-#            criterion would pass vacuously on an unfixed tree;
+#        (a) the commits whose first line belongs to 003-03 (anchored rule)
+#            change at least one path — otherwise the criterion would pass
+#            vacuously on an unfixed tree;
 #        (b) at most 3 paths differ.  The ticket's own edits are module.rs
 #            (housekeeping) plus the process-level registry.  If the registry
 #            is a new file, `lib.rs` must also gain its `pub mod` line, so
@@ -89,10 +90,10 @@
 #            require changing it: modules still receive the metrics path and
 #            ask the registry for a sender.)
 #        (d) every differing path is under src/ (the metrics writer code).
-#      Differences are `git -C POC diff --name-only poc-untouched` UNION
-#      untracked, non-ignored files (`git ls-files --others --exclude-standard`):
-#      a brand-new, not-yet-committed registry file must count as a change.
-#      Ignored `target/` is excluded by `--exclude-standard`.
+#      The scope is THIS TICKET'S commits only: the union of
+#      `git show --name-only` over the commits after poc-untouched whose first
+#      line references 003-03.  Later sanctioned epic-003 commits are not
+#      measured here (a diff from poc-untouched would make this check age).
 #
 # Exit status: 0 all criteria pass, 1 otherwise (one FAIL line per point).
 #
@@ -362,19 +363,36 @@ else
 fi
 
 # -------------------------------------------------------------------- AC 6
-echo "-- AC6 diff vs poc-untouched limited to the metrics writer"
-gitpoc diff --name-only poc-untouched > "$TMP/changed" 2>/dev/null || true
-gitpoc ls-files --others --exclude-standard >> "$TMP/changed" 2>/dev/null || true
+echo "-- AC6 diff of this ticket's commits limited to the metrics writer"
+# The bound applies to THIS TICKET'S commits: those whose first line references
+# 003-03 (anchored: first line `003-03: ...` or `type(003-03): ...`; an id
+# appearing later in a subject does not attribute the commit).  A diff from
+# poc-untouched would also pick up later sanctioned epic-003 commits (003-04,
+# 003-06 touching src/main.rs), which their own checks judge.  Untracked files
+# of a not-yet-committed write are not part of any ticket commit; they are
+# covered by 003-01 AC3(f) ("working tree clean vs HEAD") and by 003-06 TREE
+# ("POC working tree clean vs HEAD"), not by this assertion.
+gitpoc log --reverse --format='%H%x09%s' poc-untouched..HEAD 2>/dev/null \
+  | awk -F'\t' '$2 ~ /^(003-03([: ]|$)|[a-z]+\(003-03\)!?: )/ { print $1 }' > "$TMP/t03-commits"
+n_commits="$(sed '/^$/d' "$TMP/t03-commits" | wc -l | tr -d ' ')"
+: > "$TMP/changed"
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  gitpoc show --name-only --format= "$c" >> "$TMP/changed" 2>/dev/null || true
+done < "$TMP/t03-commits"
 sed '/^$/d' "$TMP/changed" | sort -u > "$TMP/changed-u"
-n_changed="$(wc -l < "$TMP/changed-u")"
+n_changed="$(wc -l < "$TMP/changed-u" | tr -d ' ')"
 
-if [ "$n_changed" -eq 0 ]; then
-  bad "AC6 nothing differs from poc-untouched: the metrics-writer fix is absent"
+if [ "$n_commits" -eq 0 ]; then
+  bad "AC6 no commit after poc-untouched references 003-03: the metrics-writer fix is not committed"
+elif [ "$n_changed" -eq 0 ]; then
+  bad "AC6 the $n_commits commit(s) referencing 003-03 change no path: the metrics-writer fix is absent"
 else
+  note "ticket commits: $(tr '\n' ' ' < "$TMP/t03-commits" | cut -c1-80)"
   if [ "$n_changed" -le 3 ]; then
-    pass "AC6 $n_changed path(s) differ from poc-untouched (at most 3 allowed)"
+    pass "AC6 $n_changed path(s) changed by the 003-03 commit(s) (at most 3 allowed)"
   else
-    bad "AC6 $n_changed paths differ from poc-untouched, expected at most 3:"
+    bad "AC6 $n_changed paths changed by the 003-03 commit(s), expected at most 3:"
     head -n 8 "$TMP/changed-u" | while IFS= read -r p; do note "$p"; done
   fi
 
@@ -384,17 +402,17 @@ else
             esac
           done < "$TMP/changed-u")"
   if [ -z "$hits" ]; then
-    pass "AC6 no wire/servo/analyzer/audio/entry-point file was touched"
+    pass "AC6 no wire/servo/analyzer/audio/entry-point file was touched by 003-03"
   else
-    bad "AC6 files outside the metrics writer were touched:"
+    bad "AC6 files outside the metrics writer were touched by 003-03:"
     printf '%s\n' "$hits" | head -n 8 | while IFS= read -r p; do note "$p"; done
   fi
 
   outside="$(grep -Ev '^src/' "$TMP/changed-u" || true)"
   if [ -z "$outside" ]; then
-    pass "AC6 every changed path is under src/"
+    pass "AC6 every path changed by 003-03 is under src/"
   else
-    bad "AC6 changed paths outside src/:"
+    bad "AC6 paths changed by 003-03 outside src/:"
     printf '%s\n' "$outside" | head -n 8 | while IFS= read -r p; do note "$p"; done
   fi
 fi
