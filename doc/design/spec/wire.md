@@ -487,7 +487,138 @@ No value of the residence-time or declared-delay field is a malformed case: both
 
 ## Content messages
 
-To be filled by 004-11 (content messages: audio and dense controllers) and 004-12 (content messages: sparse keyed controllers and transport state).
+After its optional parts a slice carries its content as content messages (media rule 5): audio, dense controllers, sparse keyed controllers and read-only transport state (01-architecture.md § 3.2). This section fixes the content region that holds them, the common header every content message starts with, the audio message and the dense controller message; 004-12 adds the sparse keyed controllers and the transport state under the same common header `[decision]`.
+
+### Content region
+
+The content region of a packet is the one the checksum section defines: every byte after the measurement extension, or after the announcement container when the measurement flag is clear, up to the end of the UDP payload — in the slice's last packet up to the trailing checksum (Checksum, Covered range) `[decision]`. Content messages sit in it back to back, with no separator and no padding (Alignment and padding), and the last message ends exactly where the region ends `[decision]`. In the multi-packet regime the slice's content is the concatenation of its packets' content regions in packet-index order — the order the checksum covers them — and the messages are laid over that concatenation, so a message may continue from one packet into the next; a receiver parses the content after reassembly, when it verifies the checksum and before it hands the handler the whole slice (01-architecture.md § 3.1) `[decision]`. Offsets in this section's field tables are relative to the message's own first byte, written +0 onward, as the per-announcement offsets are `[decision]`.
+
+Which messages a slice carries is fixed by the stream's role in the manifest (004-26), never by a flag in the packet `[decision]`:
+
+| Stream | Audio message | Controller messages |
+|---|---|---|
+| audio stream: a single-stream source's stream, or an audio member of a bundle source | exactly one, the first content message | none in an audio member of a bundle source (C-205); in a single-stream source's audio stream only while they fit the 100-byte cap (C-181) |
+| controller stream: a bundle source's controller member (C-205, C-209), or a single-stream source's controller second stream (C-181) | none | the stream's controllers |
+
+A gap slice has no content region: it is header-only (rule 10), so it carries no content message of any kind `[decision]`.
+
+### Common content-message header
+
+Every content message starts with the common header, 3 bytes long: a kind, then a length `[decision]`. The starting shape is the POC's 8-byte `Msg` — kind in the high 4 bits, channels, count, length and a signed offset `[code]`. v1 keeps only the kind and the length in the common part, because those two are all a receiver needs to classify a message and to step over it; every other POC field moves into the body of the kind that needs it or off the wire — the audio channel count follows from the length and the manifest's channel map, and an offset belongs to the sparse kinds of 004-12 `[decision]`. The kind takes a whole byte rather than the POC's high 4 bits, so the code space is 256 values and no reserved bits hide in it `[decision]`.
+
+Little-endian (Byte order), packed with no padding (Alignment and padding) `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| +0 | 1 | u8 | kind: which content message follows (Kind codes) | 0 to 3 in v1; a same-major receiver skips any other value by the length |
+| +1 | 2 | u16 | length: how many body bytes follow the length field, the common part not included | 0 to 65 535; the body must end inside the content region |
+
+A receiver of the same major version that does not know a kind skips the message by its length: it steps over the kind, the length and the length's count of body bytes, and reads on with the next message; the length prefix is what keeps the kind space open to minor changes of the same major (Versioning, Minor and major changes, 004-04) `[decision]`. The common header has no reserved bits and no version of its own `[decision]`.
+
+### Kind codes
+
+The kind is one byte; v1 assigns four codes `[decision]`:
+
+| Code | Kind | Body |
+|---|---|---|
+| 0 | audio | Audio message |
+| 1 | dense controllers | Dense controller message |
+| 2 | sparse keyed controllers | laid out by 004-12 |
+| 3 | transport state, read-only | laid out by 004-12 |
+
+Codes 2 and 3 are assigned to 004-12's kinds here so the code space is settled once; their bodies are 004-12's `[decision]`. Codes 4 to 255 are undefined in v1: a minor version of the same major may assign from that range, and a receiver that does not know a code skips the message by its length (004-04) `[decision]`.
+
+### Audio message
+
+Kind 0 carries the slice's audio: for each channel, the slice's frames × 4 bytes, one sample per frame — 48 × 4 = 192 bytes per channel per default slice (C-02, C-03) — and for the six channels of a default stream (C-04) 6 × 192 = 1 152 bytes of audio, C-04's figure unchanged, because the layout adds nothing per channel `[decision]`. The whole message is 3 + 1 152 = 1 155 bytes in a default slice: the common part and the samples `[decision]`.
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| +0 | 1 | u8 | kind: 0, audio | 0 |
+| +1 | 2 | u16 | length: frames × channels × 4, the samples that follow | 1 152 in a default slice (48 frames × 6 channels × 4); at most 65 535 |
+| +3 | 192 | 48 × f32 or Q1.31 | one channel's samples, frames × 4 bytes — 192 per channel per default slice (48 × 4) — repeated once per channel in channel-map order, with no id byte | 1 to 341 channels at the default 48 frames |
+
+There is no per-channel id byte: the channel map is in the manifest (004-26), and the channels appear in the message in channel-map order, the map's first channel first (C-04) `[decision]`. The POC's per-channel id table, one u8 per channel ahead of the samples, is retired `[code]`.
+
+The samples are planar: each channel is one contiguous run of frames × 4 bytes, channel after channel, and within a run the samples follow frame order, the first at the slice's position (Slice header) `[decision]`. Planar rather than the POC's interleaved frames `[code]`, because a channel's run is the unit C-04 counts and the unit a consumer routes: a consumer that takes some of a stream's channels copies whole runs and never strides across frames `[decision]`.
+
+Every sample is 4 bytes (C-03), f32 or Q1.31 as the stream's manifest declares it (004-26), encoded bit for bit as Bit-level encoding of samples fixes; there is no 3-byte variant `[decision]`. The format is signalled once per stream, in the manifest, and never in the message: the message has no format field, so no packet carries a format value that could be invalid, and no sample value is malformed — every 32-bit pattern is an f32 (NaN payloads carried bit-exact) or a Q1.31 value `[decision]`. There is no sample-rate field either: the wire has one rate, 96 000 Hz (C-01); an edge whose hardware runs at 48 kHz converts 2:1 at the edge (C-80), through a resampler node that may appear only inside an edge module (C-134), so every audio message is at the domain rate `[decision]`.
+
+The message carries no channel-count field: the channel count is the length divided by frames × 4, and it must equal the number of channels in the stream's channel map (Validity rules) `[decision]`. An audio message carries at most 341 channels at the default 48 frames, because the length is a u16 — at most 65 535 body bytes — and 65 535 / 192 = 341 whole channels; in general at most ⌊65 535 / (frames × 4)⌋ channels, and a stream whose frames × channels × 4 would exceed 65 535 has no v1 wire form, which the compiler refuses from the manifest (six channels exceed it from 2 731 frames on) `[decision]`. The slice header's frames-against-length rule (Slice header, Validity rules) is applied to this message: the audio message's length is what must equal frames × channels × 4, over the reassembled slice, since the content region also holds the common part and, in a source that shares its packet (C-181), controller messages `[decision]`.
+
+### Dense controller message
+
+Kind 1 carries dense controllers: controller signals with a value at every frame, or at every stride of frames, in every slice; a dense controller is never absent from a slice its stream carries (01-architecture.md § 3.2) `[decision]`.
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| +0 | 1 | u8 | kind: 1, dense controllers | 1 |
+| +1 | 2 | u16 | length: 3 + count × (frames / stride) × 4, the body that follows | 195 for one controller at one value per frame in a default slice; at most 65 535 |
+| +3 | 1 | u8 | count: how many dense controllers this message carries | 1 to 255 |
+| +4 | 2 | u16 | stride: frames per value; 1 is one value per frame, and a larger stride is the stated sub-rate | 1 to frames, dividing frames: 1, 2, 3, 4, 6, 8, 12, 16, 24 or 48 in a default slice |
+| +6 | 192 | 48 × f32 or Q1.31 | one controller's values, (frames / stride) × 4 bytes — 192 at one value per frame in a default slice — repeated once per controller, controller after controller | count controllers, at most 255 |
+
+Width and format: each value is 4 bytes wide, in the stream's sample format, f32 or Q1.31 as its manifest declares it (004-26, C-03) — one width and one format for audio and controllers, so a single-stream source that shares its packet (C-181) uses one format throughout and a Q1.31 consumer needs no float path `[decision]`. In a Q1.31 stream a value lies in [−1, +1); how a controller's natural range maps onto it is agreed through the manifest, not carried on the wire `[decision]`.
+
+No controller id: the dense messages of a slice carry the stream's dense controllers in the manifest's controller-map order (004-26), each exactly once — the first dense message starts at the map's first dense controller, each following dense message continues where the previous one ended, and together they carry every dense controller of the map `[decision]`. A producer that runs controllers at different rates sends one dense message per run of consecutive controllers sharing a stride `[decision]`.
+
+Sampling: value k of a controller, k from 0, is its value at frame k × stride of the slice — the slice's position plus k × stride samples; stride 1 is one value per frame, and a stride s above 1 is the stated sub-rate of 96 000 / s values per second (C-01), 2 000 per second, one value per slice, at stride 48 in a default slice `[decision]`. What a consumer does between two sub-rate values is the module runtime's (epic 014), not the wire's `[decision]`.
+
+The message carries no initial-value field: each dense controller declares its initial value in the manifest (default 0, C-158, laid out by 004-26), used when a gap precedes any received value `[decision]`.
+
+Maximum count: at most 255 dense controllers per message (the u8 count) and at most 65 535 body bytes (the u16 length); at one value per frame in a default slice a full message is 3 + 255 × 192 = 48 963 body bytes, and a stream with more dense controllers sends further dense messages, which continue the map `[decision]`. In a default slice one controller at one value per frame costs 6 + 192 = 198 bytes, and one at one value per slice 6 + 4 = 10 bytes `[decision]`.
+
+### Where controllers travel
+
+The controllers of a bundle source always ride in their own member stream: an audio member stream of a bundle source carries no controller message, and the controller member stream carries no audio (C-205) `[decision]`. The controller member counts towards the 32 members of C-08, so a source with controllers has at most 31 audio members (C-209) `[decision]`.
+
+A single-stream source may always put its controllers in a second stream, and must do so when its headers plus its controller messages exceed the 100-byte cap of C-137; while they fit, it may share the audio packet, its controller messages following the audio message (C-181) `[decision]`. The controller second stream carries controller messages and no audio, and the compiler checks the choice from the manifest (C-181) `[decision]`.
+
+A controller second stream whose controllers would have fitted in the audio packet is valid: no rule of this section rejects a second stream because its controllers would have fitted, and a receiver never compares a second stream's controllers with the room left in the audio packet (C-181, permissive) `[decision]`.
+
+What counts against the cap in a shared packet is every byte except the audio samples: the packet header, the slice header, the announcement container, the measurement extension when present, the audio message's common part, every controller message whole and the checksum (C-137) `[decision]`. With no announcement and the measurement extension, 16 + 22 + 1 + 9 + 3 + 4 = 55 bytes leave 100 − 55 = 45 bytes for controller messages: one dense message of up to 9 controllers at one value per slice (6 + 9 × 4 = 42 bytes), while a single controller at one value per frame (198 bytes) never shares a default packet `[decision]`. Each announcement in the packet takes 12 of those 45 bytes, and four take all of them and 3 more (Budget) `[decision]`.
+
+A controller stream's wire cost is computed like an audio stream's — one packet per slice at 2 000 packets/s, headers up to the 100-byte cap plus the controller bytes per slice — as 004-15 states (C-219) `[decision]`.
+
+### Budget (C-137)
+
+The default packet carries one audio message: 3 + 6 × 48 × 4 = 3 + 1 152 = 1 155 bytes of content (C-04) `[decision]`. Against the 100 bytes C-137 allows for all headers and the checksum, the audio message's 3-byte common header joins the parts already placed: 16 (packet header) + 22 (slice header) + 1 (announcement count, always present) + 9 (measurement extension) + 3 (content-message header) + 4 (checksum) = 55 bytes with no announcement, a 1 207-byte UDP payload; with three announcements 55 + 36 = 91 bytes; with four announcements and no extension 16 + 22 + 49 + 3 + 4 = 94 bytes — each inside the cap `[decision]`. At maximum occupancy — four announcements and the extension — the sum is 16 + 22 + 49 + 9 + 3 + 4 = 103 bytes, 3 bytes over the cap, and 103 + 1 152 = 1 255 bytes of UDP payload, 3 bytes over the 1 252 bytes of a fallback path (C-06, C-17), which a packet sent with don't-fragment (rule 11) cannot cross; on a 1 472-byte path it fits with 217 bytes to spare `[decision]`.
+
+The overflow contradicts three statements already in this file, all written before a content-message header existed: Announcements, Maximums ("All four announcements fit inside the 100-byte cap in v1"); Announcements, Sender obligations ("the container never blocks that cadence"); and Checksum, Placement and the header cap ("The header cap holds with no fallback rule"), whose 96 + 4 = 100 bytes leave no room for any content-message header `[decision]`. This section does not resolve it by changing those sections: it keeps the container's cap of 4 (004-09), keeps the measurement extension in every measuring packet — no v1 sender omits it on a fallback path (004-10) — and adds no omission rule of its own `[decision]`.
+
+**Open item (header cap).** A default packet of a measuring stream with all four announcement kinds pending needs 103 bytes where C-137 allows 100. Owner: ticket 004-14, which owns the size budget and the 100-byte cap of C-137. Three rules would close the 3-byte gap, and choosing among them is 004-14's: (i) stagger — a packet that carries a content message carries at most three announcements (16 + 22 + 37 + 9 + 3 + 4 = 91 bytes), and when four kinds are pending the fourth rides on its own 16-slice schedule one slice later (C-44), its position picked one lead ahead of the slice that first carries it (C-43); this lowers 004-09's effective cap from 4 to 3 per packet and needs its cap argument restated; (ii) apply the fallback clause 004-09 already states — announcements that do not fit are omitted on the fallback path (C-137) and re-issued from a later slice (C-44); omitting one 12-byte announcement frees 12 ≥ 3 bytes, but the omitted re-issue then misses its 16-slice step on fallback paths, against Sender obligations; (iii) reclaim 3 bytes inside the headers already placed, a change to a settled layout. The same choice settles C-181's fit test: the compiler checks the fit from the manifest (C-181), and counted at maximum occupancy the room for shared controllers is 100 − 103 < 0 bytes, so no controller would ever share an audio packet, while counted without announcements, which C-137 lets a fallback path omit, it is 45 bytes (Where controllers travel). Falsifier: under the rules 004-14 states, a v1 sender emits a default packet whose headers, content-message headers and checksum exceed 100 bytes — 1 255 bytes of UDP payload at maximum occupancy, which a fallback path cannot carry — or re-issues a pending announcement less often than every 16 slices (C-44) or with less than one lead's notice (C-43) `[decision]`.
+
+### Validity rules
+
+Every malformed content message is dropped with its slice and counted under one member of the closed Rejection reasons enumeration — one count per packet of the slice, as for BadChecksum — or skipped, for the one form that is not a rejection; nothing is dropped silently `[decision]`. The content rules run on the reassembled slice after its checksum verifies, so a slice corrupted in transit counts under BadChecksum and a content rejection names a slice its sender built wrong `[decision]`. The invalid forms and their required outcomes:
+
+| Invalid form | Required outcome |
+|---|---|
+| unknown kind within the same major version (a kind code outside 0 to 3): the receiver steps over the message by its length and reads on with the next | skip by length — the message is ignored and nothing is counted; never a rejection (004-04) `[decision]` |
+| message overrunning the slice: fewer than the common header's 3 bytes remain in the content region, or a message's length runs past the end of the content region (in the last packet, into the checksum) | drop and count under BadLength |
+| audio length not matching frames × channels × 4: the audio message's length is not a whole number of channel runs of frames × 4 bytes | drop and count under BadLength |
+| channel count different from the manifest's channel map for the stream: the length is a whole number of channel runs, but not as many as the channel map holds | drop and count under BadLength `[decision]` — the message has no channel field, so the length is where the count disagrees |
+| sample-format value invalid: no content message carries a sample-format field — the format is declared once per stream in the manifest (004-26) | none — the case cannot occur on the wire; a manifest's format value is checked at admission (004-18, 004-26), never per packet `[decision]` |
+| audio in a gap slice: a gap slice is header-only (rule 10), so any content in it is the packet header's gap-with-payload case | drop and count under BadLength, the packet header's rule (Media packet header, Validity rules); no content rule is reached |
+| a dense controller message in an audio member stream of a bundle source, or an audio message in its controller member stream (C-205) | drop and count under BadLength `[decision]` — the content disagrees with the stream's declared role |
+| a packet carrying audio whose headers plus controller messages exceed the 100-byte cap (C-181, C-137): every byte except the audio samples, counted as Where controllers travel states, is above 100 | drop and count under BadLength `[decision]` |
+| audio in a single-stream source's controller second stream (C-181) | drop and count under BadLength `[decision]` |
+| no audio message in a non-gap slice of an audio stream, a second audio message, or an audio message that is not the first content message | drop and count under BadLength `[decision]` |
+| dense count of 0, stride of 0, or a stride that does not divide the slice's frames | drop and count under BadLength `[decision]` |
+| dense length not 3 + count × (frames / stride) × 4 | drop and count under BadLength |
+| the dense messages of a slice carry more or fewer controllers than the stream's controller map holds | drop and count under BadLength `[decision]` |
+
+Why BadLength for the role and map forms: the closed enumeration has no content-specific member, and a new one needs a major version (Rejection reasons, Closed enumeration). BadLength is the declared-shape member — the slice header already uses it for a packet count of 0 and the container for a duplicate kind — and a content region that disagrees with the shape the manifest declares for its stream (its role, its channel map, its controller map) is that case `[decision]`.
+
+### Open items
+
+**Open item (dense field set).** No constant gives the field set of dense controllers; this section decides it — per message a count and a stride, then 4-byte values in the stream's sample format, in controller-map order, with no controller id, no initial value (C-158) and no per-controller format — and records it as open `[decision]`. Owner: epic 004 (004-26 lays out the controller map and the initial values the field set relies on). Falsifier: a producer cannot express a value it must send without a major change — for example a controller whose values cannot be mapped into Q1.31's [−1, +1) in a Q1.31 stream, one that needs a format other than its stream's, or a rate that is not a whole divisor of the slice's frames; any such case means the field set is wrong, since a field added to the dense body is a major change, while a new kind code for a richer dense message is a minor one (004-04) `[decision]`.
+
+The header-cap overflow is the second open item of this section, owned by 004-14 (Budget) `[decision]`.
+
+### Sparse keyed controllers and transport state
+
+To be filled by 004-12, under kind codes 2 and 3 (Kind codes) and the common content-message header `[decision]`.
 
 ## Checksum
 
