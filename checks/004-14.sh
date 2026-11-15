@@ -668,8 +668,18 @@ if not re.search(r"1\s?472", sec_text) or not re.search(r"1\s?280", sec_text) or
 # ---------------------------------------------------------------------------
 omit_text = " ".join(l for l, f in zip(sec_lines, sec_fence) if not f and re.search(r"\bomit", l, re.I))
 omit_text = norm(omit_text)
-if not omit_text:
-    fail("AC 3", "the section states no omission rule for the fallback path (no line says 'omit')")
+# Form (ii): an explicit statement that no optional part is omitted for size on a fallback path.
+# The ticket's AC 3 is met by an empty list; the fallback case checks below still bound every column.
+NOTHING_OMITTED = re.compile(
+    r"\b(?:no|nothing|none|never)\b[^.;]{0,80}?\bomitted\b|\bnot omitted\b|\bomitted\b[^.;]{0,20}?\bnever\b",
+    re.I)
+nothing_omitted = any(re.search(r"\bfallback\b", sent, re.I) and NOTHING_OMITTED.search(sent)
+                      for sent in re.split(r"(?<=[.;])\s+", sec_text))
+if nothing_omitted:
+    pass
+elif not omit_text:
+    fail("AC 3", "the section states neither an omission rule nor that no optional part is omitted for size "
+                 "on a fallback path (no line says 'omit')")
 else:
     if not re.search(r"announcement", omit_text, re.I):
         fail("AC 3", "the omission rule does not say which announcements are omitted")
@@ -679,12 +689,14 @@ else:
         fail("AC 3", "the omission rule does not say what happens to controller messages")
     if not re.search(r"priorit|in this order|\bfirst\b|\bthen\b|\bbefore\b|\bordered\b", omit_text, re.I):
         fail("AC 3", "the omission rule states no priority (which part goes first)")
-for c in fallbacks:
-    omits_ann = c["ann"] != ANN_MAX
-    omits_ext = c["ext"] == 0
-    if (omits_ann or omits_ext) and not re.search(r"\bamend|\bscop(?:e|es|ed|ing)\b|\bsupersed", sec_text, re.I):
-        fail("AC 3", f"fallback column {c['label']} omits announcements or the extension, but the section "
-                     "does not say that it amends or scopes the landed sender obligations (C-44, 004-10)")
+    for c in fallbacks:
+        omits_ann = c["ann"] != ANN_MAX
+        omits_ext = c["ext"] == 0
+        if (omits_ann or omits_ext) and not re.search(r"\bamend|\bscop(?:e|es|ed|ing)\b|\bsupersed", sec_text, re.I):
+            fail("AC 3", f"fallback column {c['label']} omits announcements or the extension, but the section "
+                         "does not say that it amends or scopes the landed sender obligations (C-44, 004-10)")
+if not fallbacks:
+    fail("AC 3", "no 1 280-byte fallback budget column")
 
 # ---------------------------------------------------------------------------
 # AC 4: the verdict against the falsifier.
@@ -760,6 +772,7 @@ if not budget_tables:
 # ---------------------------------------------------------------------------
 allow_tables = [t for t in TABLES_SEC if any(re.search(r"allow", h, re.I) for h in t["header"])]
 allowances = []
+allow_rows = []
 if not allow_tables:
     fail("AC 6", "no controller allowance table (a header cell containing 'allow')")
 else:
@@ -827,6 +840,7 @@ else:
             if allow < 0:
                 fail("AC 6", f"allowance row {lab!r} is negative")
             allowances.append(allow)
+            allow_rows.append((lab.lower(), allow))
         for p in ("default", "fb"):
             if p not in paths_seen:
                 fail("AC 6", "the allowance is not stated at both path sizes (1 472 and fallback)")
@@ -870,7 +884,8 @@ def tok_match(tokens, groups, forb):
 
 
 ROLE = {"total": {"total"}, "spare": {"spare", "margin"}}
-ANN_WORDS = {0: {"mandatory", "one", "1", "bare", "plain", "none"},
+ANN_WORDS = {0: {"mandatory", "bare", "plain", "none"},
+             1: {"one", "1"},
              3: {"three", "3"},
              4: {"four", "4", "all", "maximum", "full"}}
 
@@ -931,9 +946,23 @@ if budget_tables:
             if tok_match(key_tokens(k), groups, forb) and v != expected:
                 fail("AC 5", f"wire.toml key {k!r} = {v}, but the {label} is {expected} (landed table)")
     for k, v in BUDGET_FLAT.items():
-        if "allowance" in key_tokens(k) and v not in set(allowances):
-            fail("AC 5", f"wire.toml key {k!r} = {v} is not a computed controller allowance "
-                         f"({sorted(set(allowances))})")
+        toks = key_tokens(k)
+        if "allowance" not in toks:
+            continue
+        if toks & {"not", "without", "non", "no"}:
+            want = {a for lab, a in allow_rows if "could not" in lab}
+            role = "could not carry the extension"
+        elif toks & {"could", "carry", "with", "measuring", "measure"}:
+            want = {a for lab, a in allow_rows if "could carry" in lab and "could not" not in lab}
+            role = "could carry the extension"
+        else:
+            want = set(allowances)
+            role = "any computed allowance"
+        if not want:
+            fail("AC 5", f"wire.toml key {k!r} names an allowance for a stream that {role}, "
+                         "but wire.md has no such row")
+        elif v not in want:
+            fail("AC 5", f"wire.toml key {k!r} = {v}, but the row for {role} is {sorted(want)}")
     if not allowances and any("allowance" in key_tokens(k) for k in BUDGET_FLAT):
         fail("AC 5", "wire.toml names an allowance but wire.md has no computed allowance table")
 
