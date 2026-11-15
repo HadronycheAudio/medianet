@@ -325,19 +325,21 @@ valid = "0 to 16777215"
 # to back, the per-announcement layout that makes an entry of an unknown type
 # skippable by its length field (004-04). The element's own field table is
 # the [[message]] "announcement" below, a section of this message. 004-10
-# (measurement extension) and 004-13 (checksum, which adds BadChecksum)
-# extend this message further and grow its declared max_size. The 9-byte
-# measurement extension (ticket 004-10) follows the container, and the 4-byte
-# slice checksum (ticket 004-13) follows the extension; max_size is header +
-# slice header + container + extension + checksum = 38 + 1 + 4 x 12 + 9 + 4
-# = 100 bytes, the C-137 cap [decision].
+# (measurement extension) extends this message further and grows its
+# declared max_size; 004-13 (checksum) adds BadChecksum to its rejection
+# reasons and declares the trailing checksum as a section message. The 9-byte
+# measurement extension (ticket 004-10) follows the container; max_size is
+# header + slice header + container + extension = 38 + 1 + 4 x 12 + 9 = 96
+# bytes [decision]. The 4-byte slice checksum (ticket 004-13) trails the
+# content and is declared as its own section message, "slice checksum",
+# below; 96 + 4 = 100 bytes, the C-137 cap [decision].
 # ---------------------------------------------------------------------------
 
 [[message]]
 name = "media packet"
 layer = "media"
 dscp = 46
-max_size = 100
+max_size = 96
 rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource", "WrongEpoch", "BadLength", "BadPacketIndex", "BadChecksum", "ReservedNonZero"]
 
 [[message.field]]
@@ -516,24 +518,6 @@ type = "u32"
 meaning = "accumulated declared delay: the sum of the forwarding processors' structural latency L, whole samples at the domain rate 96 000 Hz (C-01, C-105); saturates at 4 294 967 295, never wraps (004-10)"
 valid = "any 32-bit value; 4 294 967 295 is the saturated value"
 
-# Slice checksum (ticket 004-13): wire.md's "Checksum" field table is the
-# human-readable authority. On the wire the checksum starts where the
-# measurement extension ends, or the container when the measurement bit is
-# clear, at byte 39 + 12 x count + 9 x m (m = 1 when bit 4 is set), and only
-# the last packet of a slice (packet index = packet count - 1) carries it; it
-# is declared here at the maximum-occupancy offset, bit 768 (byte 96), the
-# model the extension uses, so the computed max_size covers it [decision].
-# Algorithm CRC-32C: width 32, poly 0x1EDC6F41, init 0xFFFFFFFF, refin and
-# refout true, xorout 0xFFFFFFFF, check 0xE3069283.
-
-[[message.field]]
-name = "checksum"
-offset = 768
-width = 32
-type = "u32"
-meaning = "slice checksum: CRC-32C of the slice's covered bytes (packet header bytes 0 to 13, the flags byte AND 0xC0, slice header bytes 16 to 25, and the content of every packet in packet-index order), stored little-endian; carried in the last packet of the slice only (004-13)"
-valid = "any 32-bit value; a value that differs from the recomputed CRC is BadChecksum"
-
 # The announcement entry (ticket 004-09): one entry of the media packet's
 # announcement container, declared as a section of the media packet message;
 # wire.md's per-type tables in the Announcements section are the
@@ -578,3 +562,29 @@ width = 16
 type = "u16"
 meaning = "payload: the announcement's type-specific payload; in v1 only the epoch switch fills it — the new 16-bit timeline epoch (C-10)"
 valid = "the new timeline epoch for type code 2; 0 for type codes 0, 1 and 3 [decision]"
+
+# Slice checksum (ticket 004-13): wire.md's "Checksum" field table is the
+# human-readable authority. The checksum trails the content: it is the last
+# 4 bytes of the UDP payload of the slice's last packet (packet index =
+# packet count - 1), at offset payload length - 4, so it has no fixed offset
+# from the packet's start and is declared as a section of the media packet,
+# the precedent of the announcement entry; its offset 0 is the checksum's
+# own first byte [decision]. Algorithm CRC-32C: width 32, poly 0x1EDC6F41,
+# init 0xFFFFFFFF, refin and refout true, xorout 0xFFFFFFFF, check
+# 0xE3069283.
+
+[[message]]
+name = "slice checksum"
+layer = "media"
+dscp = 46
+max_size = 4
+section_of = "media packet"
+rejection_reasons = ["BadLength", "BadChecksum"]
+
+[[message.field]]
+name = "checksum"
+offset = 0
+width = 32
+type = "u32"
+meaning = "slice checksum: CRC-32C of the slice's covered bytes — for each packet in packet-index order, packet header bytes 0 to 13, the flags byte AND 0xC0, slice header bytes 16 to 25, the announcement container and the content region — stored little-endian; the last 4 bytes of the last packet's UDP payload (004-13)"
+valid = "any 32-bit value; a value that differs from the recomputed CRC is BadChecksum"
