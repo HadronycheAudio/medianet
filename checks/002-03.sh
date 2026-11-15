@@ -74,9 +74,14 @@
 #    "open question", "TODO", "TBD", unless negated) must name an owner and a
 #    falsifier. "The frozen POC is not modified" is not checkable from the
 #    report; it is covered by checks/002-01.sh and checks/003-01.sh.
-#  * (Section marker) Section (d) keeps exactly one "verdict:" line and it
-#    still says "pending" (the verdict belongs to the whole section, not to one
-#    file's notes, and the reading tickets are not the close-out ticket).
+#  * (Section marker) Section (d) always carries exactly one verdict line, in
+#    one of the allowed forms: the placeholder "pending" (the state at 002-03's
+#    time) or the final verdict — an instrument-bug finding with "mechanism:",
+#    or a not-a-bug finding with "explanation:". The verdict belongs to the
+#    whole section, not to one file's notes, and the reading tickets are not
+#    the close-out ticket (002-13 is), so the check accepts all three forms and
+#    later sanctioned completion does not break it (the same pattern as the
+#    amended checks/002-01.sh).
 #
 # Exit status: 0 when every check passes, 1 otherwise.
 
@@ -570,20 +575,29 @@ check_open_items "transport.rs" "$T_START" "$T_END"
 check_open_items "control.rs" "$C_START" "$C_END"
 
 # ---------------------------------------------------------------------------
-# Section marker — (d) still carries exactly one pending verdict line
+# Section marker — exactly one verdict line, in an allowed form
 # ---------------------------------------------------------------------------
 
-verdict_count=$(sed -n "$((d_no + 1)),$((e_no - 1))p" "$REPORT" \
-  | grep -Eci '(^|[^[:alnum:]])\*{0,2}verdict:' || true)
+SECTION_D=$(sed -n "$((d_no + 1)),$((e_no - 1))p" "$REPORT")
+verdict_count=$(printf '%s\n' "$SECTION_D" \
+  | grep -Ec '^[[:space:]]*(\*\*)?verdict:' || true)
 if [ "$verdict_count" -eq 0 ]; then
   bad "section (d) lost its 'verdict:' line"
 elif [ "$verdict_count" -gt 1 ]; then
   bad "section (d) has $verdict_count 'verdict:' lines; exactly one section-level verdict is required"
 else
-  if sed -n "$((d_no + 1)),$((e_no - 1))p" "$REPORT" | grep -Eqi '(^|[^[:alnum:]])\*{0,2}verdict:[^A-Za-z]*pending'; then
-    ok "section (d) still carries its one pending verdict marker"
+  verdict_line=$(printf '%s\n' "$SECTION_D" \
+    | grep -E '^[[:space:]]*(\*\*)?verdict:' | head -n 1)
+  verdict_body=$(printf '%s\n' "$verdict_line" \
+    | sed -E 's/^[[:space:]]*(\*\*)?verdict:[[:space:]]*//; s/[[:space:]]*\*\*[[:space:]]*$//')
+  if printf '%s' "$verdict_body" | grep -Eqi '^pending$'; then
+    ok "section (d) has exactly one verdict line (pending)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'mechanism:'; then
+    ok "section (d) has exactly one verdict line (instrument bug, mechanism)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'explanation:'; then
+    ok "section (d) has exactly one verdict line (not a bug, explanation)"
   else
-    bad "section (d)'s verdict marker no longer says 'pending'"
+    bad "section (d) has one verdict line but it is not in an allowed form: $verdict_line"
   fi
 fi
 

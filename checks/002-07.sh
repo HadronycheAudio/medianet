@@ -87,8 +87,13 @@
 #   choice, so a mechanical rate check would be brittle. The written contract
 #   is what this check verifies.
 #
-# * DoD. Section (b) keeps exactly one verdict line and it still says
-#   "pending" (the verdict belongs to 002-08). The run is stated to have come
+# * DoD. Section (b) always carries exactly one verdict line, in one of the
+#   allowed forms: the placeholder "pending" (the state at 002-07's time) or
+#   the final verdict — an instrument-bug finding with "mechanism:", or a
+#   not-a-bug finding with "explanation:". The final verdict arrives with
+#   002-08, so the check accepts all three forms and later sanctioned
+#   completion does not break it (the same pattern as the amended
+#   checks/002-01.sh). The run is stated to have come
 #   from the scratch copy, with the frozen tree neither run nor written. The
 #   25 s duration is stated. Every file:line pointer in prose carries an
 #   evidence tag on itself or an adjacent line, and the diff/log/excerpt
@@ -730,7 +735,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# DoD — evidence tags, pending verdict, scratch/frozen discipline
+# DoD — evidence tags, verdict line, scratch/frozen discipline
 # ---------------------------------------------------------------------------
 
 tag_problems=0
@@ -757,15 +762,25 @@ else
 fi
 
 verdict_count=$(printf '%s\n' "$SECTION" \
-  | grep -Eci '(^|[^[:alnum:]])[*_]*verdict:' || true)
+  | grep -Ec '^[[:space:]]*(\*\*)?verdict:' || true)
 if [ "$verdict_count" -eq 0 ]; then
   bad "DoD: section (b) lost its 'verdict:' line"
 elif [ "$verdict_count" -gt 1 ]; then
   bad "DoD: section (b) has $verdict_count 'verdict:' lines; exactly one is required"
-elif printf '%s\n' "$SECTION" | grep -Eqi '(^|[^[:alnum:]])[*_]*verdict:[^A-Za-z]*pending'; then
-  ok "DoD: section (b) still carries its one pending verdict marker (002-08 owns the verdict)"
 else
-  bad "DoD: section (b)'s verdict marker no longer says 'pending' (the verdict belongs to 002-08)"
+  verdict_line=$(printf '%s\n' "$SECTION" \
+    | grep -E '^[[:space:]]*(\*\*)?verdict:' | head -n 1)
+  verdict_body=$(printf '%s\n' "$verdict_line" \
+    | sed -E 's/^[[:space:]]*(\*\*)?verdict:[[:space:]]*//; s/[[:space:]]*\*\*[[:space:]]*$//')
+  if printf '%s' "$verdict_body" | grep -Eqi '^pending$'; then
+    ok "DoD: section (b) has exactly one verdict line (pending; 002-08 owns the verdict)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'mechanism:'; then
+    ok "DoD: section (b) has exactly one verdict line (instrument bug, mechanism)"
+  elif printf '%s' "$verdict_body" | grep -Eqi 'explanation:'; then
+    ok "DoD: section (b) has exactly one verdict line (not a bug, explanation)"
+  else
+    bad "DoD: section (b) has one verdict line but it is not in an allowed form: $verdict_line"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
