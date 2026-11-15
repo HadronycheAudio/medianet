@@ -326,15 +326,17 @@ valid = "0 to 16777215"
 # skippable by its length field (004-04). The element's own field table is
 # the [[message]] "announcement" below, a section of this message. 004-10
 # (measurement extension) and 004-13 (checksum, which adds BadChecksum)
-# extend this message further and grow its declared max_size; max_size is
-# header + slice header + container = 38 + 1 + 4 x 12 = 87 bytes [decision].
+# extend this message further and grow its declared max_size. The 9-byte
+# measurement extension (ticket 004-10) follows the container; max_size is
+# header + slice header + container + extension = 38 + 1 + 4 x 12 + 9 = 96
+# bytes [decision].
 # ---------------------------------------------------------------------------
 
 [[message]]
 name = "media packet"
 layer = "media"
 dscp = 46
-max_size = 87
+max_size = 96
 rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource", "WrongEpoch", "BadLength", "BadPacketIndex", "ReservedNonZero"]
 
 [[message.field]]
@@ -479,6 +481,39 @@ count = "announcement_count"
 max_count = 4
 meaning = "one announcement entry, 12 bytes, laid out as the [[message]] announcement below: type code 1 byte, length 1 byte, position 8 bytes, payload 2 bytes; entries are back to back with no separator, so a same-major receiver skips an entry whose type code it does not know by the entry's length field (004-04)"
 valid = "0 to 4 entries (announcement_count), one per announcement kind; each entry as the announcement message lays it out"
+
+# Measurement extension (ticket 004-10): the fields continue the media packet
+# after the announcement container, offset for offset with wire.md's
+# "Measurement extension" field table, which is the human-readable authority.
+# On the wire the extension starts where the container ends, at byte
+# 38 + 1 + 12 x count, and is present only when the flags byte's measurement
+# bit (bit 4) is set; it is declared here at the container's maximum end,
+# bit 696 (byte 87), the same maximum-occupancy model as the counted entry
+# region, so the computed max_size covers it [decision].
+
+[[message.field]]
+name = "hop_count"
+offset = 696
+width = 8
+type = "u8"
+meaning = "hop count: how many processors have forwarded the content since its source, which emits 0; each processor adds 1 when it forwards; saturates at 64, never wraps (004-10)"
+valid = "0 to 64 (C-34); 64 is the saturated value, read as 64 or more; above 64 is BadLength"
+
+[[message.field]]
+name = "residence_time"
+offset = 704
+width = 32
+type = "u32"
+meaning = "accumulated residence time: the sum over the forwarding processors of the time each held the content, in nanoseconds of each processor's local monotonic clock [decision]; saturates at 4 294 967 295, never wraps (004-10)"
+valid = "any 32-bit value; 4 294 967 295 is the saturated value"
+
+[[message.field]]
+name = "declared_delay"
+offset = 736
+width = 32
+type = "u32"
+meaning = "accumulated declared delay: the sum of the forwarding processors' structural latency L, whole samples at the domain rate 96 000 Hz (C-01, C-105); saturates at 4 294 967 295, never wraps (004-10)"
+valid = "any 32-bit value; 4 294 967 295 is the saturated value"
 
 # The announcement entry (ticket 004-09): one entry of the media packet's
 # announcement container, declared as a section of the media packet message;
