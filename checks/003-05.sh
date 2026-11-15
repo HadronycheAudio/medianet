@@ -587,7 +587,7 @@ if [ "$notes_present" -eq 1 ]; then
     bad "AC4 $POC is not a git repository; cannot validate the build commit"
   else
     fix_commit="$(git -C "$POC" log --all --format='%H%x09%s' 2>/dev/null \
-      | awk -F'\t' '$2 ~ /^003-04[: ]/ { print $1; exit }')"
+      | awk -F'\t' '$2 ~ /^(003-04([: ]|$)|[a-z]+\(003-04\)!?: )/ { print $1; exit }')"
     if [ -z "$fix_commit" ]; then
       bad "AC4 the POC history has no 003-04 commit; the notes cannot be about the fixed build"
     else
