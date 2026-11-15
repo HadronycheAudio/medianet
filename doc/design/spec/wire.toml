@@ -588,3 +588,131 @@ width = 32
 type = "u32"
 meaning = "slice checksum: CRC-32C of the slice's covered bytes — for each packet in packet-index order, packet header bytes 0 to 13, the flags byte AND 0xC0, slice header bytes 16 to 25, the announcement container and the content region — stored little-endian; the last 4 bytes of the last packet's UDP payload (004-13)"
 valid = "any 32-bit value; a value that differs from the recomputed CRC is BadChecksum"
+
+# ---------------------------------------------------------------------------
+# Content messages (ticket 004-11): wire.md's "Content messages" field tables
+# are the human-readable authority. Every content message starts with the
+# 3-byte common header (kind u8, length u16); offsets below are relative to
+# the message's own first byte, as for the announcement entry.
+#
+# None of the three carries section_of. On wire grounds a content message
+# belongs to the slice's content, laid over the concatenated content regions
+# of its packets, and may continue from one packet into the next, so it is
+# not a part of one packet [decision]. The choice is also forced for the
+# audio and dense messages: the checker applies the 1 252-byte bound of C-17
+# to every message with section_of, and their maximums exceed it. The
+# relation is provisional pending a tooling item on that checker rule
+# (004-02) [decision].
+#
+# The sample and value runs are one 4-byte element counted by the length, so
+# max_size is the true maximum a parser sizes for: 16 383 elements (65 532
+# bytes) under the u16 length; 3 + 65 532 = 65 535 bytes for audio and
+# 6 + 65 532 = 65 538 for dense (at the default 48 frames: 65 475 and
+# 48 966). The schema has no union type: type = "f32" stands for either
+# sample format, f32 or Q1.31, as the stream's manifest declares (004-26).
+# ---------------------------------------------------------------------------
+
+[[message]]
+name = "content-message header"
+layer = "media"
+dscp = 46
+max_size = 3
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "kind"
+offset = 0
+width = 8
+type = "u8"
+meaning = "kind: which content message follows; 0 audio, 1 dense controllers, 2 sparse keyed controllers and 3 transport state (laid out by 004-12)"
+valid = "0 to 3 in v1; a same-major receiver skips any other value by the length (004-04)"
+
+[[message.field]]
+name = "length"
+offset = 8
+width = 16
+type = "u16"
+meaning = "length: how many body bytes follow the length field, the common header not included; the prefix that makes a message of an unknown kind skippable"
+valid = "0 to 65 535; the body must end inside the content region, else BadLength"
+
+[[message]]
+name = "audio message"
+layer = "media"
+dscp = 46
+max_size = 65535
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "kind"
+offset = 0
+width = 8
+type = "u8"
+meaning = "kind: 0, audio"
+valid = "0"
+
+[[message.field]]
+name = "length"
+offset = 8
+width = 16
+type = "u16"
+meaning = "length: frames x channels x 4, the samples that follow; the channel count is length / (frames x 4) and must equal the manifest's channel map"
+valid = "1 152 in a default slice (48 frames x 6 channels x 4); at most 65 535"
+
+[[message.field]]
+name = "sample"
+offset = 24
+width = 32
+type = "f32"
+count = "length"
+max_count = 16383
+meaning = "one 4-byte sample, f32 or Q1.31 as the stream's manifest declares (004-26, C-03); the samples run channel by channel, frames x 4 bytes per channel (192 per channel per default slice, C-04), channels in the manifest's channel-map order with no per-channel id byte; the count is length / 4"
+valid = "at most 16 383 samples (65 532 bytes); 1 to 341 channels at the default 48 frames"
+
+[[message]]
+name = "dense controller message"
+layer = "media"
+dscp = 46
+max_size = 65538
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "kind"
+offset = 0
+width = 8
+type = "u8"
+meaning = "kind: 1, dense controllers"
+valid = "1"
+
+[[message.field]]
+name = "length"
+offset = 8
+width = 16
+type = "u16"
+meaning = "length: 3 + count x (frames / stride) x 4, the body that follows"
+valid = "195 for one controller at one value per frame in a default slice; at most 65 535"
+
+[[message.field]]
+name = "count"
+offset = 24
+width = 8
+type = "u8"
+meaning = "count: how many dense controllers this message carries, continuing the manifest's controller map from the previous dense message of the slice"
+valid = "1 to 255"
+
+[[message.field]]
+name = "stride"
+offset = 32
+width = 16
+type = "u16"
+meaning = "stride: frames per value; 1 is one value per frame, a larger stride is the stated sub-rate (96 000 / stride values per second)"
+valid = "1 to frames, dividing frames"
+
+[[message.field]]
+name = "value"
+offset = 48
+width = 32
+type = "f32"
+count = "length"
+max_count = 16383
+meaning = "one 4-byte value in the stream's sample format, f32 or Q1.31 (004-26); the values run controller by controller, (frames / stride) x 4 bytes per controller (192 at one value per frame in a default slice), in controller-map order with no id; no initial-value field (C-158); the count is (length - 3) / 4"
+valid = "count x (frames / stride) values, at most 16 383 (65 532 bytes); count at most 255"
