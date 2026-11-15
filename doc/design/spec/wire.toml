@@ -717,6 +717,177 @@ max_count = 16383
 meaning = "one 4-byte value in the stream's sample format, f32 or Q1.31 (004-26); the values run controller by controller, (frames / stride) x 4 bytes per controller (192 at one value per frame in a default slice), in controller-map order with no id; no initial-value field (C-158); the count is (length - 3) / 4"
 valid = "count x (frames / stride) values, at most 16 383 (65 532 bytes); count at most 255"
 
+# Sparse keyed controllers and transport state (ticket 004-12): wire.md's
+# "Sparse keyed controllers and transport state" field tables are the
+# human-readable authority. Both messages start with the 3-byte common
+# header and carry no section_of, for the reason the content-message
+# comment above gives. The sparse entries are one 8-byte element counted by
+# the count field, max_count = 128, so max_size = 3 + 1 + 128 x 8 = 1 028
+# bytes; the entry's own layout is the "sparse keyed entry" message below
+# (the announcement entry's precedent). The schema has no blob type, so the
+# counted entry is declared u64 and the target value f32, which stands for
+# either sample format, f32 or Q1.31, as the stream's manifest declares
+# (004-26). The transport state message is 30 bytes, fixed.
+
+[[message]]
+name = "sparse keyed controller message"
+layer = "media"
+dscp = 46
+max_size = 1028
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "kind"
+offset = 0
+width = 8
+type = "u8"
+meaning = "kind: 2, sparse keyed controllers"
+valid = "2"
+
+[[message.field]]
+name = "length"
+offset = 8
+width = 16
+type = "u16"
+meaning = "length: 1 + count x 8, the body that follows"
+valid = "9 to 1 025; any other value, or one that disagrees with the count, is BadLength"
+
+[[message.field]]
+name = "count"
+offset = 24
+width = 8
+type = "u8"
+meaning = "count: how many entries follow the count field"
+valid = "1 to 128; 0 or above 128 is BadLength"
+
+[[message.field]]
+name = "entry"
+offset = 32
+width = 64
+type = "u64"
+meaning = "one 8-byte sparse keyed entry, laid out as the [[message]] sparse keyed entry below: voice key 1 byte, field id 1 byte, start offset 2 bytes, target value 4 bytes; entries are back to back with no separator"
+valid = "count entries, at most 128 (1 024 bytes); no (voice, field) twice in one slice"
+count = "count"
+max_count = 128
+
+[[message]]
+name = "sparse keyed entry"
+layer = "media"
+dscp = 46
+max_size = 8
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "voice_key"
+offset = 0
+width = 8
+type = "u8"
+meaning = "voice key: which voice of the stream the entry moves, a key the producer allocates"
+valid = "0 to 255; every value is a valid key"
+
+[[message.field]]
+name = "field_id"
+offset = 8
+width = 8
+type = "u8"
+meaning = "field id: which field of the voice the entry moves, an index into the stream's sparse field map in the manifest (004-26)"
+valid = "a field id the stream's sparse field map declares; any other is BadLength"
+
+[[message.field]]
+name = "start_offset"
+offset = 16
+width = 16
+type = "u16"
+meaning = "start offset: the frame of the slice at which the linear ramp starts, counted from the slice's first frame; the ramp reaches the target at the slice's last frame"
+valid = "0 to frames - 1 (0 to 47 in a default slice, C-02); frames or above is BadLength"
+
+[[message.field]]
+name = "target_value"
+offset = 32
+width = 32
+type = "f32"
+meaning = "target value in the stream's sample format, f32 or Q1.31 as its manifest declares (004-26, C-03): the value the field reaches at the slice's last frame"
+valid = "any 32-bit pattern"
+
+[[message]]
+name = "transport state message"
+layer = "media"
+dscp = 46
+max_size = 30
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "kind"
+offset = 0
+width = 8
+type = "u8"
+meaning = "kind: 3, transport state, read-only"
+valid = "3"
+
+[[message.field]]
+name = "length"
+offset = 8
+width = 16
+type = "u16"
+meaning = "length: 27, the body that follows"
+valid = "27; any other value is BadLength"
+
+[[message.field]]
+name = "state"
+offset = 24
+width = 8
+type = "u8"
+meaning = "state: 0 stopped, 1 playing"
+valid = "0 or 1; any other value is BadLength"
+
+[[message.field]]
+name = "meter_numerator"
+offset = 32
+width = 8
+type = "u8"
+meaning = "meter numerator: beats per bar"
+valid = "1 to 255; 0 is BadLength"
+
+[[message.field]]
+name = "meter_denominator"
+offset = 40
+width = 8
+type = "u8"
+meaning = "meter denominator: the note value of one beat, 4 for a quarter note"
+valid = "1, 2, 4, 8, 16, 32, 64 or 128; any other value is BadLength"
+
+[[message.field]]
+name = "tempo"
+offset = 48
+width = 32
+type = "u32"
+meaning = "tempo in beats per minute, unsigned Q16.16: 65 536 units per bpm, so 7 864 320 = 120 beats per minute (C-199)"
+valid = "1 to 4 294 967 295; 0 is BadLength"
+
+[[message.field]]
+name = "beat_playhead"
+offset = 80
+width = 64
+type = "i64"
+meaning = "beat playhead: the transport's position in beats at the slice's first frame, signed Q32.32; while playing it advances by floor(n x tempo x 65 536 / 5 760 000) over n frames"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "time_code_position"
+offset = 144
+width = 64
+type = "i64"
+meaning = "time code position: the transport's timeline position at the slice's first frame, in samples at 96 000 Hz (C-01), advancing one per frame while playing"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "bar_origin"
+offset = 208
+width = 32
+type = "i32"
+meaning = "bar origin: the beat at which bar 0 starts under the current meter, in whole beats, scaled by 2^32 when compared with the Q32.32 beat playhead: bar = floor((beat playhead - origin x 2^32) / (numerator x 2^32)), in 128-bit signed arithmetic"
+valid = "any 32-bit value"
+
 # Sync request and reply (ticket 004-19): the machine-readable copy of
 # wire.md's "Sync request and reply" section, which is the authority. Both
 # messages are 74 bytes; the request reaches the reply's size by explicit
