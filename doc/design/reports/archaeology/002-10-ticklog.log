@@ -1,0 +1,430 @@
+# 002-10 evidence (second set of runs, after review finding 1): ticklog lines of the mixer and the sender, the flood probe summaries, the acceptance counters and the derived statistics.
+# Scratch copy: /home/dorian/workspace/hadronyche/poc-scratch at HEAD 2f29eba (002-07 hoplog) with the ticklog patch 002-10-scratch.diff applied for the runs and reverted afterwards; poc-untouched-equivalent otherwise.
+# Three baseline/flooded run pairs, each run `hadropoc loopback --duration 30 --no-tui` on its own isolated group and port, 239.72.68.44:<group port>, --port <port>:
+#   run 1: baseline group 44420 port 45500; flooded group 44421 port 45600
+#   run 2: baseline group 44422 port 45700; flooded group 44423 port 45800
+#   run 3: baseline group 44424 port 45900; flooded group 44425 port 46000
+#   flooded runs: flood-send --target 127.0.0.1:<port+31> --rate 20000 --duration 28 --session <sender id> --ack-seq <sender id>
+#   (the sender id is the one the ticklog prints at thread start, `ticklog module=sender id=<n>`; the flood starts 1.5 s after it)
+# All 6 runs exit 0 (the status of each was checked; for the flooded runs via flooded*.sh, which prints `poc exit=0`) and the flood probe reports 0 send errors in each flooded run.
+# Ticklog line fields: inN = datagrams received on input N in the 1 s window; inN_len = smallest..largest datagram length in bytes;
+#   inN_audio = datagrams carrying an audio message; inN_ok = audio messages accepted by the mixer's `ok` length/format check (mixer.rs:93-98, poc-untouched);
+#   inN_mixed = feed payloads for which audio::mix returned Some (summed); inN_echo_full / inN_echo_hdr = echoes sent with / without an audio message (len > HDR).
+#   An absent counter means 0. *_cum_* figures are cumulative since the module's first datagram (1 us histogram buckets, exact max).
+
+
+== flood probe, run 1 ==
+flood: datagram 9421 bytes (audio payload 9264 bytes)
+flood: t=1.0s sent=20001 achieved=20001 datagrams per second
+flood: t=2.0s sent=40001 achieved=20000 datagrams per second
+flood: t=3.0s sent=60001 achieved=20000 datagrams per second
+flood: t=4.0s sent=80001 achieved=20000 datagrams per second
+flood: t=5.0s sent=100001 achieved=20000 datagrams per second
+flood: t=6.0s sent=120001 achieved=20000 datagrams per second
+flood: t=7.0s sent=140001 achieved=20000 datagrams per second
+flood: t=8.0s sent=160001 achieved=20000 datagrams per second
+flood: t=9.0s sent=180001 achieved=20000 datagrams per second
+flood: t=10.0s sent=200001 achieved=20000 datagrams per second
+flood: t=11.0s sent=220001 achieved=20000 datagrams per second
+flood: t=12.0s sent=240001 achieved=20000 datagrams per second
+flood: t=13.0s sent=260001 achieved=20000 datagrams per second
+flood: t=14.0s sent=280001 achieved=20000 datagrams per second
+flood: t=15.0s sent=300001 achieved=20000 datagrams per second
+flood: t=16.0s sent=320001 achieved=20000 datagrams per second
+flood: t=17.0s sent=339987 achieved=19999 datagrams per second
+flood: t=18.0s sent=360001 achieved=20000 datagrams per second
+flood: t=19.0s sent=380001 achieved=20000 datagrams per second
+flood: t=20.0s sent=400001 achieved=20000 datagrams per second
+flood: t=21.0s sent=420001 achieved=20000 datagrams per second
+flood: t=22.0s sent=440001 achieved=20000 datagrams per second
+flood: t=23.0s sent=459998 achieved=19999 datagrams per second
+flood: t=24.0s sent=480001 achieved=20000 datagrams per second
+flood: t=25.0s sent=500001 achieved=20000 datagrams per second
+flood: t=26.0s sent=520001 achieved=20000 datagrams per second
+flood: t=27.0s sent=540001 achieved=20000 datagrams per second
+flood: t=28.0s sent=560001 achieved=20000 datagrams per second
+flood: sent 560001 datagrams in 28.000s, achieved 20000 datagrams per second (target 20000), 0 send errors
+
+
+== flood probe, run 2 (first line, last 2 lines) ==
+flood: datagram 9421 bytes (audio payload 9264 bytes)
+flood: t=28.0s sent=560001 achieved=20000 datagrams per second
+flood: sent 560001 datagrams in 28.000s, achieved 20000 datagrams per second (target 20000), 0 send errors
+
+
+== flood probe, run 3 (first line, last 2 lines) ==
+flood: datagram 9421 bytes (audio payload 9264 bytes)
+flood: t=28.0s sent=560001 achieved=20000 datagrams per second
+flood: sent 560001 datagrams in 28.000s, achieved 20000 datagrams per second (target 20000), 0 send errors
+
+
+== run 1 baseline: thread ids ==
+ticklog module=synth1 id=3167014723
+ticklog module=synth2 id=3188784063
+ticklog module=mixer id=3119978653
+ticklog module=sender id=3027441513
+
+== run 1 baseline ticklog: mixer (every 1 s window) ==
+[   0.0s] ticklog module=mixer in0=1885 in0_len=9421..9421 in0_audio=1885 in0_ok=1885 in0_mixed=1885 in0_echo_full=1885 in1=1883 in1_len=6513..6513 in1_audio=1883 in1_ok=1883 in1_echo_full=1883 in2=1883 in2_len=6513..6513 in2_audio=1883 in2_ok=1883 in2_echo_full=1883 wake_n=5651 wake_p50_us=5.0 wake_p99_us=44.0 wake_max_us=210.355 wake_cum_n=5651 wake_cum_p50_us=5.0 wake_cum_p99_us=44.0 wake_cum_max_us=210.355
+[   1.0s] ticklog module=mixer in0=1999 in0_len=9421..9533 in0_audio=1999 in0_ok=1999 in0_mixed=1999 in0_echo_full=1999 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=5999 wake_p50_us=7.0 wake_p99_us=43.0 wake_max_us=326.123 wake_cum_n=11650 wake_cum_p50_us=6.0 wake_cum_p99_us=44.0 wake_cum_max_us=326.123
+[   2.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=45.0 wake_max_us=1126.955 wake_cum_n=17650 wake_cum_p50_us=7.0 wake_cum_p99_us=44.0 wake_cum_max_us=1126.955
+[   3.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=1999 in2_len=6513..6513 in2_audio=1999 in2_ok=1999 in2_echo_full=1999 wake_n=5999 wake_p50_us=8.0 wake_p99_us=45.0 wake_max_us=381.637 wake_cum_n=23649 wake_cum_p50_us=7.0 wake_cum_p99_us=44.0 wake_cum_max_us=1126.955
+[   4.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=45.0 wake_max_us=1183.331 wake_cum_n=29649 wake_cum_p50_us=7.0 wake_cum_p99_us=45.0 wake_cum_max_us=1183.331
+[   5.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2001 in2_len=6513..6513 in2_audio=2001 in2_ok=2001 in2_echo_full=2001 wake_n=6001 wake_p50_us=9.0 wake_p99_us=42.0 wake_max_us=356.879 wake_cum_n=35650 wake_cum_p50_us=8.0 wake_cum_p99_us=44.0 wake_cum_max_us=1183.331
+[   6.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=1999 in2_len=6513..6513 in2_audio=1999 in2_ok=1999 in2_echo_full=1999 wake_n=5999 wake_p50_us=9.0 wake_p99_us=48.0 wake_max_us=363.410 wake_cum_n=41649 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1183.331
+[   7.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2001 in2_len=6513..6513 in2_audio=2001 in2_ok=2001 in2_echo_full=2001 wake_n=6001 wake_p50_us=9.0 wake_p99_us=51.0 wake_max_us=377.743 wake_cum_n=47650 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1183.331
+[   8.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=42.0 wake_max_us=1112.390 wake_cum_n=53650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1183.331
+[   9.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=1999 in2_len=6513..6513 in2_audio=1999 in2_ok=1999 in2_echo_full=1999 wake_n=5999 wake_p50_us=9.0 wake_p99_us=54.0 wake_max_us=1417.983 wake_cum_n=59649 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  10.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2001 in2_len=6513..6513 in2_audio=2001 in2_ok=2001 in2_echo_full=2001 wake_n=6001 wake_p50_us=9.0 wake_p99_us=51.0 wake_max_us=1339.769 wake_cum_n=65650 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  11.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=46.0 wake_max_us=338.849 wake_cum_n=71650 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  12.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=43.0 wake_max_us=177.875 wake_cum_n=77650 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  13.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=1999 in1_len=6513..6513 in1_audio=1999 in1_ok=1999 in1_echo_full=1999 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=5999 wake_p50_us=8.0 wake_p99_us=42.0 wake_max_us=122.486 wake_cum_n=83649 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  14.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2001 in1_len=6513..6513 in1_audio=2001 in1_ok=2001 in1_echo_full=2001 in2=1999 in2_len=6513..6513 in2_audio=1999 in2_ok=1999 in2_echo_full=1999 wake_n=6000 wake_p50_us=8.0 wake_p99_us=44.0 wake_max_us=319.413 wake_cum_n=89649 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  15.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=45.0 wake_max_us=1234.564 wake_cum_n=95649 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  16.0s] ticklog module=mixer in0=2000 in0_len=9421..9469 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=49.0 wake_max_us=1263.542 wake_cum_n=101649 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  17.0s] ticklog module=mixer in0=2000 in0_len=9421..9533 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2001 in2_len=6513..6513 in2_audio=2001 in2_ok=2001 in2_echo_full=2001 wake_n=6001 wake_p50_us=9.0 wake_p99_us=46.0 wake_max_us=538.889 wake_cum_n=107650 wake_cum_p50_us=8.0 wake_cum_p99_us=46.0 wake_cum_max_us=1417.983
+[  18.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=40.0 wake_max_us=320.265 wake_cum_n=113650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1417.983
+[  19.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=44.0 wake_max_us=561.600 wake_cum_n=119650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1417.983
+[  20.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=42.0 wake_max_us=1327.930 wake_cum_n=125650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1417.983
+[  21.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=40.0 wake_max_us=1720.627 wake_cum_n=131650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  22.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=1999 in2_len=6513..6513 in2_audio=1999 in2_ok=1999 in2_echo_full=1999 wake_n=5999 wake_p50_us=8.0 wake_p99_us=47.0 wake_max_us=956.319 wake_cum_n=137649 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  23.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=1999 in1_len=6513..6513 in1_audio=1999 in1_ok=1999 in1_echo_full=1999 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=5999 wake_p50_us=8.0 wake_p99_us=40.0 wake_max_us=333.328 wake_cum_n=143648 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  24.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2001 in1_len=6513..6513 in1_audio=2001 in1_ok=2001 in1_echo_full=2001 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6001 wake_p50_us=8.0 wake_p99_us=47.0 wake_max_us=333.345 wake_cum_n=149649 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  25.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2001 in2_len=6513..6513 in2_audio=2001 in2_ok=2001 in2_echo_full=2001 wake_n=6001 wake_p50_us=8.0 wake_p99_us=44.0 wake_max_us=568.223 wake_cum_n=155650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  26.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=52.0 wake_max_us=1278.381 wake_cum_n=161650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  27.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=47.0 wake_max_us=1283.101 wake_cum_n=167650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  28.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=9.0 wake_p99_us=123.0 wake_max_us=1289.634 wake_cum_n=173650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+[  29.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=8.0 wake_p99_us=41.0 wake_max_us=131.171 wake_cum_n=179650 wake_cum_p50_us=8.0 wake_cum_p99_us=45.0 wake_cum_max_us=1720.627
+
+== run 1 baseline ticklog: sender (every 1 s window) ==
+[   0.0s] ticklog module=sender in0=5649 in0_len=482..6706 wake_n=5649 wake_p50_us=18.0 wake_p99_us=69.0 wake_max_us=342.238 wake_cum_n=5649 wake_cum_p50_us=18.0 wake_cum_p99_us=69.0 wake_cum_max_us=342.238 tick_n=1961 tick_p50_us=3.0 tick_p99_us=9.0 tick_max_us=226.110 tick_cum_n=1961 tick_cum_p50_us=3.0 tick_cum_p99_us=9.0 tick_cum_max_us=226.110
+[   1.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=19.0 wake_p99_us=72.0 wake_max_us=87.481 wake_cum_n=11649 wake_cum_p50_us=18.0 wake_cum_p99_us=72.0 wake_cum_max_us=342.238 tick_n=2000 tick_p50_us=4.0 tick_p99_us=12.0 tick_max_us=1062.328 tick_cum_n=3961 tick_cum_p50_us=4.0 tick_cum_p99_us=12.0 tick_cum_max_us=1062.328
+[   2.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=12.0 wake_p99_us=72.0 wake_max_us=295.393 wake_cum_n=17649 wake_cum_p50_us=16.0 wake_cum_p99_us=72.0 wake_cum_max_us=342.238 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=331.844 tick_cum_n=5961 tick_cum_p50_us=4.0 tick_cum_p99_us=12.0 tick_cum_max_us=1062.328
+[   3.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=6.0 wake_p99_us=63.0 wake_max_us=92.093 wake_cum_n=23649 wake_cum_p50_us=14.0 wake_cum_p99_us=71.0 wake_cum_max_us=342.238 tick_n=2000 tick_p50_us=3.0 tick_p99_us=11.0 tick_max_us=27.578 tick_cum_n=7961 tick_cum_p50_us=4.0 tick_cum_p99_us=12.0 tick_cum_max_us=1062.328
+[   4.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=16.0 wake_p99_us=73.0 wake_max_us=1057.592 wake_cum_n=29649 wake_cum_p50_us=15.0 wake_cum_p99_us=72.0 wake_cum_max_us=1057.592 tick_n=2000 tick_p50_us=4.0 tick_p99_us=14.0 tick_max_us=648.349 tick_cum_n=9961 tick_cum_p50_us=4.0 tick_cum_p99_us=12.0 tick_cum_max_us=1062.328
+[   5.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=7.0 wake_p99_us=73.0 wake_max_us=2029.471 wake_cum_n=35649 wake_cum_p50_us=14.0 wake_cum_p99_us=72.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=3.0 tick_p99_us=13.0 tick_max_us=1664.075 tick_cum_n=11961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[   6.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=11.0 wake_p99_us=74.0 wake_max_us=1173.231 wake_cum_n=41649 wake_cum_p50_us=13.0 wake_cum_p99_us=72.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=787.601 tick_cum_n=13961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[   7.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=13.0 wake_p99_us=74.0 wake_max_us=1434.480 wake_cum_n=47649 wake_cum_p50_us=13.0 wake_cum_p99_us=73.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=14.0 tick_max_us=1071.904 tick_cum_n=15961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[   8.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=17.0 wake_p99_us=74.0 wake_max_us=120.780 wake_cum_n=53649 wake_cum_p50_us=14.0 wake_cum_p99_us=73.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=5.0 tick_p99_us=14.0 tick_max_us=19.525 tick_cum_n=17961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[   9.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=15.0 wake_p99_us=86.0 wake_max_us=137.539 wake_cum_n=59649 wake_cum_p50_us=14.0 wake_cum_p99_us=75.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=5.0 tick_p99_us=15.0 tick_max_us=669.283 tick_cum_n=19961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  10.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=14.0 wake_p99_us=85.0 wake_max_us=102.200 wake_cum_n=65649 wake_cum_p50_us=14.0 wake_cum_p99_us=76.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=5.0 tick_p99_us=14.0 tick_max_us=363.735 tick_cum_n=21961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  11.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=13.0 wake_p99_us=82.0 wake_max_us=236.209 wake_cum_n=71649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=348.183 tick_cum_n=23961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  12.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=11.0 wake_p99_us=73.0 wake_max_us=100.046 wake_cum_n=77649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=12.0 tick_max_us=317.207 tick_cum_n=25961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  13.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=14.0 wake_p99_us=79.0 wake_max_us=127.285 wake_cum_n=83649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=327.525 tick_cum_n=27961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  14.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=21.0 wake_p99_us=80.0 wake_max_us=105.915 wake_cum_n=89649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=14.0 tick_max_us=324.909 tick_cum_n=29961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  15.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=13.0 wake_p99_us=76.0 wake_max_us=1148.430 wake_cum_n=95649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=14.0 tick_max_us=784.154 tick_cum_n=31961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  16.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=14.0 wake_p99_us=73.0 wake_max_us=90.051 wake_cum_n=101649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=166.537 tick_cum_n=33961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  17.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=14.0 wake_p99_us=71.0 wake_max_us=77.054 wake_cum_n=107649 wake_cum_p50_us=14.0 wake_cum_p99_us=78.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=300.757 tick_cum_n=35961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  18.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=13.0 wake_p99_us=82.0 wake_max_us=285.916 wake_cum_n=113649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=320.800 tick_cum_n=37961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  19.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=15.0 wake_p99_us=75.0 wake_max_us=84.935 wake_cum_n=119649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=327.395 tick_cum_n=39961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  20.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=14.0 wake_p99_us=72.0 wake_max_us=320.049 wake_cum_n=125649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=14.0 tick_max_us=1100.709 tick_cum_n=41961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  21.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=32.0 wake_p99_us=82.0 wake_max_us=296.081 wake_cum_n=131649 wake_cum_p50_us=14.0 wake_cum_p99_us=80.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=14.0 tick_max_us=331.823 tick_cum_n=43961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  22.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=27.0 wake_p99_us=77.0 wake_max_us=98.357 wake_cum_n=137649 wake_cum_p50_us=14.0 wake_cum_p99_us=80.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=5.0 tick_p99_us=13.0 tick_max_us=317.784 tick_cum_n=45961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  23.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=15.0 wake_p99_us=71.0 wake_max_us=327.738 wake_cum_n=143649 wake_cum_p50_us=15.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=5.0 tick_p99_us=13.0 tick_max_us=16.941 tick_cum_n=47961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  24.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=13.0 wake_p99_us=65.0 wake_max_us=107.600 wake_cum_n=149649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=326.347 tick_cum_n=49961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  25.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=19.0 wake_p99_us=80.0 wake_max_us=215.326 wake_cum_n=155649 wake_cum_p50_us=15.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=310.566 tick_cum_n=51961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  26.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=12.0 wake_p99_us=81.0 wake_max_us=331.287 wake_cum_n=161649 wake_cum_p50_us=14.0 wake_cum_p99_us=80.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=662.974 tick_cum_n=53961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  27.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=12.0 wake_p99_us=79.0 wake_max_us=333.435 wake_cum_n=167649 wake_cum_p50_us=14.0 wake_cum_p99_us=80.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=1177.992 tick_cum_n=55961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  28.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=12.0 wake_p99_us=73.0 wake_max_us=125.328 wake_cum_n=173649 wake_cum_p50_us=14.0 wake_cum_p99_us=80.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=354.929 tick_cum_n=57961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+[  29.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=16.0 wake_p99_us=74.0 wake_max_us=97.408 wake_cum_n=179649 wake_cum_p50_us=14.0 wake_cum_p99_us=79.0 wake_cum_max_us=2029.471 tick_n=2000 tick_p50_us=4.0 tick_p99_us=13.0 tick_max_us=284.368 tick_cum_n=59961 tick_cum_p50_us=4.0 tick_cum_p99_us=13.0 tick_cum_max_us=1664.075
+
+== run 1 flooded: thread ids ==
+ticklog module=synth1 id=662630847
+ticklog module=synth2 id=1517579019
+ticklog module=mixer id=1548602547
+ticklog module=sender id=1345103997
+
+== run 1 flooded ticklog: mixer (every 1 s window) ==
+[   0.0s] ticklog module=mixer in0=1893 in0_len=9421..9421 in0_audio=1893 in0_ok=1893 in0_mixed=1893 in0_echo_full=1893 in1=1891 in1_len=6513..6513 in1_audio=1891 in1_ok=1891 in1_echo_full=1891 in2=1891 in2_len=6513..6513 in2_audio=1891 in2_ok=1891 in2_echo_full=1891 wake_n=5675 wake_p50_us=7.0 wake_p99_us=53.0 wake_max_us=822.472 wake_cum_n=5675 wake_cum_p50_us=7.0 wake_cum_p99_us=53.0 wake_cum_max_us=822.472
+[   1.0s] ticklog module=mixer in0=10813 in0_len=9421..9533 in0_audio=10813 in0_ok=10813 in0_mixed=10813 in0_echo_full=10813 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=14813 wake_p50_us=6.0 wake_p99_us=267.0 wake_max_us=4010.156 wake_cum_n=20488 wake_cum_p50_us=6.0 wake_cum_p99_us=203.0 wake_cum_max_us=4010.156
+[   2.0s] ticklog module=mixer in0=21907 in0_len=9421..9565 in0_audio=21907 in0_ok=21907 in0_mixed=21907 in0_echo_full=21907 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25907 wake_p50_us=7.0 wake_p99_us=322.0 wake_max_us=2938.039 wake_cum_n=46395 wake_cum_p50_us=7.0 wake_cum_p99_us=282.0 wake_cum_max_us=4010.156
+[   3.0s] ticklog module=mixer in0=21995 in0_len=9421..9565 in0_audio=21995 in0_ok=21995 in0_mixed=21995 in0_echo_full=21995 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25995 wake_p50_us=7.0 wake_p99_us=60.0 wake_max_us=860.929 wake_cum_n=72390 wake_cum_p50_us=7.0 wake_cum_p99_us=194.0 wake_cum_max_us=4010.156
+[   4.0s] ticklog module=mixer in0=21806 in0_len=9421..9565 in0_audio=21806 in0_ok=21806 in0_mixed=21806 in0_echo_full=21806 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25806 wake_p50_us=7.0 wake_p99_us=220.0 wake_max_us=1615.688 wake_cum_n=98196 wake_cum_p50_us=7.0 wake_cum_p99_us=203.0 wake_cum_max_us=4010.156
+[   5.0s] ticklog module=mixer in0=21964 in0_len=9421..9565 in0_audio=21964 in0_ok=21964 in0_mixed=21964 in0_echo_full=21964 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25964 wake_p50_us=7.0 wake_p99_us=95.0 wake_max_us=879.809 wake_cum_n=124160 wake_cum_p50_us=7.0 wake_cum_p99_us=165.0 wake_cum_max_us=4010.156
+[   6.0s] ticklog module=mixer in0=21951 in0_len=9421..9565 in0_audio=21951 in0_ok=21951 in0_mixed=21951 in0_echo_full=21951 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25951 wake_p50_us=7.0 wake_p99_us=85.0 wake_max_us=1667.727 wake_cum_n=150111 wake_cum_p50_us=7.0 wake_cum_p99_us=145.0 wake_cum_max_us=4010.156
+[   7.0s] ticklog module=mixer in0=21897 in0_len=9421..9565 in0_audio=21897 in0_ok=21897 in0_mixed=21897 in0_echo_full=21897 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25897 wake_p50_us=7.0 wake_p99_us=386.0 wake_max_us=1436.647 wake_cum_n=176008 wake_cum_p50_us=7.0 wake_cum_p99_us=189.0 wake_cum_max_us=4010.156
+[   8.0s] ticklog module=mixer in0=21965 in0_len=9421..9565 in0_audio=21965 in0_ok=21965 in0_mixed=21965 in0_echo_full=21965 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25965 wake_p50_us=7.0 wake_p99_us=140.0 wake_max_us=1626.686 wake_cum_n=201973 wake_cum_p50_us=7.0 wake_cum_p99_us=181.0 wake_cum_max_us=4010.156
+[   9.0s] ticklog module=mixer in0=21957 in0_len=9421..9469 in0_audio=21957 in0_ok=21957 in0_mixed=21957 in0_echo_full=21957 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25957 wake_p50_us=7.0 wake_p99_us=171.0 wake_max_us=1520.161 wake_cum_n=227930 wake_cum_p50_us=7.0 wake_cum_p99_us=181.0 wake_cum_max_us=4010.156
+[  10.0s] ticklog module=mixer in0=21767 in0_len=9421..9565 in0_audio=21767 in0_ok=21767 in0_mixed=21767 in0_echo_full=21767 in1=1999 in1_len=6513..6513 in1_audio=1999 in1_ok=1999 in1_echo_full=1999 in2=1998 in2_len=6513..6513 in2_audio=1998 in2_ok=1998 in2_echo_full=1998 wake_n=25764 wake_p50_us=8.0 wake_p99_us=220.0 wake_max_us=2784.921 wake_cum_n=253694 wake_cum_p50_us=7.0 wake_cum_p99_us=186.0 wake_cum_max_us=4010.156
+[  11.0s] ticklog module=mixer in0=21820 in0_len=9421..9565 in0_audio=21820 in0_ok=21820 in0_mixed=21820 in0_echo_full=21820 in1=2001 in1_len=6513..6513 in1_audio=2001 in1_ok=2001 in1_echo_full=2001 in2=2002 in2_len=6513..6513 in2_audio=2002 in2_ok=2002 in2_echo_full=2002 wake_n=25823 wake_p50_us=7.0 wake_p99_us=298.0 wake_max_us=1439.764 wake_cum_n=279517 wake_cum_p50_us=7.0 wake_cum_p99_us=193.0 wake_cum_max_us=4010.156
+[  12.0s] ticklog module=mixer in0=21847 in0_len=9421..9533 in0_audio=21847 in0_ok=21847 in0_mixed=21847 in0_echo_full=21847 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25847 wake_p50_us=7.0 wake_p99_us=132.0 wake_max_us=3964.866 wake_cum_n=305364 wake_cum_p50_us=7.0 wake_cum_p99_us=188.0 wake_cum_max_us=4010.156
+[  13.0s] ticklog module=mixer in0=21788 in0_len=9421..9565 in0_audio=21788 in0_ok=21788 in0_mixed=21788 in0_echo_full=21788 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25788 wake_p50_us=7.0 wake_p99_us=236.0 wake_max_us=2930.773 wake_cum_n=331152 wake_cum_p50_us=7.0 wake_cum_p99_us=190.0 wake_cum_max_us=4010.156
+[  14.0s] ticklog module=mixer in0=21908 in0_len=9421..9565 in0_audio=21908 in0_ok=21908 in0_mixed=21908 in0_echo_full=21908 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25908 wake_p50_us=7.0 wake_p99_us=91.0 wake_max_us=1404.856 wake_cum_n=357060 wake_cum_p50_us=7.0 wake_cum_p99_us=183.0 wake_cum_max_us=4010.156
+[  15.0s] ticklog module=mixer in0=21747 in0_len=9421..9469 in0_audio=21747 in0_ok=21747 in0_mixed=21747 in0_echo_full=21747 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25747 wake_p50_us=7.0 wake_p99_us=175.0 wake_max_us=3953.364 wake_cum_n=382807 wake_cum_p50_us=7.0 wake_cum_p99_us=182.0 wake_cum_max_us=4010.156
+[  16.0s] ticklog module=mixer in0=21963 in0_len=9421..9469 in0_audio=21963 in0_ok=21963 in0_mixed=21963 in0_echo_full=21963 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25963 wake_p50_us=7.0 wake_p99_us=68.0 wake_max_us=1413.457 wake_cum_n=408770 wake_cum_p50_us=7.0 wake_cum_p99_us=170.0 wake_cum_max_us=4010.156
+[  17.0s] ticklog module=mixer in0=21634 in0_len=9421..9533 in0_audio=21634 in0_ok=21634 in0_mixed=21634 in0_echo_full=21634 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25634 wake_p50_us=7.0 wake_p99_us=526.0 wake_max_us=4264.187 wake_cum_n=434404 wake_cum_p50_us=7.0 wake_cum_p99_us=186.0 wake_cum_max_us=4264.187
+[  18.0s] ticklog module=mixer in0=21773 in0_len=9421..9565 in0_audio=21773 in0_ok=21773 in0_mixed=21773 in0_echo_full=21773 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25773 wake_p50_us=7.0 wake_p99_us=472.0 wake_max_us=1409.891 wake_cum_n=460177 wake_cum_p50_us=7.0 wake_cum_p99_us=200.0 wake_cum_max_us=4264.187
+[  19.0s] ticklog module=mixer in0=21780 in0_len=9421..9565 in0_audio=21780 in0_ok=21780 in0_mixed=21780 in0_echo_full=21780 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25780 wake_p50_us=8.0 wake_p99_us=186.0 wake_max_us=3971.633 wake_cum_n=485957 wake_cum_p50_us=7.0 wake_cum_p99_us=199.0 wake_cum_max_us=4264.187
+[  20.0s] ticklog module=mixer in0=21930 in0_len=9421..9565 in0_audio=21930 in0_ok=21930 in0_mixed=21930 in0_echo_full=21930 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25930 wake_p50_us=7.0 wake_p99_us=115.0 wake_max_us=1402.291 wake_cum_n=511887 wake_cum_p50_us=7.0 wake_cum_p99_us=188.0 wake_cum_max_us=4264.187
+[  21.0s] ticklog module=mixer in0=21856 in0_len=9421..9565 in0_audio=21856 in0_ok=21856 in0_mixed=21856 in0_echo_full=21856 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25856 wake_p50_us=7.0 wake_p99_us=187.0 wake_max_us=1519.423 wake_cum_n=537743 wake_cum_p50_us=7.0 wake_cum_p99_us=188.0 wake_cum_max_us=4264.187
+[  22.0s] ticklog module=mixer in0=21916 in0_len=9421..9565 in0_audio=21916 in0_ok=21916 in0_mixed=21916 in0_echo_full=21916 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25916 wake_p50_us=7.0 wake_p99_us=70.0 wake_max_us=1967.994 wake_cum_n=563659 wake_cum_p50_us=7.0 wake_cum_p99_us=183.0 wake_cum_max_us=4264.187
+[  23.0s] ticklog module=mixer in0=21914 in0_len=9421..9565 in0_audio=21914 in0_ok=21914 in0_mixed=21914 in0_echo_full=21914 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25914 wake_p50_us=6.0 wake_p99_us=90.0 wake_max_us=4012.862 wake_cum_n=589573 wake_cum_p50_us=7.0 wake_cum_p99_us=171.0 wake_cum_max_us=4264.187
+[  24.0s] ticklog module=mixer in0=21693 in0_len=9421..9565 in0_audio=21693 in0_ok=21693 in0_mixed=21693 in0_echo_full=21693 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25693 wake_p50_us=7.0 wake_p99_us=113.0 wake_max_us=3503.618 wake_cum_n=615266 wake_cum_p50_us=7.0 wake_cum_p99_us=167.0 wake_cum_max_us=4264.187
+[  25.0s] ticklog module=mixer in0=22000 in0_len=9421..9469 in0_audio=22000 in0_ok=22000 in0_mixed=22000 in0_echo_full=22000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=26000 wake_p50_us=7.0 wake_p99_us=27.0 wake_max_us=132.323 wake_cum_n=641266 wake_cum_p50_us=7.0 wake_cum_p99_us=156.0 wake_cum_max_us=4264.187
+[  26.0s] ticklog module=mixer in0=22000 in0_len=9421..9565 in0_audio=22000 in0_ok=22000 in0_mixed=22000 in0_echo_full=22000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=26000 wake_p50_us=7.0 wake_p99_us=27.0 wake_max_us=78.270 wake_cum_n=667266 wake_cum_p50_us=7.0 wake_cum_p99_us=146.0 wake_cum_max_us=4264.187
+[  27.0s] ticklog module=mixer in0=21873 in0_len=9421..9565 in0_audio=21873 in0_ok=21873 in0_mixed=21873 in0_echo_full=21873 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25873 wake_p50_us=7.0 wake_p99_us=32.0 wake_max_us=3810.028 wake_cum_n=693139 wake_cum_p50_us=7.0 wake_cum_p99_us=141.0 wake_cum_max_us=4264.187
+[  28.0s] ticklog module=mixer in0=21604 in0_len=9421..9533 in0_audio=21604 in0_ok=21604 in0_mixed=21604 in0_echo_full=21604 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=25604 wake_p50_us=7.0 wake_p99_us=436.0 wake_max_us=4006.927 wake_cum_n=718743 wake_cum_p50_us=7.0 wake_cum_p99_us=144.0 wake_cum_max_us=4264.187
+[  29.0s] ticklog module=mixer in0=13032 in0_len=9421..9565 in0_audio=13032 in0_ok=13032 in0_mixed=13032 in0_echo_full=13032 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=17032 wake_p50_us=7.0 wake_p99_us=29.0 wake_max_us=3819.813 wake_cum_n=735775 wake_cum_p50_us=7.0 wake_cum_p99_us=140.0 wake_cum_max_us=4264.187
+
+== run 1 flooded ticklog: sender (every 1 s window) ==
+[   0.0s] ticklog module=sender in0=5676 in0_len=482..6706 wake_n=5676 wake_p50_us=12.0 wake_p99_us=65.0 wake_max_us=323.216 wake_cum_n=5676 wake_cum_p50_us=12.0 wake_cum_p99_us=65.0 wake_cum_max_us=323.216 tick_n=1961 tick_p50_us=3.0 tick_p99_us=9.0 tick_max_us=253.206 tick_cum_n=1961 tick_cum_p50_us=3.0 tick_cum_p99_us=9.0 tick_cum_max_us=253.206
+[   1.0s] ticklog module=sender in0=14825 in0_len=482..6706 wake_n=14825 wake_p50_us=6.0 wake_p99_us=92.0 wake_max_us=1134.911 wake_cum_n=20501 wake_cum_p50_us=7.0 wake_cum_p99_us=89.0 wake_cum_max_us=1134.911 tick_n=2000 tick_p50_us=3.0 tick_p99_us=11.0 tick_max_us=928.492 tick_cum_n=3961 tick_cum_p50_us=3.0 tick_cum_p99_us=10.0 tick_cum_max_us=928.492
+[   2.0s] ticklog module=sender in0=25907 in0_len=482..6706 wake_n=25907 wake_p50_us=6.0 wake_p99_us=268.0 wake_max_us=1327.316 wake_cum_n=46408 wake_cum_p50_us=6.0 wake_cum_p99_us=163.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=364.0 tick_max_us=1327.992 tick_cum_n=5961 tick_cum_p50_us=2.0 tick_cum_p99_us=42.0 tick_cum_max_us=1327.992
+[   3.0s] ticklog module=sender in0=25995 in0_len=482..6706 wake_n=25995 wake_p50_us=6.0 wake_p99_us=84.0 wake_max_us=1242.865 wake_cum_n=72403 wake_cum_p50_us=6.0 wake_cum_p99_us=131.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=69.0 tick_max_us=1015.128 tick_cum_n=7961 tick_cum_p50_us=0.0 tick_cum_p99_us=50.0 tick_cum_max_us=1327.992
+[   4.0s] ticklog module=sender in0=25806 in0_len=482..6706 wake_n=25806 wake_p50_us=6.0 wake_p99_us=131.0 wake_max_us=1229.719 wake_cum_n=98209 wake_cum_p50_us=6.0 wake_cum_p99_us=131.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=146.0 tick_max_us=1280.077 tick_cum_n=9961 tick_cum_p50_us=0.0 tick_cum_p99_us=59.0 tick_cum_max_us=1327.992
+[   5.0s] ticklog module=sender in0=25964 in0_len=482..6706 wake_n=25964 wake_p50_us=6.0 wake_p99_us=92.0 wake_max_us=1292.273 wake_cum_n=124173 wake_cum_p50_us=6.0 wake_cum_p99_us=123.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=15.0 tick_max_us=1192.572 tick_cum_n=11961 tick_cum_p50_us=0.0 tick_cum_p99_us=51.0 tick_cum_max_us=1327.992
+[   6.0s] ticklog module=sender in0=25950 in0_len=482..6706 wake_n=25950 wake_p50_us=6.0 wake_p99_us=126.0 wake_max_us=1286.080 wake_cum_n=150123 wake_cum_p50_us=6.0 wake_cum_p99_us=124.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=113.0 tick_max_us=1079.297 tick_cum_n=13961 tick_cum_p50_us=0.0 tick_cum_p99_us=60.0 tick_cum_max_us=1327.992
+[   7.0s] ticklog module=sender in0=25898 in0_len=482..6706 wake_n=25898 wake_p50_us=6.0 wake_p99_us=203.0 wake_max_us=1304.858 wake_cum_n=176021 wake_cum_p50_us=6.0 wake_cum_p99_us=131.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=296.0 tick_max_us=1255.603 tick_cum_n=15961 tick_cum_p50_us=0.0 tick_cum_p99_us=113.0 tick_cum_max_us=1327.992
+[   8.0s] ticklog module=sender in0=25953 in0_len=482..6706 wake_n=25953 wake_p50_us=6.0 wake_p99_us=102.0 wake_max_us=1275.656 wake_cum_n=201974 wake_cum_p50_us=6.0 wake_cum_p99_us=125.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=15.0 tick_max_us=1122.546 tick_cum_n=17961 tick_cum_p50_us=0.0 tick_cum_p99_us=98.0 tick_cum_max_us=1327.992
+[   9.0s] ticklog module=sender in0=25969 in0_len=482..6706 wake_n=25969 wake_p50_us=6.0 wake_p99_us=139.0 wake_max_us=1296.331 wake_cum_n=227943 wake_cum_p50_us=6.0 wake_cum_p99_us=127.0 wake_cum_max_us=1327.316 tick_n=2000 tick_p50_us=0.0 tick_p99_us=287.0 tick_max_us=1150.800 tick_cum_n=19961 tick_cum_p50_us=0.0 tick_cum_p99_us=136.0 tick_cum_max_us=1327.992
+[  10.0s] ticklog module=sender in0=25769 in0_len=482..6706 wake_n=25769 wake_p50_us=6.0 wake_p99_us=307.0 wake_max_us=1432.698 wake_cum_n=253712 wake_cum_p50_us=6.0 wake_cum_p99_us=134.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=601.0 tick_max_us=1401.930 tick_cum_n=21961 tick_cum_p50_us=0.0 tick_cum_p99_us=175.0 tick_cum_max_us=1401.930
+[  11.0s] ticklog module=sender in0=25818 in0_len=482..6706 wake_n=25818 wake_p50_us=6.0 wake_p99_us=270.0 wake_max_us=1325.700 wake_cum_n=279530 wake_cum_p50_us=6.0 wake_cum_p99_us=137.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=578.0 tick_max_us=1267.289 tick_cum_n=23961 tick_cum_p50_us=0.0 tick_cum_p99_us=205.0 tick_cum_max_us=1401.930
+[  12.0s] ticklog module=sender in0=25848 in0_len=482..6706 wake_n=25848 wake_p50_us=6.0 wake_p99_us=396.0 wake_max_us=1338.370 wake_cum_n=305378 wake_cum_p50_us=6.0 wake_cum_p99_us=143.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=659.0 tick_max_us=1271.977 tick_cum_n=25961 tick_cum_p50_us=0.0 tick_cum_p99_us=237.0 tick_cum_max_us=1401.930
+[  13.0s] ticklog module=sender in0=25787 in0_len=482..6706 wake_n=25787 wake_p50_us=6.0 wake_p99_us=244.0 wake_max_us=1339.338 wake_cum_n=331165 wake_cum_p50_us=6.0 wake_cum_p99_us=148.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=388.0 tick_max_us=1233.042 tick_cum_n=27961 tick_cum_p50_us=0.0 tick_cum_p99_us=257.0 tick_cum_max_us=1401.930
+[  14.0s] ticklog module=sender in0=25908 in0_len=482..6706 wake_n=25908 wake_p50_us=6.0 wake_p99_us=116.0 wake_max_us=1259.782 wake_cum_n=357073 wake_cum_p50_us=6.0 wake_cum_p99_us=144.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=105.0 tick_max_us=1203.129 tick_cum_n=29961 tick_cum_p50_us=0.0 tick_cum_p99_us=245.0 tick_cum_max_us=1401.930
+[  15.0s] ticklog module=sender in0=25747 in0_len=482..6706 wake_n=25747 wake_p50_us=6.0 wake_p99_us=370.0 wake_max_us=1293.548 wake_cum_n=382820 wake_cum_p50_us=6.0 wake_cum_p99_us=153.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=460.0 tick_max_us=1210.652 tick_cum_n=31961 tick_cum_p50_us=0.0 tick_cum_p99_us=267.0 tick_cum_max_us=1401.930
+[  16.0s] ticklog module=sender in0=25963 in0_len=482..6706 wake_n=25963 wake_p50_us=6.0 wake_p99_us=132.0 wake_max_us=1287.791 wake_cum_n=408783 wake_cum_p50_us=6.0 wake_cum_p99_us=151.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=282.0 tick_max_us=1334.104 tick_cum_n=33961 tick_cum_p50_us=0.0 tick_cum_p99_us=271.0 tick_cum_max_us=1401.930
+[  17.0s] ticklog module=sender in0=25634 in0_len=482..6706 wake_n=25634 wake_p50_us=6.0 wake_p99_us=183.0 wake_max_us=1277.528 wake_cum_n=434417 wake_cum_p50_us=6.0 wake_cum_p99_us=153.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=248.0 tick_max_us=1164.580 tick_cum_n=35961 tick_cum_p50_us=0.0 tick_cum_p99_us=271.0 tick_cum_max_us=1401.930
+[  18.0s] ticklog module=sender in0=25773 in0_len=482..6706 wake_n=25773 wake_p50_us=6.0 wake_p99_us=132.0 wake_max_us=1281.918 wake_cum_n=460190 wake_cum_p50_us=6.0 wake_cum_p99_us=150.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=123.0 tick_max_us=1326.142 tick_cum_n=37961 tick_cum_p50_us=0.0 tick_cum_p99_us=267.0 tick_cum_max_us=1401.930
+[  19.0s] ticklog module=sender in0=25780 in0_len=482..6706 wake_n=25780 wake_p50_us=6.0 wake_p99_us=125.0 wake_max_us=1237.999 wake_cum_n=485970 wake_cum_p50_us=6.0 wake_cum_p99_us=146.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=59.0 tick_max_us=1097.351 tick_cum_n=39961 tick_cum_p50_us=0.0 tick_cum_p99_us=257.0 tick_cum_max_us=1401.930
+[  20.0s] ticklog module=sender in0=25930 in0_len=482..6706 wake_n=25930 wake_p50_us=6.0 wake_p99_us=123.0 wake_max_us=1223.769 wake_cum_n=511900 wake_cum_p50_us=6.0 wake_cum_p99_us=144.0 wake_cum_max_us=1432.698 tick_n=2000 tick_p50_us=0.0 tick_p99_us=22.0 tick_max_us=1015.801 tick_cum_n=41961 tick_cum_p50_us=0.0 tick_cum_p99_us=250.0 tick_cum_max_us=1401.930
+[  21.0s] ticklog module=sender in0=25855 in0_len=482..6706 wake_n=25855 wake_p50_us=6.0 wake_p99_us=137.0 wake_max_us=1464.146 wake_cum_n=537755 wake_cum_p50_us=6.0 wake_cum_p99_us=143.0 wake_cum_max_us=1464.146 tick_n=2000 tick_p50_us=0.0 tick_p99_us=191.0 tick_max_us=1419.783 tick_cum_n=43961 tick_cum_p50_us=0.0 tick_cum_p99_us=248.0 tick_cum_max_us=1419.783
+[  22.0s] ticklog module=sender in0=25914 in0_len=482..6706 wake_n=25914 wake_p50_us=6.0 wake_p99_us=91.0 wake_max_us=1740.081 wake_cum_n=563669 wake_cum_p50_us=6.0 wake_cum_p99_us=141.0 wake_cum_max_us=1740.081 tick_n=1999 tick_p50_us=0.0 tick_p99_us=187.0 tick_max_us=1465.244 tick_cum_n=45960 tick_cum_p50_us=0.0 tick_cum_p99_us=242.0 tick_cum_max_us=1465.244
+[  23.0s] ticklog module=sender in0=25917 in0_len=482..6706 wake_n=25917 wake_p50_us=6.0 wake_p99_us=86.0 wake_max_us=4001.098 wake_cum_n=589586 wake_cum_p50_us=6.0 wake_cum_p99_us=138.0 wake_cum_max_us=4001.098 tick_n=2001 tick_p50_us=0.0 tick_p99_us=22.0 tick_max_us=3824.915 tick_cum_n=47961 tick_cum_p50_us=0.0 tick_cum_p99_us=230.0 tick_cum_max_us=3824.915
+[  24.0s] ticklog module=sender in0=25693 in0_len=482..6706 wake_n=25693 wake_p50_us=6.0 wake_p99_us=74.0 wake_max_us=606.269 wake_cum_n=615279 wake_cum_p50_us=6.0 wake_cum_p99_us=134.0 wake_cum_max_us=4001.098 tick_n=2000 tick_p50_us=0.0 tick_p99_us=10.0 tick_max_us=325.971 tick_cum_n=49961 tick_cum_p50_us=0.0 tick_cum_p99_us=218.0 tick_cum_max_us=3824.915
+[  25.0s] ticklog module=sender in0=26000 in0_len=482..6706 wake_n=26000 wake_p50_us=6.0 wake_p99_us=74.0 wake_max_us=126.723 wake_cum_n=641279 wake_cum_p50_us=6.0 wake_cum_p99_us=131.0 wake_cum_max_us=4001.098 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=10.878 tick_cum_n=51961 tick_cum_p50_us=0.0 tick_cum_p99_us=209.0 tick_cum_max_us=3824.915
+[  26.0s] ticklog module=sender in0=26000 in0_len=482..6706 wake_n=26000 wake_p50_us=5.0 wake_p99_us=84.0 wake_max_us=138.233 wake_cum_n=667279 wake_cum_p50_us=6.0 wake_cum_p99_us=127.0 wake_cum_max_us=4001.098 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=13.625 tick_cum_n=53961 tick_cum_p50_us=0.0 tick_cum_p99_us=189.0 tick_cum_max_us=3824.915
+[  27.0s] ticklog module=sender in0=25873 in0_len=482..6706 wake_n=25873 wake_p50_us=5.0 wake_p99_us=73.0 wake_max_us=144.332 wake_cum_n=693152 wake_cum_p50_us=6.0 wake_cum_p99_us=124.0 wake_cum_max_us=4001.098 tick_n=2000 tick_p50_us=0.0 tick_p99_us=2.0 tick_max_us=11.499 tick_cum_n=55961 tick_cum_p50_us=0.0 tick_cum_p99_us=171.0 tick_cum_max_us=3824.915
+[  28.0s] ticklog module=sender in0=25604 in0_len=482..6706 wake_n=25604 wake_p50_us=6.0 wake_p99_us=88.0 wake_max_us=3840.230 wake_cum_n=718756 wake_cum_p50_us=6.0 wake_cum_p99_us=122.0 wake_cum_max_us=4001.098 tick_n=2000 tick_p50_us=0.0 tick_p99_us=12.0 tick_max_us=3846.058 tick_cum_n=57961 tick_cum_p50_us=0.0 tick_cum_p99_us=165.0 tick_cum_max_us=3846.058
+[  29.0s] ticklog module=sender in0=17020 in0_len=482..6706 wake_n=17020 wake_p50_us=6.0 wake_p99_us=84.0 wake_max_us=132.335 wake_cum_n=735776 wake_cum_p50_us=6.0 wake_cum_p99_us=121.0 wake_cum_max_us=4001.098 tick_n=2000 tick_p50_us=0.0 tick_p99_us=7.0 tick_max_us=12.037 tick_cum_n=59961 tick_cum_p50_us=0.0 tick_cum_p99_us=145.0 tick_cum_max_us=3846.058
+
+== baseline2 ticklog: mixer (first window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=mixer in0=1893 in0_len=9421..9421 in0_audio=1893 in0_ok=1893 in0_mixed=1893 in0_echo_full=1893 in1=1892 in1_len=6513..6513 in1_audio=1892 in1_ok=1892 in1_echo_full=1892 in2=1891 in2_len=6513..6513 in2_audio=1891 in2_ok=1891 in2_echo_full=1891 wake_n=5676 wake_p50_us=5.0 wake_p99_us=20.0 wake_max_us=194.890 wake_cum_n=5676 wake_cum_p50_us=5.0 wake_cum_p99_us=20.0 wake_cum_max_us=194.890
+[  29.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2001 in2_len=6513..6513 in2_audio=2001 in2_ok=2001 in2_echo_full=2001 wake_n=6001 wake_p50_us=7.0 wake_p99_us=21.0 wake_max_us=2014.642 wake_cum_n=179677 wake_cum_p50_us=6.0 wake_cum_p99_us=20.0 wake_cum_max_us=4196.261
+
+== baseline2 ticklog: sender (first window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=sender in0=5676 in0_len=482..6706 wake_n=5676 wake_p50_us=12.0 wake_p99_us=68.0 wake_max_us=505.553 wake_cum_n=5676 wake_cum_p50_us=12.0 wake_cum_p99_us=68.0 wake_cum_max_us=505.553 tick_n=1961 tick_p50_us=2.0 tick_p99_us=6.0 tick_max_us=43.981 tick_cum_n=1961 tick_cum_p50_us=2.0 tick_cum_p99_us=6.0 tick_cum_max_us=43.981
+[  29.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=30.0 wake_p99_us=70.0 wake_max_us=80.698 wake_cum_n=179676 wake_cum_p50_us=13.0 wake_cum_p99_us=75.0 wake_cum_max_us=505.553 tick_n=2000 tick_p50_us=3.0 tick_p99_us=6.0 tick_max_us=11.085 tick_cum_n=59961 tick_cum_p50_us=3.0 tick_cum_p99_us=6.0 tick_cum_max_us=968.219
+
+== flooded2 ticklog: mixer (first window, a full-flood window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=mixer in0=1894 in0_len=9421..9421 in0_audio=1894 in0_ok=1894 in0_mixed=1894 in0_echo_full=1894 in1=1891 in1_len=6513..6513 in1_audio=1891 in1_ok=1891 in1_echo_full=1891 in2=1891 in2_len=6513..6513 in2_audio=1891 in2_ok=1891 in2_echo_full=1891 wake_n=5676 wake_p50_us=7.0 wake_p99_us=21.0 wake_max_us=142.162 wake_cum_n=5676 wake_cum_p50_us=7.0 wake_cum_p99_us=21.0 wake_cum_max_us=142.162
+[   3.0s] ticklog module=mixer in0=22000 in0_len=9421..9565 in0_audio=22000 in0_ok=22000 in0_mixed=22000 in0_echo_full=22000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=19.0 wake_max_us=110.494 wake_cum_n=72553 wake_cum_p50_us=6.0 wake_cum_p99_us=20.0 wake_cum_max_us=405.302
+[  29.0s] ticklog module=mixer in0=13032 in0_len=9421..9565 in0_audio=13032 in0_ok=13032 in0_mixed=13032 in0_echo_full=13032 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=17032 wake_p50_us=7.0 wake_p99_us=94.0 wake_max_us=3874.825 wake_cum_n=739500 wake_cum_p50_us=6.0 wake_cum_p99_us=27.0 wake_cum_max_us=3874.825
+
+== flooded2 ticklog: sender (first window, a full-flood window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=sender in0=5677 in0_len=482..6706 wake_n=5677 wake_p50_us=20.0 wake_p99_us=90.0 wake_max_us=422.869 wake_cum_n=5677 wake_cum_p50_us=20.0 wake_cum_p99_us=90.0 wake_cum_max_us=422.869 tick_n=1961 tick_p50_us=3.0 tick_p99_us=7.0 tick_max_us=11.803 tick_cum_n=1961 tick_cum_p50_us=3.0 tick_cum_p99_us=7.0 tick_cum_max_us=11.803
+[   3.0s] ticklog module=sender in0=26000 in0_len=482..6706 wake_n=26000 wake_p50_us=5.0 wake_p99_us=84.0 wake_max_us=135.221 wake_cum_n=72565 wake_cum_p50_us=5.0 wake_cum_p99_us=88.0 wake_cum_max_us=422.869 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=10.467 tick_cum_n=7961 tick_cum_p50_us=0.0 tick_cum_p99_us=6.0 tick_cum_max_us=291.195
+[  29.0s] ticklog module=sender in0=17021 in0_len=482..6706 wake_n=17021 wake_p50_us=6.0 wake_p99_us=119.0 wake_max_us=2565.718 wake_cum_n=739501 wake_cum_p50_us=6.0 wake_cum_p99_us=90.0 wake_cum_max_us=2565.718 tick_n=2000 tick_p50_us=0.0 tick_p99_us=8.0 tick_max_us=2333.956 tick_cum_n=59961 tick_cum_p50_us=0.0 tick_cum_p99_us=4.0 tick_cum_max_us=2333.956
+
+== baseline3 ticklog: mixer (first window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=mixer in0=1892 in0_len=9421..9421 in0_audio=1892 in0_ok=1892 in0_mixed=1892 in0_echo_full=1892 in1=1889 in1_len=6513..6513 in1_audio=1889 in1_ok=1889 in1_echo_full=1889 in2=1890 in2_len=6513..6513 in2_audio=1890 in2_ok=1890 in2_echo_full=1890 wake_n=5671 wake_p50_us=5.0 wake_p99_us=15.0 wake_max_us=163.642 wake_cum_n=5671 wake_cum_p50_us=5.0 wake_cum_p99_us=15.0 wake_cum_max_us=163.642
+[  29.0s] ticklog module=mixer in0=2000 in0_len=9421..9565 in0_audio=2000 in0_ok=2000 in0_mixed=2000 in0_echo_full=2000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=6000 wake_p50_us=7.0 wake_p99_us=23.0 wake_max_us=70.126 wake_cum_n=179671 wake_cum_p50_us=7.0 wake_cum_p99_us=28.0 wake_cum_max_us=3847.067
+
+== baseline3 ticklog: sender (first window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=sender in0=5672 in0_len=482..6706 wake_n=5672 wake_p50_us=15.0 wake_p99_us=73.0 wake_max_us=345.561 wake_cum_n=5672 wake_cum_p50_us=15.0 wake_cum_p99_us=73.0 wake_cum_max_us=345.561 tick_n=1961 tick_p50_us=3.0 tick_p99_us=5.0 tick_max_us=28.681 tick_cum_n=1961 tick_cum_p50_us=3.0 tick_cum_p99_us=5.0 tick_cum_max_us=28.681
+[  29.0s] ticklog module=sender in0=6000 in0_len=482..6706 wake_n=6000 wake_p50_us=12.0 wake_p99_us=70.0 wake_max_us=80.691 wake_cum_n=179672 wake_cum_p50_us=13.0 wake_cum_p99_us=75.0 wake_cum_max_us=2801.973 tick_n=2000 tick_p50_us=4.0 tick_p99_us=6.0 tick_max_us=8.811 tick_cum_n=59961 tick_cum_p50_us=4.0 tick_cum_p99_us=8.0 tick_cum_max_us=2380.946
+
+== flooded3 ticklog: mixer (first window, a full-flood window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=mixer in0=1887 in0_len=9421..9421 in0_audio=1887 in0_ok=1887 in0_mixed=1887 in0_echo_full=1887 in1=1885 in1_len=6513..6513 in1_audio=1885 in1_ok=1885 in1_echo_full=1885 in2=1885 in2_len=6513..6513 in2_audio=1885 in2_ok=1885 in2_echo_full=1885 wake_n=5657 wake_p50_us=7.0 wake_p99_us=22.0 wake_max_us=120.835 wake_cum_n=5657 wake_cum_p50_us=7.0 wake_cum_p99_us=22.0 wake_cum_max_us=120.835
+[   3.0s] ticklog module=mixer in0=22000 in0_len=9421..9565 in0_audio=22000 in0_ok=22000 in0_mixed=22000 in0_echo_full=22000 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=26000 wake_p50_us=6.0 wake_p99_us=26.0 wake_max_us=347.758 wake_cum_n=72289 wake_cum_p50_us=6.0 wake_cum_p99_us=26.0 wake_cum_max_us=4929.790
+[  29.0s] ticklog module=mixer in0=13147 in0_len=9421..9565 in0_audio=13147 in0_ok=13147 in0_mixed=13147 in0_echo_full=13147 in1=2000 in1_len=6513..6513 in1_audio=2000 in1_ok=2000 in1_echo_full=2000 in2=2000 in2_len=6513..6513 in2_audio=2000 in2_ok=2000 in2_echo_full=2000 wake_n=17147 wake_p50_us=7.0 wake_p99_us=20.0 wake_max_us=124.241 wake_cum_n=739193 wake_cum_p50_us=7.0 wake_cum_p99_us=26.0 wake_cum_max_us=4929.790
+
+== flooded3 ticklog: sender (first window, a full-flood window, final window, whose *_cum_* figures are the run totals) ==
+[   0.0s] ticklog module=sender in0=5658 in0_len=482..6706 wake_n=5658 wake_p50_us=22.0 wake_p99_us=103.0 wake_max_us=509.088 wake_cum_n=5658 wake_cum_p50_us=22.0 wake_cum_p99_us=103.0 wake_cum_max_us=509.088 tick_n=1961 tick_p50_us=4.0 tick_p99_us=7.0 tick_max_us=52.575 tick_cum_n=1961 tick_cum_p50_us=4.0 tick_cum_p99_us=7.0 tick_cum_max_us=52.575
+[   3.0s] ticklog module=sender in0=26000 in0_len=482..6706 wake_n=26000 wake_p50_us=5.0 wake_p99_us=77.0 wake_max_us=108.092 wake_cum_n=72304 wake_cum_p50_us=5.0 wake_cum_p99_us=84.0 wake_cum_max_us=509.088 tick_n=2000 tick_p50_us=0.0 tick_p99_us=0.0 tick_max_us=14.560 tick_cum_n=7961 tick_cum_p50_us=0.0 tick_cum_p99_us=6.0 tick_cum_max_us=105.200
+[  29.0s] ticklog module=sender in0=17133 in0_len=482..6706 wake_n=17133 wake_p50_us=5.0 wake_p99_us=81.0 wake_max_us=95.138 wake_cum_n=739194 wake_cum_p50_us=5.0 wake_cum_p99_us=84.0 wake_cum_max_us=858.130 tick_n=2000 tick_p50_us=0.0 tick_p99_us=6.0 tick_max_us=9.003 tick_cum_n=59961 tick_cum_p50_us=0.0 tick_cum_p99_us=4.0 tick_cum_max_us=813.085
+
+== derived statistics (python3 analyze.py <baseline> <flooded>; TX pacing lateness from the packet CSV column tx_late_ns, nearest-rank percentiles; ticker and wake figures from the last ticklog window, 1 us bucket resolution, exact max) ==
+
+-- run 1 --
+== baseline
+TX pacing lateness (CSV tx_late_ns): n=60115 median=4.855 us p99=13.844 us max=1664.075 us
+  csv seq range 1..60114, rows with seq>=900000000: 0
+sender windows=30
+  wake_cum (data-thread wake lateness): n=179649 median=14.0 us p99=79.0 us max=2029.471 us
+  tick_cum (ticker lateness): n=59961 median=4.0 us p99=13.0 us max=1664.075 us
+  tick_n per window after the first: min=2000 max=2000
+   in0 datagrams/s over 29 windows after the first: median=6000 min=6000 max=6000; all-window sum=179649
+mixer windows=30
+  wake_cum (data-thread wake lateness): n=179650 median=8.0 us p99=45.0 us max=1720.627 us
+   in0 datagrams/s over 29 windows after the first: median=2000 min=1999 max=2000; all-window sum=59884
+   in1 datagrams/s over 29 windows after the first: median=2000 min=1999 max=2001; all-window sum=59883
+   in2 datagrams/s over 29 windows after the first: median=2000 min=1999 max=2001; all-window sum=59883
+acceptance (mixer input, sums over all ticklog windows):
+  in0: datagrams=59884 audio_found=59884 accepted=59884 rejected=0 mixed=59884 echo_full=59884 echo_hdr_only=0 datagram_len=9421..9565
+  in1: datagrams=59883 audio_found=59883 accepted=59883 rejected=0 mixed=0 echo_full=59883 echo_hdr_only=0 datagram_len=6513..6513
+  in2: datagrams=59883 audio_found=59883 accepted=59883 rejected=0 mixed=0 echo_full=59883 echo_hdr_only=0 datagram_len=6513..6513
+sender ticker per-window p99 (us): max=15.0; windows with p99>=50 us: 0 of 30; per-window max tick (us) worst=1664.1
+== flooded
+TX pacing lateness (CSV tx_late_ns): n=60136 median=0.077 us p99=140.605 us max=3846.058 us
+  csv seq range 1..60135, rows with seq>=900000000: 0
+sender windows=30
+  wake_cum (data-thread wake lateness): n=735776 median=6.0 us p99=121.0 us max=4001.098 us
+  tick_cum (ticker lateness): n=59961 median=0.0 us p99=145.0 us max=3846.058 us
+  tick_n per window after the first: min=1999 max=2001
+   in0 datagrams/s over 29 windows after the first: median=25873 min=14825 max=26000; all-window sum=735776
+mixer windows=30
+  wake_cum (data-thread wake lateness): n=735775 median=7.0 us p99=140.0 us max=4264.187 us
+   in0 datagrams/s over 29 windows after the first: median=21873 min=10813 max=22000; all-window sum=615993
+   in1 datagrams/s over 29 windows after the first: median=2000 min=1999 max=2001; all-window sum=59891
+   in2 datagrams/s over 29 windows after the first: median=2000 min=1998 max=2002; all-window sum=59891
+acceptance (mixer input, sums over all ticklog windows):
+  in0: datagrams=615993 audio_found=615993 accepted=615993 rejected=0 mixed=615993 echo_full=615993 echo_hdr_only=0 datagram_len=9421..9565
+  in1: datagrams=59891 audio_found=59891 accepted=59891 rejected=0 mixed=0 echo_full=59891 echo_hdr_only=0 datagram_len=6513..6513
+  in2: datagrams=59891 audio_found=59891 accepted=59891 rejected=0 mixed=0 echo_full=59891 echo_hdr_only=0 datagram_len=6513..6513
+full-flood windows (mixer in0 >= 21000): 27; mixer in0 median=21897 min=21604 max=22000; sender return in0 median=25898 min=25604 max=26000
+sender ticker per-window p99 (us): max=659.0; windows with p99>=50 us: 18 of 30; per-window max tick (us) worst=3846.1
+
+
+-- run 2 --
+== baseline2
+TX pacing lateness (CSV tx_late_ns): n=60163 median=3.635 us p99=6.885 us max=968.219 us
+  csv seq range 1..60162, rows with seq>=900000000: 0
+sender windows=30
+  wake_cum (data-thread wake lateness): n=179676 median=13.0 us p99=75.0 us max=505.553 us
+  tick_cum (ticker lateness): n=59961 median=3.0 us p99=6.0 us max=968.219 us
+  tick_n per window after the first: min=2000 max=2000
+   in0 datagrams/s over 29 windows after the first: median=6000 min=6000 max=6000; all-window sum=179676
+mixer windows=30
+  wake_cum (data-thread wake lateness): n=179677 median=6.0 us p99=20.0 us max=4196.261 us
+   in0 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59893
+   in1 datagrams/s over 29 windows after the first: median=2000 min=1999 max=2001; all-window sum=59892
+   in2 datagrams/s over 29 windows after the first: median=2000 min=1999 max=2001; all-window sum=59892
+acceptance (mixer input, sums over all ticklog windows):
+  in0: datagrams=59893 audio_found=59893 accepted=59893 rejected=0 mixed=59893 echo_full=59893 echo_hdr_only=0 datagram_len=9421..9565
+  in1: datagrams=59892 audio_found=59892 accepted=59892 rejected=0 mixed=0 echo_full=59892 echo_hdr_only=0 datagram_len=6513..6513
+  in2: datagrams=59892 audio_found=59892 accepted=59892 rejected=0 mixed=0 echo_full=59892 echo_hdr_only=0 datagram_len=6513..6513
+sender ticker per-window p99 (us): max=10.0; windows with p99>=50 us: 0 of 30; per-window max tick (us) worst=968.2
+== flooded2
+TX pacing lateness (CSV tx_late_ns): n=60153 median=0.067 us p99=4.848 us max=2333.956 us
+  csv seq range 1..60152, rows with seq>=900000000: 0
+sender windows=30
+  wake_cum (data-thread wake lateness): n=739501 median=6.0 us p99=90.0 us max=2565.718 us
+  tick_cum (ticker lateness): n=59961 median=0.0 us p99=4.0 us max=2333.956 us
+  tick_n per window after the first: min=2000 max=2000
+   in0 datagrams/s over 29 windows after the first: median=26000 min=14888 max=26000; all-window sum=739501
+mixer windows=30
+  wake_cum (data-thread wake lateness): n=739500 median=6.0 us p99=27.0 us max=3874.825 us
+   in0 datagrams/s over 29 windows after the first: median=22000 min=10877 max=22000; all-window sum=619718
+   in1 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59891
+   in2 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59891
+acceptance (mixer input, sums over all ticklog windows):
+  in0: datagrams=619718 audio_found=619718 accepted=619718 rejected=0 mixed=619718 echo_full=619718 echo_hdr_only=0 datagram_len=9421..9565
+  in1: datagrams=59891 audio_found=59891 accepted=59891 rejected=0 mixed=0 echo_full=59891 echo_hdr_only=0 datagram_len=6513..6513
+  in2: datagrams=59891 audio_found=59891 accepted=59891 rejected=0 mixed=0 echo_full=59891 echo_hdr_only=0 datagram_len=6513..6513
+full-flood windows (mixer in0 >= 21000): 27; mixer in0 median=22000 min=21977 max=22000; sender return in0 median=26000 min=25977 max=26000
+sender ticker per-window p99 (us): max=8.0; windows with p99>=50 us: 0 of 30; per-window max tick (us) worst=2334.0
+
+
+-- run 3 --
+== baseline3
+TX pacing lateness (CSV tx_late_ns): n=60058 median=4.078 us p99=8.124 us max=2380.946 us
+  csv seq range 1..60057, rows with seq>=900000000: 0
+sender windows=30
+  wake_cum (data-thread wake lateness): n=179672 median=13.0 us p99=75.0 us max=2801.973 us
+  tick_cum (ticker lateness): n=59961 median=4.0 us p99=8.0 us max=2380.946 us
+  tick_n per window after the first: min=2000 max=2000
+   in0 datagrams/s over 29 windows after the first: median=6000 min=6000 max=6000; all-window sum=179672
+mixer windows=30
+  wake_cum (data-thread wake lateness): n=179671 median=7.0 us p99=28.0 us max=3847.067 us
+   in0 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59892
+   in1 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59889
+   in2 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59890
+acceptance (mixer input, sums over all ticklog windows):
+  in0: datagrams=59892 audio_found=59892 accepted=59892 rejected=0 mixed=59892 echo_full=59892 echo_hdr_only=0 datagram_len=9421..9565
+  in1: datagrams=59889 audio_found=59889 accepted=59889 rejected=0 mixed=0 echo_full=59889 echo_hdr_only=0 datagram_len=6513..6513
+  in2: datagrams=59890 audio_found=59890 accepted=59890 rejected=0 mixed=0 echo_full=59890 echo_hdr_only=0 datagram_len=6513..6513
+sender ticker per-window p99 (us): max=12.0; windows with p99>=50 us: 0 of 30; per-window max tick (us) worst=2380.9
+== flooded3
+TX pacing lateness (CSV tx_late_ns): n=59910 median=0.073 us p99=4.971 us max=813.085 us
+  csv seq range 1..59909, rows with seq>=900000000: 0
+sender windows=30
+  wake_cum (data-thread wake lateness): n=739194 median=5.0 us p99=84.0 us max=858.13 us
+  tick_cum (ticker lateness): n=59961 median=0.0 us p99=4.0 us max=813.085 us
+  tick_n per window after the first: min=2000 max=2000
+   in0 datagrams/s over 29 windows after the first: median=26000 min=14868 max=26002; all-window sum=739194
+mixer windows=30
+  wake_cum (data-thread wake lateness): n=739193 median=7.0 us p99=26.0 us max=4929.79 us
+   in0 datagrams/s over 29 windows after the first: median=22000 min=10854 max=22000; all-window sum=619423
+   in1 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59885
+   in2 datagrams/s over 29 windows after the first: median=2000 min=2000 max=2000; all-window sum=59885
+acceptance (mixer input, sums over all ticklog windows):
+  in0: datagrams=619423 audio_found=619423 accepted=619423 rejected=0 mixed=619423 echo_full=619423 echo_hdr_only=0 datagram_len=9421..9565
+  in1: datagrams=59885 audio_found=59885 accepted=59885 rejected=0 mixed=0 echo_full=59885 echo_hdr_only=0 datagram_len=6513..6513
+  in2: datagrams=59885 audio_found=59885 accepted=59885 rejected=0 mixed=0 echo_full=59885 echo_hdr_only=0 datagram_len=6513..6513
+full-flood windows (mixer in0 >= 21000): 27; mixer in0 median=22000 min=21778 max=22000; sender return in0 median=26000 min=25778 max=26002
+sender ticker per-window p99 (us): max=7.0; windows with p99>=50 us: 0 of 30; per-window max tick (us) worst=813.1
+
+
+== run 1 per-window p99 figures (us): the degraded episode of the flooded run, against the baseline ==
+-- run 1 flooded --
+window sender_ticker_p99 sender_wake_p99 mixer_wake_p99 mixer_in0
+     0        9       65       53     1893
+     1       11       92      267    10813
+     2      364      268      322    21907
+     3       69       84       60    21995
+     4      146      131      220    21806
+     5       15       92       95    21964
+     6      113      126       85    21951
+     7      296      203      386    21897
+     8       15      102      140    21965
+     9      287      139      171    21957
+    10      601      307      220    21767
+    11      578      270      298    21820
+    12      659      396      132    21847
+    13      388      244      236    21788
+    14      105      116       91    21908
+    15      460      370      175    21747
+    16      282      132       68    21963
+    17      248      183      526    21634
+    18      123      132      472    21773
+    19       59      125      186    21780
+    20       22      123      115    21930
+    21      191      137      187    21856
+    22      187       91       70    21916
+    23       22       86       90    21914
+    24       10       74      113    21693
+    25        0       74       27    22000
+    26        0       84       27    22000
+    27        2       73       32    21873
+    28       12       88      436    21604
+    29        7       84       29    13032
+-- run 1 baseline --
+window sender_ticker_p99 sender_wake_p99 mixer_wake_p99 mixer_in0
+     0        9       69       44     1885
+     1       12       72       43     1999
+     2       13       72       45     2000
+     3       11       63       45     2000
+     4       14       73       45     2000
+     5       13       73       42     2000
+     6       13       74       48     2000
+     7       14       74       51     2000
+     8       14       74       42     2000
+     9       15       86       54     2000
+    10       14       85       51     2000
+    11       13       82       46     2000
+    12       12       73       43     2000
+    13       13       79       42     2000
+    14       14       80       44     2000
+    15       14       76       45     2000
+    16       13       73       49     2000
+    17       13       71       46     2000
+    18       13       82       40     2000
+    19       13       75       44     2000
+    20       14       72       42     2000
+    21       14       82       40     2000
+    22       13       77       47     2000
+    23       13       71       40     2000
+    24       13       65       47     2000
+    25       13       80       44     2000
+    26       13       81       52     2000
+    27       13       79       47     2000
+    28       13       73      123     2000
+    29       13       74       41     2000
+
+== positive control: the PREVIOUS probe (commit eb77442, 9 216-byte audio payload, no channel ids, no controller message) against the same instrument ==
+# run: hadropoc loopback --duration 12 --no-tui --group 239.72.68.44:44426 --port 46100 (ran to completion; exit status not captured); old flood-send --target 127.0.0.1:46131 --rate 20000 --duration 8 (foreign session 0x5EC0F100)
+# flood: sent 160001 datagrams in 8.000s, achieved 20000 datagrams per second (target 20000), 0 send errors
+[   5.0s] ticklog module=mixer in0=21995 in0_len=9312..9565 in0_audio=21995 in0_ok=1999 in0_mixed=1999 in0_echo_full=1999
+-- sums over all mixer windows --
+in0: datagrams=183864 audio_found=183864 accepted=23891 rejected=159973 mixed=23891 echo_full=23891 echo_hdr_only=159973 datagram_len=9312..9565

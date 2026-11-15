@@ -1,0 +1,13 @@
+[package]
+name = "flood-send"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Throwaway probe, not part of the hadronyche-tools crate (C-133). Standalone
+# and dependency-free: it floods one `hadropoc` mixer input with well-formed
+# datagrams at a configurable rate, for the flood test of ticket 002-10.
+
+# standalone throwaway probe (C-133): own workspace so the repository
+# workspace never claims it
+[workspace]

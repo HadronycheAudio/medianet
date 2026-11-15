@@ -1,0 +1,385 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index 56b5615..693a2af 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -13,5 +13,6 @@ pub mod rt;
+ pub mod sender;
+ pub mod stats;
+ pub mod synth;
++pub mod ticklog;
+ pub mod transport;
+ pub mod tui;
+diff --git a/src/mixer.rs b/src/mixer.rs
+index ec20678..f8d8bb0 100644
+--- a/src/mixer.rs
++++ b/src/mixer.rs
+@@ -99,17 +99,31 @@ impl Mixer {
+                 && m.end - m.start == audio::payload_len(m.msg.channels, m.msg.count)
+                 && (feed || m.msg.channels as usize == TRACKS)
+         };
+-        if let Some(m) = audio_msg.filter(ok) {
++        let accepted = audio_msg.filter(ok);
++        // Ticket 002-10 logging: audio message found / accepted by `ok`.
++        if audio_msg.is_some() {
++            crate::ticklog::count(d.input, crate::ticklog::AUDIO);
++        }
++        if accepted.is_some() {
++            crate::ticklog::count(d.input, crate::ticklog::OK);
++        }
++        if let Some(m) = accepted {
+             let (frames, channels) = (m.msg.count as usize, m.msg.channels as usize);
+             let payload = &d.body[m.start..m.end];
+             // This input's block as one channel.
+             let latest = &mut self.inputs[d.input].latest;
+             if feed && fixed {
+-                audio::mix_fixed(payload, channels, frames, &mut self.sum_fixed);
++                // Ticket 002-10 logging: did the feed payload mix?
++                if audio::mix_fixed(payload, channels, frames, &mut self.sum_fixed).is_some() {
++                    crate::ticklog::count(d.input, crate::ticklog::MIXED);
++                }
+                 self.volume.apply_fixed(&mut self.sum_fixed[..frames], h.sample_pos);
+                 latest.iter_mut().zip(&self.sum_fixed[..frames]).for_each(|(o, v)| *o = *v as u32);
+             } else if feed {
+-                audio::mix(payload, channels, frames, &mut self.sum);
++                // Ticket 002-10 logging: did the feed payload mix?
++                if audio::mix(payload, channels, frames, &mut self.sum).is_some() {
++                    crate::ticklog::count(d.input, crate::ticklog::MIXED);
++                }
+                 self.volume.apply(&mut self.sum[..frames], h.sample_pos);
+                 latest.iter_mut().zip(&self.sum[..frames]).for_each(|(o, v)| *o = v.to_bits());
+             } else {
+@@ -173,6 +187,8 @@ impl Mixer {
+             path_delay: h.path_delay,
+         }
+         .encode(&mut self.buf);
++        // Ticket 002-10 logging: echo with or without an audio message.
++        crate::ticklog::count(d.input, if len > HDR { crate::ticklog::ECHO_FULL } else { crate::ticklog::ECHO_HDR });
+         ctx.send(0, &self.buf[..len]);
+         // 002-07 hop 2: rx_lost as written into this echo header, with the
+         // raw little-endian header bytes at offset 72..76 (proto.rs:205).
+diff --git a/src/module.rs b/src/module.rs
+index a3ebce1..bcf352b 100644
+--- a/src/module.rs
++++ b/src/module.rs
+@@ -1625,6 +1625,8 @@ fn spawn_rt<S: Send + 'static>(
+         // per-hop log lines carry the module name (synth1/synth2/mixer/sender).
+         if let Ok(net) = inner.net.try_lock() {
+             crate::hoplog::set_module(&net.me.name);
++            // Ticket 002-10 logging: name the thread for the ticklog too.
++            crate::ticklog::set_module(&net.me.name, id);
+         }
+         let mut buf = vec![0u8; 65536];
+         let mut peer = Peer::new();
+@@ -1638,6 +1640,8 @@ fn spawn_rt<S: Send + 'static>(
+         let mut late = Late(0.0);
+         let period = |t: &Ticker<S>, n: u64| epoch + (n as u128 * t.num as u128 * 1_000_000_000 / t.den as u128) as i64;
+         while !inner.stop.load(Relaxed) {
++            // Ticket 002-10 logging: per-second distribution summary.
++            crate::ticklog::flush();
+             let gen = inner.routes_gen.load(Relaxed);
+             if gen != seen {
+                 if let Ok(r) = inner.routes.try_lock() {
+@@ -1676,6 +1680,9 @@ fn spawn_rt<S: Send + 'static>(
+                     let wake = kts.map(|k| (real_ns() - k).max(0));
+                     late.push(wake.unwrap_or(0), &inner);
+                     inner.datagrams.fetch_add(1, Relaxed);
++                    // Ticket 002-10 logging: wake lateness and input count.
++                    crate::ticklog::wake(wake.unwrap_or(0));
++                    crate::ticklog::input(input, len);
+                     let Some(h) = Header::decode(&buf[..len]) else { continue };
+                     let ctx = ctx!();
+                     let d = Datagram {
+@@ -1702,6 +1709,8 @@ fn spawn_rt<S: Send + 'static>(
+                     n = ((now - epoch) / step.max(1)) as u64 + 1;
+                 } else {
+                     late.push(now - d, &inner);
++                    // Ticket 002-10 logging: tick fire lateness, deadline vs actual.
++                    crate::ticklog::tick(now - d);
+                     (t.fire)(&mut state, n, now - d, &ctx!());
+                     n += 1;
+                 }
+diff --git a/src/ticklog.rs b/src/ticklog.rs
+new file mode 100644
+index 0000000..b9857d9
+--- /dev/null
++++ b/src/ticklog.rs
+@@ -0,0 +1,279 @@
++//! Ticket 002-10 diagnostic logging: once per second, a module's real-time
++//! thread prints a distribution summary of (i) the kernel→userspace wake
++//! lateness of every datagram it received and (ii), when the module has a
++//! ticker, the lateness of every tick fire — deadline vs actual tick time,
++//! the quantity ticket 002-10 measures. Logging only: the accumulators live
++//! beside the POC's state, nothing here changes any behaviour, and the
++//! summary is one line per second on stderr, shaped like the hoplog lines:
++//!
++//! ```text
++//! [<elapsed s>] ticklog module=<name> in0=<n> in0_len=<min>..<max> .. wake_n=<n> wake_p50_us=<x> wake_p99_us=<x> wake_max_us=<x> wake_cum_p50_us=<x> wake_cum_p99_us=<x> wake_cum_max_us=<x> [tick_n=<n> tick_p50_us=<x> tick_p99_us=<x> tick_max_us=<x> tick_cum_...]
++//! ```
++//!
++//! The `_cum_` figures are cumulative since the thread's first datagram. The
++//! mixer additionally counts per input (see `count`): audio messages found,
++//! messages accepted by the mixer's `ok` length/format check, feed payloads
++//! `audio::mix` summed, and echoes with and without an audio message. The
++//! thread prints `ticklog module=<name> id=<session id>` once at start.
++//!
++//! Distributions without sorting: a fixed histogram with 1 µs linear
++//! buckets up to 8191 µs and power-of-two buckets beyond, so a percentile
++//! costs one bucket scan on the real-time thread — no sort, no allocation.
++//! The maximum is kept exactly in nanoseconds.
++
++use std::cell::RefCell;
++use std::time::{Duration, Instant};
++
++/// Linear buckets of 1 µs each: 0 .. 8191 µs.
++const LIN: usize = 8192;
++/// Power-of-two buckets beyond the linear range (8192 µs, 16 ms, ...).
++const LOG: usize = 32;
++const BUCKETS: usize = LIN + LOG;
++/// Input sockets counted per second (the POC's mixer has 3).
++const INPUTS: usize = 8;
++/// Per-input counters (see `count`).
++pub const AUDIO: usize = 0;
++pub const OK: usize = 1;
++pub const MIXED: usize = 2;
++pub const ECHO_FULL: usize = 3;
++pub const ECHO_HDR: usize = 4;
++const COUNTERS: usize = 5;
++const COUNTER_NAMES: [&str; COUNTERS] = ["audio", "ok", "mixed", "echo_full", "echo_hdr"];
++
++thread_local! {
++    static MODULE: RefCell<String> = RefCell::new(String::new());
++    static ACC: RefCell<Acc> = RefCell::new(Acc::new());
++}
++
++struct Acc {
++    inputs: [u64; INPUTS],
++    len_min: [usize; INPUTS],
++    len_max: [usize; INPUTS],
++    counters: [[u64; COUNTERS]; INPUTS],
++    wake: [u64; BUCKETS],
++    wake_max: i64,
++    wake_cum: Vec<u64>,
++    wake_cum_max: i64,
++    tick: [u64; BUCKETS],
++    tick_max: i64,
++    tick_cum: Vec<u64>,
++    tick_cum_max: i64,
++    next: Option<Instant>,
++}
++
++impl Acc {
++    fn new() -> Acc {
++        Acc {
++            inputs: [0; INPUTS],
++            len_min: [usize::MAX; INPUTS],
++            len_max: [0; INPUTS],
++            counters: [[0; COUNTERS]; INPUTS],
++            wake: [0; BUCKETS],
++            wake_max: 0,
++            wake_cum: vec![0; BUCKETS],
++            wake_cum_max: 0,
++            tick: [0; BUCKETS],
++            tick_max: 0,
++            tick_cum: vec![0; BUCKETS],
++            tick_cum_max: 0,
++            next: None,
++        }
++    }
++
++    /// Histogram bucket of a lateness in ns.
++    fn bucket(ns: i64) -> usize {
++        let us = (ns.max(0) / 1000) as usize;
++        if us < LIN {
++            return us;
++        }
++        let r = us / LIN; // >= 1
++        let e = usize::BITS - 1 - r.leading_zeros(); // floor(log2 r)
++        (LIN + e as usize).min(BUCKETS - 1)
++    }
++
++    /// Start of a bucket, in µs (the resolution a percentile is reported at).
++    fn bucket_start_us(bucket: usize) -> f64 {
++        if bucket < LIN {
++            bucket as f64
++        } else {
++            (LIN as f64) * (1u64 << (bucket - LIN)) as f64
++        }
++    }
++
++    /// Value in µs at which the cumulative count reaches `pct` % of `total`.
++    fn percentile(hist: &[u64], total: u64, pct: u64) -> f64 {
++        let mut cum = 0u64;
++        for (b, &c) in hist.iter().enumerate() {
++            cum += c;
++            if cum * 100 >= total * pct {
++                return Acc::bucket_start_us(b);
++            }
++        }
++        Acc::bucket_start_us(BUCKETS - 1)
++    }
++
++    /// Count of a histogram (overflow buckets make 0 impossible for data).
++    fn count(hist: &[u64]) -> u64 {
++        hist.iter().sum()
++    }
++}
++
++
++/// Remember the module name of the current thread (called once when the
++/// module's real-time thread starts) and print its session id.
++pub fn set_module(name: &str, id: u32) {
++    MODULE.with(|m| *m.borrow_mut() = name.to_string());
++    eprintln!("ticklog module={name} id={id}");
++}
++
++/// One datagram was received, `ns` ns after its kernel receive timestamp.
++pub fn wake(ns: i64) {
++    ACC.with(|a| {
++        let mut acc = a.borrow_mut();
++        let bucket = Acc::bucket(ns);
++        acc.wake[bucket] += 1;
++        acc.wake_cum[bucket] += 1;
++        acc.wake_max = acc.wake_max.max(ns);
++        acc.wake_cum_max = acc.wake_cum_max.max(ns);
++    });
++}
++
++/// One datagram of `len` bytes was received on input `idx` of this module.
++pub fn input(idx: usize, len: usize) {
++    if idx < INPUTS {
++        ACC.with(|a| {
++            let mut acc = a.borrow_mut();
++            acc.inputs[idx] += 1;
++            acc.len_min[idx] = acc.len_min[idx].min(len);
++            acc.len_max[idx] = acc.len_max[idx].max(len);
++        });
++    }
++}
++
++/// Bump counter `what` (`AUDIO`, `OK`, ...) of input `idx`.
++pub fn count(idx: usize, what: usize) {
++    if idx < INPUTS {
++        ACC.with(|a| a.borrow_mut().counters[idx][what] += 1);
++    }
++}
++
++/// One ticker fire happened `ns` ns after its deadline.
++pub fn tick(ns: i64) {
++    ACC.with(|a| {
++        let mut acc = a.borrow_mut();
++        let bucket = Acc::bucket(ns);
++        acc.tick[bucket] += 1;
++        acc.tick_cum[bucket] += 1;
++        acc.tick_max = acc.tick_max.max(ns);
++        acc.tick_cum_max = acc.tick_cum_max.max(ns);
++    });
++}
++
++/// Emit the summary line when the current second is over; otherwise cheap.
++pub fn flush() {
++    let now = Instant::now();
++    ACC.with(|a| {
++        let mut acc = a.borrow_mut();
++        let next = acc.next.get_or_insert(now + Duration::from_secs(1));
++        if now < *next {
++            return;
++        }
++        *next += Duration::from_secs(1);
++        emit(&mut acc);
++    });
++}
++
++fn emit(acc: &mut Acc) {
++    let module = MODULE.with(|m| m.borrow().clone());
++    let wake_n = Acc::count(&acc.wake);
++    let tick_n = Acc::count(&acc.tick);
++    if wake_n == 0 && tick_n == 0 {
++        return;
++    }
++    let mut line = format!("[{:>6.1}s] ticklog module={module}", epoch_elapsed_s());
++    for (i, c) in acc.inputs.iter().enumerate() {
++        if *c > 0 {
++            line.push_str(&format!(" in{i}={c} in{i}_len={}..{}", acc.len_min[i], acc.len_max[i]));
++            for (name, v) in COUNTER_NAMES.iter().zip(acc.counters[i]) {
++                if v > 0 {
++                    line.push_str(&format!(" in{i}_{name}={v}"));
++                }
++            }
++        }
++    }
++    if wake_n > 0 {
++        line.push_str(&format!(
++            " wake_n={wake_n} wake_p50_us={:.1} wake_p99_us={:.1} wake_max_us={:.3}",
++            Acc::percentile(&acc.wake, wake_n, 50),
++            Acc::percentile(&acc.wake, wake_n, 99),
++            acc.wake_max as f64 / 1000.0
++        ));
++        let cum = Acc::count(&acc.wake_cum);
++        line.push_str(&format!(
++            " wake_cum_n={cum} wake_cum_p50_us={:.1} wake_cum_p99_us={:.1} wake_cum_max_us={:.3}",
++            Acc::percentile(&acc.wake_cum, cum, 50),
++            Acc::percentile(&acc.wake_cum, cum, 99),
++            acc.wake_cum_max as f64 / 1000.0
++        ));
++    }
++    if tick_n > 0 {
++        line.push_str(&format!(
++            " tick_n={tick_n} tick_p50_us={:.1} tick_p99_us={:.1} tick_max_us={:.3}",
++            Acc::percentile(&acc.tick, tick_n, 50),
++            Acc::percentile(&acc.tick, tick_n, 99),
++            acc.tick_max as f64 / 1000.0
++        ));
++        let cum = Acc::count(&acc.tick_cum);
++        line.push_str(&format!(
++            " tick_cum_n={cum} tick_cum_p50_us={:.1} tick_cum_p99_us={:.1} tick_cum_max_us={:.3}",
++            Acc::percentile(&acc.tick_cum, cum, 50),
++            Acc::percentile(&acc.tick_cum, cum, 99),
++            acc.tick_cum_max as f64 / 1000.0
++        ));
++    }
++    eprintln!("{line}");
++    acc.inputs = [0; INPUTS];
++    acc.len_min = [usize::MAX; INPUTS];
++    acc.len_max = [0; INPUTS];
++    acc.counters = [[0; COUNTERS]; INPUTS];
++    acc.wake = [0; BUCKETS];
++    acc.tick = [0; BUCKETS];
++    acc.wake_max = 0;
++    acc.tick_max = 0;
++}
++
++/// Seconds since this thread's first flush, to shape the line like hoplog's.
++fn epoch_elapsed_s() -> f64 {
++    use std::sync::OnceLock;
++    static EPOCH: OnceLock<Instant> = OnceLock::new();
++    EPOCH.get_or_init(Instant::now).elapsed().as_secs_f64()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn buckets_cover_the_range() {
++        assert_eq!(Acc::bucket(0), 0);
++        assert_eq!(Acc::bucket(999), 0); // < 1 µs
++        assert_eq!(Acc::bucket(1_000_000), 1000); // 1 ms -> the 1 ms bucket
++        assert_eq!(Acc::bucket(8_191_000), 8191); // last linear µs bucket
++        assert_eq!(Acc::bucket(8_192_000), LIN); // first power-of-two bucket
++        assert_eq!(Acc::bucket(16_384_000), LIN + 1);
++        assert_eq!(Acc::bucket(i64::MAX), BUCKETS - 1);
++        assert_eq!(Acc::bucket(-5), 0);
++    }
++
++    #[test]
++    fn percentile_walks_the_histogram() {
++        let mut h = [0u64; BUCKETS];
++        for (i, v) in h.iter_mut().enumerate().take(100) {
++            *v = 1; // buckets 0..99 µs, one sample each
++            let _ = i;
++        }
++        assert_eq!(Acc::percentile(&h, 100, 50), 49.0); // the 50th of 0..99
++        assert_eq!(Acc::percentile(&h, 100, 99), 98.0);
++        assert_eq!(Acc::percentile(&h, 100, 100), 99.0);
++    }
++}
