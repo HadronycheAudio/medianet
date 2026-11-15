@@ -311,23 +311,26 @@ meaning = "example 24-bit sequence number (placeholder; replaced by the real mes
 valid = "0 to 16777215"
 
 # ---------------------------------------------------------------------------
-# Media packet header (ticket 004-06): the machine-readable copy of wire.md's
-# "Media packet header" field table, which is the human-readable authority.
-# Appended after the 004-02 example message, kept separated for merge
-# friendliness.
+# Media packet header (ticket 004-06) plus slice header (ticket 004-08): the
+# machine-readable copies of wire.md's "Media packet header" and "Slice
+# header" field tables, which are the human-readable authorities. Appended
+# after the 004-02 example message, kept separated for merge friendliness.
 #
-# The [[message]] below declares the packet HEADER only: 004-08 (slice header,
-# which adds BadPacketIndex) and 004-13 (checksum, which adds BadChecksum)
-# extend this message and grow its declared max_size; for now max_size is the
-# header's 16 bytes [decision].
+# The [[message]] below declares the packet HEADER plus the SLICE HEADER:
+# the slice-header fields continue at bit 128 (byte 16) and add
+# BadPacketIndex to this message's rejection reasons. 004-09 (in-band
+# announcements), 004-10 (measurement extension) and 004-13 (checksum, which
+# adds BadChecksum) extend this message further and grow its declared
+# max_size; for now max_size is header + slice header = 16 + 22 = 38 bytes
+# [decision].
 # ---------------------------------------------------------------------------
 
 [[message]]
 name = "media packet"
 layer = "media"
 dscp = 46
-max_size = 16
-rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource", "WrongEpoch", "BadLength", "ReservedNonZero"]
+max_size = 38
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "ForeignDomain", "UnconfiguredDomain", "UnknownStream", "UnadmittedSource", "WrongEpoch", "BadLength", "BadPacketIndex", "ReservedNonZero"]
 
 [[message.field]]
 name = "magic"
@@ -401,3 +404,47 @@ type = "uint"
 meaning = "reserved, bits 7..2 of byte 15: senders write zero (004-05 general rule)"
 valid = "0 only"
 reserved = "0"
+
+# Slice header (ticket 004-08): the fields continue the media packet at
+# bit 128 (byte 16), offset for offset with wire.md's "Slice header" table,
+# which is the human-readable authority.
+
+[[message.field]]
+name = "position"
+offset = 128
+width = 64
+type = "u64"
+meaning = "position: the content position of the slice's first frame on the domain line — samples at 96 000 Hz (C-01) counted from the domain epoch in the packet header's timeline epoch (C-10); the position half of the dedup key (rule 9)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "frames"
+offset = 192
+width = 16
+type = "u16"
+meaning = "frames: how many frames of media time the slice spans"
+valid = "1 to 65 535; 48 in the default regime (C-02)"
+
+[[message.field]]
+name = "packet_index"
+offset = 208
+width = 16
+type = "u16"
+meaning = "packet index: this packet's index within its slice, 0-based"
+valid = "0 to packet count − 1 (packet index < packet count)"
+
+[[message.field]]
+name = "packet_count"
+offset = 224
+width = 16
+type = "u16"
+meaning = "packet count: into how many packets the slice is split"
+valid = "1 in the default regime (C-05); 2 to 65 535 in the stamped multi-packet regime"
+
+[[message.field]]
+name = "send_timestamp"
+offset = 240
+width = 64
+type = "u64"
+meaning = "send timestamp of this packet: 64 bits of nanoseconds of the sender's local monotonic clock (wire.md's Send timestamp)"
+valid = "any 64-bit value"

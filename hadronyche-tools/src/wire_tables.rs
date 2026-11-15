@@ -217,9 +217,12 @@ impl Field {
     /// `width` otherwise (the width is per element for counted fields).
     fn occupied_bits(&self, message: &str) -> Result<u64, Error> {
         let elements = self.max_count.unwrap_or(1);
-        self.width
-            .checked_mul(elements)
-            .ok_or_else(|| parse_error(format!("message {message}: field {}: width x max_count overflows u64", self.name)))
+        self.width.checked_mul(elements).ok_or_else(|| {
+            parse_error(format!(
+                "message {message}: field {}: width x max_count overflows u64",
+                self.name
+            ))
+        })
     }
 }
 
@@ -304,7 +307,9 @@ fn parse_error(message: impl std::fmt::Display) -> Error {
 
 /// An integer value out of a TOML value.
 fn as_int(value: &Value, what: &str) -> Result<i64, Error> {
-    value.as_integer().ok_or_else(|| parse_error(format!("{what} must be an integer, got {value:?}")))
+    value
+        .as_integer()
+        .ok_or_else(|| parse_error(format!("{what} must be an integer, got {value:?}")))
 }
 
 /// A non-negative integer value out of a TOML value.
@@ -315,7 +320,9 @@ fn as_u64(value: &Value, what: &str) -> Result<u64, Error> {
 
 /// A string value out of a TOML value.
 fn as_str<'a>(value: &'a Value, what: &str) -> Result<&'a str, Error> {
-    value.as_str().ok_or_else(|| parse_error(format!("{what} must be a string, got {value:?}")))
+    value
+        .as_str()
+        .ok_or_else(|| parse_error(format!("{what} must be a string, got {value:?}")))
 }
 
 /// A required string key.
@@ -330,7 +337,9 @@ fn require_str(table: &toml::Table, key: &str, context: &str) -> Result<String, 
 fn optional_str(table: &toml::Table, key: &str, context: &str) -> Result<Option<String>, Error> {
     match table.get(key) {
         None => Ok(None),
-        Some(value) => as_str(value, &format!("{context}: `{key}`")).map(str::to_owned).map(Some),
+        Some(value) => as_str(value, &format!("{context}: `{key}`"))
+            .map(str::to_owned)
+            .map(Some),
     }
 }
 
@@ -370,8 +379,9 @@ fn check_unit(root: &toml::Table, key: &str, expected: &str) -> Result<(), Error
 /// recorded ([`SizeKey::MaximumSize`]); every other deviation from the schema
 /// is a [`FailureKind::Parse`] error.
 fn parse_model(src: &str) -> Result<Model, Error> {
-    let root =
-        src.parse::<toml::Table>().map_err(|error| parse_error(format!("not valid TOML: {error}")))?;
+    let root = src
+        .parse::<toml::Table>()
+        .map_err(|error| parse_error(format!("not valid TOML: {error}")))?;
     let schema = require_u64(&root, "schema", "the file")?;
     if schema != SCHEMA.unsigned_abs() {
         return Err(parse_error(format!(
@@ -431,13 +441,21 @@ fn parse_rejects(root: &toml::Table) -> Result<Vec<Reject>, Error> {
         }
         let raw = require_u64(table, "value", &context)?;
         let value = u8::try_from(raw).map_err(|_| {
-            parse_error(format!("{context}: `value` = {raw} is outside the u8 range 0..=255"))
+            parse_error(format!(
+                "{context}: `value` = {raw} is outside the u8 range 0..=255"
+            ))
         })?;
         let meaning = require_str(table, "meaning", &context)?;
         if meaning.is_empty() {
-            return Err(parse_error(format!("{context}: `meaning` must be non-empty")));
+            return Err(parse_error(format!(
+                "{context}: `meaning` must be non-empty"
+            )));
         }
-        rejects.push(Reject { name, value, meaning });
+        rejects.push(Reject {
+            name,
+            value,
+            meaning,
+        });
     }
     let mut names: Vec<&str> = rejects.iter().map(|reject| reject.name.as_str()).collect();
     names.sort_unstable();
@@ -449,10 +467,14 @@ fn parse_rejects(root: &toml::Table) -> Result<Vec<Reject>, Error> {
     values.sort_unstable();
     values.dedup();
     if values.len() != rejects.len() {
-        return Err(parse_error("duplicate reject value; u8 values must be unique"));
+        return Err(parse_error(
+            "duplicate reject value; u8 values must be unique",
+        ));
     }
-    let mut declared: Vec<(&str, u8)> =
-        rejects.iter().map(|reject| (reject.name.as_str(), reject.value)).collect();
+    let mut declared: Vec<(&str, u8)> = rejects
+        .iter()
+        .map(|reject| (reject.name.as_str(), reject.value))
+        .collect();
     declared.sort_unstable();
     let mut closed: Vec<(&str, u8)> = REJECT.to_vec();
     closed.sort_unstable();
@@ -493,17 +515,21 @@ fn parse_reserved(root: &toml::Table) -> Result<Vec<Reserved>, Error> {
         let field_context = format!("reserved {name}");
         let message = require_str(table, "message", &field_context)?;
         if message.is_empty() {
-            return Err(parse_error(format!("{field_context}: `message` must be non-empty")));
+            return Err(parse_error(format!(
+                "{field_context}: `message` must be non-empty"
+            )));
         }
         let width = require_u64(table, "width", &field_context)?;
         if width == 0 {
-            return Err(parse_error(format!("{field_context}: `width` must be at least 1 bit")));
+            return Err(parse_error(format!(
+                "{field_context}: `width` must be at least 1 bit"
+            )));
         }
         let value = match table.get("value") {
             None => {
                 return Err(parse_error(format!(
                     "{field_context}: missing `value` (the required v1 value)"
-                )))
+                )));
             }
             Some(value) => {
                 if let Some(n) = value.as_integer() {
@@ -519,17 +545,22 @@ fn parse_reserved(root: &toml::Table) -> Result<Vec<Reserved>, Error> {
         };
         let live = match table.get("live") {
             None => None,
-            Some(value) => value.as_bool().map(Some).ok_or_else(|| {
-                parse_error(format!("{field_context}: `live` must be a boolean"))
-            })?,
+            Some(value) => value
+                .as_bool()
+                .map(Some)
+                .ok_or_else(|| parse_error(format!("{field_context}: `live` must be a boolean")))?,
         };
         let meaning = require_str(table, "meaning", &field_context)?;
         if meaning.is_empty() {
-            return Err(parse_error(format!("{field_context}: `meaning` must be non-empty")));
+            return Err(parse_error(format!(
+                "{field_context}: `meaning` must be non-empty"
+            )));
         }
         let outcome = require_str(table, "outcome", &field_context)?;
         if outcome.is_empty() {
-            return Err(parse_error(format!("{field_context}: `outcome` must be non-empty")));
+            return Err(parse_error(format!(
+                "{field_context}: `outcome` must be non-empty"
+            )));
         }
         if live == Some(true) && value == ReservedValue::Int(0) {
             return Err(parse_error(format!(
@@ -557,7 +588,10 @@ fn parse_reserved(root: &toml::Table) -> Result<Vec<Reserved>, Error> {
 
 /// Message names must be unique (the schema's `name` identifies the message).
 fn ensure_unique_names(messages: &[Message]) -> Result<(), Error> {
-    let mut names: Vec<&str> = messages.iter().map(|message| message.name.as_str()).collect();
+    let mut names: Vec<&str> = messages
+        .iter()
+        .map(|message| message.name.as_str())
+        .collect();
     names.sort_unstable();
     names.dedup_by(|a, b| a == b);
     if names.len() != messages.len() {
@@ -570,7 +604,9 @@ fn ensure_unique_names(messages: &[Message]) -> Result<(), Error> {
 fn parse_message(table: &toml::Table, index: usize) -> Result<Message, Error> {
     let name = require_str(table, "name", &format!("message {index}"))?;
     if name.is_empty() {
-        return Err(parse_error(format!("message {index}: `name` must be non-empty")));
+        return Err(parse_error(format!(
+            "message {index}: `name` must be non-empty"
+        )));
     }
     let layer = require_str(table, "layer", &name)?;
     if !LAYERS.contains(&layer.as_str()) {
@@ -619,7 +655,10 @@ fn parse_max_size(table: &toml::Table, name: &str) -> Result<(u64, SizeKey), Err
             Ok((max_size, SizeKey::MaxSize))
         }
         (None, Some(value)) => {
-            let max_size = as_u64(value, &format!("message {name}: `maximum_size` (deprecated spelling of `max_size`)"))?;
+            let max_size = as_u64(
+                value,
+                &format!("message {name}: `maximum_size` (deprecated spelling of `max_size`)"),
+            )?;
             Ok((max_size, SizeKey::MaximumSize))
         }
         (Some(_), Some(_)) => Err(parse_error(format!(
@@ -638,9 +677,11 @@ fn parse_rejection_reasons(table: &toml::Table, name: &str) -> Result<Vec<String
     let value = table
         .get("rejection_reasons")
         .ok_or_else(|| parse_error(format!("message {name}: missing `rejection_reasons`")))?;
-    let entries = value
-        .as_array()
-        .ok_or_else(|| parse_error(format!("message {name}: `rejection_reasons` must be an array of strings")))?;
+    let entries = value.as_array().ok_or_else(|| {
+        parse_error(format!(
+            "message {name}: `rejection_reasons` must be an array of strings"
+        ))
+    })?;
     let mut reasons = Vec::with_capacity(entries.len());
     for entry in entries {
         let reason = as_str(entry, &format!("message {name}: `rejection_reasons` entry"))?;
@@ -663,9 +704,11 @@ fn parse_rejection_reasons(table: &toml::Table, name: &str) -> Result<Vec<String
 fn parse_fields(table: &toml::Table, name: &str) -> Result<Vec<Field>, Error> {
     let entries = match table.get("field") {
         None => return Ok(Vec::new()),
-        Some(value) => value
-            .as_array()
-            .ok_or_else(|| parse_error(format!("message {name}: `field` must be an array of tables")))?,
+        Some(value) => value.as_array().ok_or_else(|| {
+            parse_error(format!(
+                "message {name}: `field` must be an array of tables"
+            ))
+        })?,
     };
     let mut fields = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
@@ -696,7 +739,9 @@ fn parse_field(table: &toml::Table, message: &str, index: usize) -> Result<Field
     let offset = require_u64(table, "offset", &field_context)?;
     let width = require_u64(table, "width", &field_context)?;
     if width == 0 {
-        return Err(parse_error(format!("{field_context}: `width` must be at least 1 bit")));
+        return Err(parse_error(format!(
+            "{field_context}: `width` must be at least 1 bit"
+        )));
     }
     let field_type = require_str(table, "type", &field_context)?;
     if !FIELD_TYPES.contains(&field_type.as_str()) {
@@ -838,7 +883,10 @@ fn check_layout(model: &Model) -> Result<(), Error> {
         for field in &message.fields {
             let bits = field.occupied_bits(&message.name)?;
             let end = field.offset.checked_add(bits).ok_or_else(|| {
-                parse_error(format!("message {}: field {}: offset + bits overflows u64", message.name, field.name))
+                parse_error(format!(
+                    "message {}: field {}: offset + bits overflows u64",
+                    message.name, field.name
+                ))
             })?;
             spans.push((field.offset, end, field.name.as_str()));
         }
@@ -878,7 +926,10 @@ fn check_sizes(model: &Model) -> Result<(), Error> {
         for field in &message.fields {
             let bits = field.occupied_bits(&message.name)?;
             total_bits = total_bits.checked_add(bits).ok_or_else(|| {
-                parse_error(format!("message {}: the field sizes overflow u64", message.name))
+                parse_error(format!(
+                    "message {}: the field sizes overflow u64",
+                    message.name
+                ))
             })?;
         }
         if !total_bits.is_multiple_of(8) {
