@@ -293,7 +293,14 @@ version = 0x0100
 # measurement extension 9, content-message header 3, checksum 4, audio
 # 6 x 48 x 4 = 1152 (C-04). Totals include the audio; spares are the bound
 # less the total. "fallback" is the C-06 path, 1252 bytes of UDP payload;
-# the other cases are the 1472-byte path of C-100.
+# the other cases are the 1472-byte path of C-100. The worst cases are the
+# format's maximum (4 announcements); a v1 sender carries at most one
+# announcement per packet, so its largest unshared packet is the fallback
+# case with one announcement and the extension, 1219 bytes, on every path.
+# The two shared_allowance keys are the bytes the 100-byte cap leaves for a
+# single-stream source's controller messages (C-181): 100 - 63 - 4 = 33 for
+# a stream that could carry the measurement extension, 100 - 54 - 4 = 42
+# for one that could not.
 [budget]
 payload_bound = 1472
 fallback_payload_bound = 1252
@@ -315,10 +322,10 @@ worst_no_extension_total = 1246
 worst_no_extension_spare = 226
 fallback_mandatory_total = 1198
 fallback_mandatory_spare = 54
-fallback_four_announcements_total = 1246
-fallback_four_announcements_spare = 6
-fallback_three_announcements_extension_total = 1243
-fallback_three_announcements_extension_spare = 9
+fallback_1_announcement_extension_total = 1219
+fallback_1_announcement_extension_spare = 33
+shared_allowance_could_carry_extension = 33
+shared_allowance_could_not_carry_extension = 42
 
 # The one example message (ticket 004-02 Work step 4): a placeholder with two
 # fields, so the checker has something to verify. Later tickets (004-06 to
@@ -369,7 +376,10 @@ valid = "0 to 16777215"
 # header + slice header + container + extension = 38 + 1 + 4 x 12 + 9 = 96
 # bytes [decision]. The 4-byte slice checksum (ticket 004-13) trails the
 # content and is declared as its own section message, "slice checksum",
-# below; 96 + 4 = 100 bytes, the C-137 cap [decision].
+# below; 96 + 4 = 100 bytes, the C-137 cap, before the audio message's
+# 3-byte content-message header (004-11), which brings the format's maximum
+# to 103 bytes; a v1 sender carries at most one announcement per packet, so
+# it emits at most 67 (wire.md, Size budget) [decision].
 # ---------------------------------------------------------------------------
 
 [[message]]
