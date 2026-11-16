@@ -200,7 +200,7 @@ When duplication arrives — a later version retransmitting a slice as copies 1 
 
 Every control message carries the authentication reservation (C-12): scheme 8 bits (0 = none) + message counter 64 bits + tag 128 bits — 200 bits in all — placed by 004-16 to 004-18. The reservation is wire space for an authentication scheme a later version may define; v1 defines none `[decision]`. Measurement messages do not carry it: the receiver report and the one-way probe are data-plane messages, which ADR 22 leaves outside the reserved scheme (Receiver report, Authentication reservation) `[decision]`.
 
-In v1 (C-115) the scheme is 0 and the tag is 128 zero bits, while the 64-bit message counter is live: it is the liveness counter, it increments with every control message a source sends, and it carries any value — it is not a reserved zero field, so no rule of this section applies to it `[decision]`.
+In v1 (C-115) the scheme is 0 and the tag is 128 zero bits, while the 64-bit message counter is live: it is the liveness counter, it increments with every control message a source sends while the source's data plane makes progress and stands still while it does not (Hello, Liveness counter), and it carries any value — it is not a reserved zero field, so no rule of this section applies to it `[decision]`.
 
 Receiver outcomes: a scheme other than 0 is a malformed case — the receiver drops the packet and counts it under ReservedNonZero (12); a non-zero tag arriving with scheme 0 is likewise dropped and counted under ReservedNonZero. The counter never produces ReservedNonZero: it is not fixed at zero `[decision]`.
 
@@ -1056,7 +1056,219 @@ wire.toml carries these totals in its `[budget]` table: the two payload bounds, 
 
 ## Hello
 
-To be filled by 004-16 (hello message layout and 32-member size bound).
+The hello is how a module announces itself on the discovery and control layer: who it is, which protocol version it speaks, which ports it offers, what it believes about the clock election, whether an alarm is raised, and which regime stamp it currently publishes `[decision]`. This section fixes the common control header, 32 bytes, that every control message starts with and that 004-17, 004-18, 004-24 and 004-27 reuse, then the hello's own layout, its maxima, its maximum size against the control bound (C-17) and every invalid form with its outcome `[decision]`.
+
+Behaviour the layout serves, restated as fact: a module sends its hello every 1 s (C-30), by UDP over IPv4 (C-100) to the control multicast group with TTL 1, at DSCP CS5 (40) (C-13); the control layer also carries unicast messages, and a hello that arrives by unicast is parsed by the same rules `[decision]`. The hello is binary, with fixed widths and a fixed maximum size, not text: the POC's line-oriented text gossip, each hello starting with the word `HADRO/1` (module.rs, `const WORD: &str = "HADRO/1"` and `Info::hello`), is retired `[code]`. Fixed maxima are what let every module, a small device included, hold its peer map in fixed memory: at most 64 active modules per medianet (C-34), so at most 63 peer entries (C-217) `[decision]`.
+
+The hello carries no IPv4 address and no UDP port: a receiver takes the sender's address from the datagram, and a hello with a new address never redirects a live stream, because destinations are pinned at admission (L-5, 004-18) `[decision]`. It carries no sample rate, because every stream is at the domain rate (C-01), and no DSCP field: every module reads the DSCP of each peer's hellos on receipt and reports it in its regime stamp (C-152), in the section 004-28 lays out `[decision]`. The regime stamp itself is not in the hello: C-18 sends it in its own sectioned control message (004-24), and the hello carries only the stamp's version number, so a peer knows when to fetch it `[decision]`.
+
+### Common control header
+
+Every control message starts with the common control header, 32 bytes: magic, version, domain, message type and the C-12 authentication reservation (scheme, message counter, tag), in that order, little-endian (Byte order) and packed with no padding (Alignment and padding) `[decision]`. Tickets 004-17 (election messages), 004-18 (admission handshake, with the manifest of 004-26), 004-24 (regime stamp sections and the stamp request) and 004-27 (path-MTU probe pair) reuse it unchanged, as does 004-29 for the commissioning window messages: each of their messages starts with these 32 bytes and lays out only what follows them `[decision]`.
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
+| 6 | 1 | u8 | Message type, scoped to the control layer (Control message type codes) | a code assigned in Control message type codes; 0 is never a valid control message |
+| 7 | 1 | u8 | Authentication scheme (C-12); 0 = none in v1 (C-115) | 0 only |
+| 8 | 8 | u64 | Message counter (C-12): live (C-115); in every control message it is the sender's liveness counter (Liveness counter) | any 64-bit value |
+| 16 | 16 | u128 | Authentication tag (C-12): 128 zero bits in v1 (C-115) | 0 only |
+
+The header's fields sum to 2 + 2 + 2 + 1 + 1 + 8 + 16 = 32 bytes, tiling bytes 0 to 31 with no gap `[decision]`. It is the order the sync section already uses for its own header — magic, version, domain, message type, scheme, counter, tag at the same offsets and widths (Sync request and reply, Authentication reservation) — so one header parser serves the control and the sync layer; only the message type's code space differs, each layer scoping it to its own socket (Rejection reasons, Counting model) `[decision]`. The cells agree with the sections that own the fields: the magic and the version sit at offsets 0 and 2 and are read first (Versioning), the scheme and the tag are reserved zero fields whose non-zero values are dropped and counted under ReservedNonZero, and the counter is live and never ReservedNonZero (Reserved fields, Authentication reservation (C-12)) `[decision]`.
+
+### Control message type codes
+
+The message type is one byte scoped to the control layer. This section assigns the hello's code and reserves a block of codes for each ticket that adds control messages, so tickets written in parallel cannot collide; each ticket assigns codes inside its own block and lays its messages out itself `[decision]`:
+
+| Codes | Messages | Assigned by |
+|---|---|---|
+| 0 | none: a zeroed buffer is never a valid control message | this section |
+| 1 | hello | this section |
+| 2 to 15 | election messages | 004-17 |
+| 16 to 31 | admission handshake messages, including those that carry the manifest | 004-18, with 004-26 |
+| 32 to 35 | path-MTU probe pair | 004-27 |
+| 36 to 47 | regime stamp sections and the stamp request | 004-24 |
+| 48 to 51 | commissioning window messages | 004-29 |
+| 52 to 255 | unassigned in v1 | a later version |
+
+A code inside a block that its ticket leaves unassigned is unused in v1, like 52 to 255; a control message whose type is unused, or not one the receiving module expects, is dropped and counted under BadLength, provisionally, as the sync and measurement layers rule for their own message types (Validity rules below) `[decision]`.
+
+### Hello layout
+
+Little-endian (Byte order), packed with no padding (Alignment and padding); offsets are byte distances from the first byte of the UDP payload. Bytes 0 to 31 are the common control header; bytes 32 to 74 are the fixed part, at fixed offsets; the name and the port elements follow at the end, so every fixed field sits at the offset the table states whatever the counts are `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured, ignored and counted (C-173) |
+| 6 | 1 | u8 | Message type: 1 = hello (Control message type codes) | 1 only |
+| 7 | 1 | u8 | Authentication scheme (C-12); 0 = none in v1 (C-115) | 0 only |
+| 8 | 8 | u64 | Message counter (C-12): live (C-115), the sender's data-plane liveness counter (Liveness counter) | any 64-bit value |
+| 16 | 16 | u128 | Authentication tag (C-12): 128 zero bits in v1 (C-115) | 0 only |
+| 32 | 8 | u64 | Module id (C-11) of the sender | any 64-bit value |
+| 40 | 8 | u64 | Instance nonce (C-11): drawn afresh each time the module starts, so two hellos with one module id and two nonces come from two instances (C-46) | any 64-bit value |
+| 48 | 4 | u32 | Capability bits: holder-eligible is bit 0 (Capability bits); bits 1 to 31 are unassigned in v1 | any 32-bit value; senders write 0 in bits 1 to 31, and receivers ignore them |
+| 52 | 4 | u32 | Election epoch: the highest election epoch this module has seen; 0 = no election seen yet (Election and clock fields) | any 32-bit value |
+| 56 | 8 | u64 | Believed holder: the module id (C-11) of the holder this module follows in its election epoch (Election and clock fields) | any 64-bit value; written 0 and ignored while the election epoch is 0 |
+| 64 | 1 | u8 | Time state: 0 = time unusable (Unlocked, C-162), 1 = holdover with the alignment claim not lapsed, 2 = Locked (C-213, C-221; Election and clock fields) | 0 to 2; a receiver reads a value above 2 as 0 |
+| 65 | 2 | u16 | Timeline epoch (C-10): the timeline epoch this module is on (Election and clock fields) | any 16-bit value |
+| 67 | 1 | u8 | Transport role: 0 = none, 1 = follower, 2 = reference, a proposal (Transport role) | 0 to 2; a receiver reads a value above 2 as none |
+| 68 | 1 | u8 | Alarm field: one bit per connection alarm of C-173, bits 0 to 5 (Alarm field) | bits 7..6 zero |
+| 69 | 4 | u32 | Regime stamp version number (C-18): the version of the sender's current regime stamp (Regime stamp version number) | any 32-bit value |
+| 73 | 1 | u8 | Name length: how many bytes of name follow the port count | 1 to 64 |
+| 74 | 1 | u8 | Port count: how many port elements follow the name | 0 to 64 |
+| 75 | 1 × max 64 | u8 | Name: the module's name, UTF-8 (RFC 3629), name length bytes, at most 64 (Name) | valid UTF-8; 1 to 64 bytes |
+| 139 | 7 × max 64 | byte blob of port elements | Port: one port element, 3 + its content-type count bytes and at most 7, laid out as Port element fixes; port count elements back to back with no separator | port count elements, at most 64 (448 bytes) |
+
+The offsets of the two counted rows are those of a hello at its maximum counts, the bound a parser sizes for (Field-table format, rule 2): on the wire the name follows the port count directly at byte 75, and the first port element follows the name's last byte, at byte 75 + name length; each port element follows the one before it with no gap, and the hello ends with the last port element `[decision]`. Every content of the hello the ticket lists has its field here, except the bundle descriptions, which the size verdict below moves to the admission handshake: module id, instance nonce, domain, protocol version, name, capability bits with holder-eligible, ports with content types, election epoch, believed holder, timeline epoch, transport role, alarm field, data-plane liveness counter (the message counter), regime stamp version number and the authentication reservation `[decision]`.
+
+### Name
+
+The name is the module's operator-facing name, encoded UTF-8 as RFC 3629 defines it — at most 4 bytes per character, with overlong forms and surrogate code points invalid (RFC 3629, § 3 UTF-8 definition) `[standard]`. Its maximum is 64 bytes: 64 ASCII characters, or at least 16 characters of any script, which a 63-entry peer map holds in 63 × 64 = 4 032 bytes (C-217) `[decision]`. UTF-8 rather than ASCII because an operator names modules in their own language; validating UTF-8 is a single linear pass with no table, so a small device can check it, while Unicode normalisation would need tables a device cannot hold, so names are compared byte for byte — the comparison listen-before-claim (C-32) and the `NameTaken` refusal of discovery (C-185) use `[decision]`. A name of 0 bytes is invalid: every module has a name `[decision]`.
+
+### Capability bits
+
+Bit 0 is holder-eligible: 1 means the module may stand as a candidate for clock holder, the capability bit ADR 14 puts in the hello; embedded, macOS and Windows nodes write 0 in v1 (01-architecture.md § 2.3) `[decision]`. When a module sets the bit is epic 005's (005-09); whether its time is usable at a given moment (C-213) is carried by the time state, not by this bit (Election and clock fields) `[decision]`.
+
+Bits 1 to 31 are unassigned in v1: senders write 0, and a v1 receiver accepts any value and ignores them `[decision]`. They are deliberately not reserved zero fields under the general rule of Reserved fields: a receiver that dropped a hello for a set bit would turn every later capability into a major change, which is the reasoning the copy index already follows (Reserved fields, Copy index (C-07)); a minor version can therefore assign a bit, for example one of the capabilities the regime stamp lists (01-architecture.md § 11.1), without breaking a v1 receiver `[decision]`. Thirty-two bits hold every capability that list names with room left, for 4 bytes per hello `[decision]`.
+
+### Port element
+
+A port is one of the module's inputs or outputs, as its manifest declares them (004-26); the hello lists each port with the content types it carries, so a requester can choose a source output and a consumer input before any handshake (01-architecture.md § 6.1) `[decision]`. The POC's text hello listed each port with a name, a UDP port and a content bit set (module.rs, `struct Port` and `Info::hello`) `[code]`; v1 carries no port name, which is in the manifest, and no UDP port, because addresses and ports are pinned at admission (L-5, 004-18) `[decision]`. Offsets are relative to the element's first byte, written as in the other element tables; the sub-byte fields of byte 1 are numbered as Bit-field numbering fixes `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Port id: the port's index in the module's port list in its manifest (004-26) | 0 to 255; distinct within one hello |
+| 1 | 1 bit | uint | Direction, bit 0 of byte 1: 0 = input, 1 = output | 0 or 1 |
+| 1 | 7 bits | pad | Reserved, bits 7..1 of byte 1: senders write zero (Reserved fields, General rule for later tickets) | 0 only |
+| 2 | 1 | u8 | Content-type count: how many content types the port carries | 1 to 4 |
+| 3 | 1 × max 4 | u8 | Content types: one content-message kind code per content type the port carries (Content messages, Kind codes), each at most once | content-type count codes, at most 4; codes 0 to 3 in v1 |
+
+A port element is 3 + content-type count bytes, at most 3 + 4 = 7 `[decision]`. The content-type codes are the content-message kind codes — 0 audio, 1 dense controllers, 2 sparse keyed controllers, 3 transport state — so the hello adds no code space of its own; four is the maximum because v1 has exactly these four content domains (01-architecture.md § 12.7) and a port lists each at most once `[decision]`. At most 64 ports per hello: a module that takes one input from every other module of a full medianet and has one output needs 63 + 1 = 64 ports (C-34, C-217) `[decision]`. A module that declares more than 64 ports has no hello form and is refused at compile time by the DSL front end (C-218), or refuses to start when it is not a DSL module; this maximum is an open item (Open items) `[decision]`.
+
+### Election and clock fields
+
+The election epoch is a u32 that only grows: the highest election epoch the module has seen, 0 before any election, and on a merge the higher epoch wins (01-architecture.md § 2.3; ADR 14) `[decision]`. Its width comes from that comparison: an election takes at least one election window of 400 ms (C-33), so even back-to-back elections need 2^32 × 0.4 s, about 54 years, to wrap 32 bits, while 16 bits would wrap after 65 536 × 0.4 s, about 7.3 hours, and a wrap would invert "higher epoch wins"; the comparison is therefore plain unsigned, with no serial arithmetic `[decision]`. Ticket 004-17's election messages carry the election epoch at this width, an open item owned by 004-17 (Open items) `[decision]`.
+
+The believed holder is the module id (C-11) of the holder the module follows in its stated election epoch; while the election epoch is 0 the module believes no holder, writes 0 and receivers ignore the field, so module id 0 stays an ordinary module id `[decision]`. The timeline epoch is the 16-bit epoch of C-10 that the module is on; its wrap is the Media packet header's (Timeline epoch width and wrap), and no rule here compares two epochs `[decision]`. Gossip is election input only: no field of the hello judges the holder, which is judged on sync replies alone (L-3, L-6) `[decision]`.
+
+The time state carries what C-213 and C-221 need to rank a candidate: 2 = Locked, 1 = holdover with the alignment claim not lapsed (C-65, C-169), 0 = time unusable — Unlocked, which is also the state after a holdover claim lapses (C-162) `[decision]`. The values rise with preference, so C-221's ordering — Locked before holdover, then the lowest module id — reads them directly, and a candidate has usable time exactly when the value is 1 or 2 (C-213) `[decision]`. It is carried in the hello because epic 005 reads the candidacy fields, the clock class included, from the hello (005-08, 005-09), and a field added later would be a major change (Versioning) `[decision]`. A receiver reads a value above 2 as 0, never as usable time, so a later state cannot make a module look eligible to a v1 receiver `[decision]`.
+
+### Transport role
+
+The transport role says what part the module takes in the musical transport — whose transport state it follows, or whether it offers itself as the reference that others follow (01-architecture.md § 12.7). The three values are the POC's role set, `Role::None`, `Role::Follower` and `Role::Reference` (module.rs, `enum Role`) `[code]`; v1 keeps them as a proposal, which epic 005 confirms `[decision]`:
+
+| Value | Role | Meaning |
+|---|---|---|
+| 0 | none | the module has no transport capability and takes no part in the transport |
+| 1 | follower | the module follows a transport reference's transport state |
+| 2 | reference | the module offers itself as the transport reference |
+
+Which reference a follower follows, and how several modules offering themselves are reconciled, is epic 005's behaviour, not a field; the change of reference a stream undergoes is carried in-band as a transport reference change announcement, never by gossip (L-2; Announcements) `[decision]`. Values 3 to 255 are unused in v1; a receiver reads one as none, never a rejection, so a role epic 005 adds can be assigned by a minor version `[decision]`.
+
+### Alarm field
+
+The alarm field is one byte, one bit per connection alarm of C-173, bits 0 to 5; bits 7..6 are reserved and written zero, and a non-zero reserved bit is dropped and counted under ReservedNonZero (Reserved fields, General rule for later tickets) `[decision]`. The operator alarm is raised through this field (01-architecture.md § 6.1) `[decision]`:
+
+| Alarm | Bit | Set while (C-173) |
+|---|---|---|
+| Refusal | bit 0 | a connection of this module has been refused and stays refused (C-185) |
+| Interrupted | bit 1 | an input of this module is Interrupted (C-38) |
+| Dead | bit 2 | an input of this module is Dead (C-39) |
+| Demoted | bit 3 | an input of this module is Demoted (C-109) |
+| Cannot-meet-A | bit 4 | the cannot-meet-A alarm is raised on a connection of this module (C-174, C-211) |
+| Control-degraded | bit 5 | the module is control-degraded: its housekeeping restarts have stopped (C-139) |
+
+A bit is 1 while the module has that alarm raised — the first five on at least one of its connections, control-degraded on the module itself — and 0 otherwise `[decision]`. The field is a summary: it says that an alarm is raised, not on which connection; the per-connection detail is in the per-connection counters of the regime stamp (C-47, C-159) `[decision]`. When each alarm is raised and cleared is epic 005's (005-26), and the field encodes whatever that ticket decides as long as each of the six alarms is either raised or not `[decision]`.
+
+### Liveness counter
+
+The message counter of the C-12 reservation doubles as the data-plane liveness counter (C-115): it is how a peer sees that the sender's data plane is alive, and a stalled data plane is visible within 2 hello periods (C-42) `[decision]`. Its v1 rule: the counter is one per module instance, shared by all its control messages; the module adds one to it for each control message it sends while its data thread has made progress since the previous control message, and sends the previous value unchanged when it has not, the progress flag being read without a lock (L-8) `[decision]`. The counter therefore never decreases within one instance nonce, rises with every hello of a module whose data plane runs, and stands still across consecutive hellos, 1 s apart (C-30), exactly when the data plane has stalled; the stall rule itself — the counter unchanged across 2 consecutive hellos — is epic 005's (005-06) `[decision]`.
+
+A counter that goes backwards for the same instance nonce is not a parse rejection: every 64-bit value is valid, so the hello is well formed, and comparing it with an earlier hello needs the discovery map's per-peer state, which no packet rule holds `[decision]`. A conforming sender never sends one, so such a hello is older than one the receiver has already seen — a reordered or duplicated datagram — and carries no liveness progress; what the discovery map does with it is epic 005's (005-06, 005-07) `[decision]`.
+
+### Regime stamp version number
+
+The hello carries only the stamp's version number (C-18): the stamp travels in its own sectioned control message (004-24), multicast on any regime change and refreshed every 10 s, and a unicast request fetches it at once `[decision]`. The version number is a u32 that the sender increments by one, modulo 2^32, on every change of its stamp `[decision]`. A receiver's copy of a peer's regime stamp is stale exactly when the version number in that peer's latest hello differs from the version number of the copy: equality, not order, decides, so a restart that starts the count afresh still triggers a fetch, and the instance nonce changes then as well `[decision]`. Equality can mislead only if the version comes back to the held value between two hellos the receiver reads, which takes 2^32 changes; even at one change per millisecond that is about 49 days of hellos missed, against hellos every 1 s (C-30) and a stamp refreshed every 10 s (C-18) `[decision]`. Where an order is needed — 004-24 discards an incomplete stamp when a newer version arrives — it is serial comparison over half the range: v is newer than u exactly when (v − u) modulo 2^32 lies in 1 to 2^31 − 1; 004-24 uses this width and these two rules (Open items) `[decision]`.
+
+This answers the definition-of-done line for the regime stamp: the only regime stamp field the hello touches is the version number, complete and documented here; the stamp's sections are 004-24's, 004-25's and 004-28's `[decision]`.
+
+### Bundle element
+
+A bundle is a group id, a member list and a channel map, declared in the manifest (01-architecture.md § 7; ADR 02). This table is the description of one bundle that the hello as listed would have carried and that the size verdict below moves to the admission handshake (004-18), where the manifest travels (004-26); it fixes what a description needs, so the ticket that carries it starts from a computed size `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Group id: the bundle's identity within its source, as the manifest declares it (01-architecture.md § 7, 004-26) | 0 to 255; distinct among the source's bundles |
+| 1 | 1 | u8 | Member count: how many members the bundle has, the controller member included (C-08, C-209) | 1 to 32 |
+| 2 | 2 × max 32 | u16 | Member list: the stream number (C-10) of each member at the source, member count entries | 0 to 255 (C-09), distinct; at most 32 entries |
+| 66 | 2 × max 32 | u16 | Channel map: the channel count of each member, in member-list order; 0 marks the controller member (C-205) | member count entries, at most 32; 0 for at most one member, otherwise 1 to 16 383 (1 to 341 at the default 48 frames) |
+
+On the wire the channel map follows the member list directly, at byte 2 + 2 × member count, so a description is 2 + 4 × member count bytes, at most 2 + 4 × 32 = 130 `[decision]`. Every maximum has its reason: a group id of one byte names every bundle a source can have, because a source has at most 256 streams (C-09) and each bundle at least one member; the member count is C-08's 32, the controller member included (C-209); a member is named by its stream number at C-10's width, so a description uses the numbers media packets carry `[decision]`. The channel map entry is a member's channel count, 2 bytes: which channel is which is in the manifest's full channel map (C-04, 004-26), and the count says how the bundle's channels split across its members, member by member in member-list order; one byte would not do, because an audio message carries up to 341 channels at the default 48 frames and up to 16 383 in general (Content messages, Audio message), so a member stream that the wire admits could not be described `[decision]`.
+
+### Size and verdict
+
+The maximum hello size is 587 bytes: the 75-byte fixed part (32 for the common control header and 43 for the fixed fields), 64 bytes of name and 64 port elements of 7 bytes, 75 + 64 + 64 × 7 = 587, within the 1 252-byte control bound (C-17) with 665 bytes to spare; the smallest hello is 76 bytes, a 1-byte name and no port `[decision]`. A peer map that held every peer's hello whole would take 63 × 587 = 36 981 bytes at most (C-217) `[decision]`.
+
+The hello as the ticket lists it also carries its source's bundles: a 1-byte bundle count and one Bundle element per bundle. For a 32-member bundle source at the constants' worst case — 256 streams (C-09) in at most 8 bundles of 32 members (C-08) — that hello is 587 + 1 + 8 × 130 = 1 628 bytes, 376 more than C-17 allows `[decision]`. With one bundle of 32 members, the case the ticket's acceptance criterion names, it is 587 + 1 + 130 = 718 bytes and would fit; but no choice of name or port maxima rescues the worst case, because C-08 bounds a bundle from above only: a source that splits its 256 streams into 128 bundles of 2 members needs 128 × (2 + 2 × 4) = 1 280 bytes for the descriptions alone, more than the whole bound before any other field `[decision]`.
+
+**Verdict: falsified.** C-17's own falsifier — "Hello for a 32-member bundle source does not fit" — holds for the hello content as listed: the bundle descriptions of a source that the constants allow do not fit one 1 252-byte control message `[decision]`. The fallback is to move the bundle descriptions to the admission handshake (004-18): the hello keeps every other content and carries no bundle field, and its table above is that fallback layout, 587 bytes at its maximum `[decision]`. C-17 itself stands — every control message still fits one packet at the fallback MTU — and this falsification is reported to the design owner; the constants table is not changed by this section `[decision]`.
+
+Why the handshake rather than a split hello, on the merits `[decision]`:
+
+- The description already travels there: the bundle is declared in the manifest (01-architecture.md § 7, ADR 02), and the handshake carries the manifest and the bundle member list (01-architecture.md § 6.1). The hello's copy was a duplicate `[decision]`.
+- A member's channel count is not enough to choose members: which channel is which is in the manifest's channel map (C-04), so a narrow sink that subscribes to the members it needs reads the manifest in any case `[decision]`.
+- Gossip is discovery, admission bootstrap and election input only (L-3): a requester bootstraps a handshake from the module id, the source address and the ports of the hello, and names the members inside the handshake `[decision]`.
+- Every module holds every peer's hello: at the worst case above a peer map would grow from 63 × 587 = 36 981 bytes to 63 × 1 628 = 102 564 bytes (C-217), a cost a split hello keeps, together with a second gossip message whose halves of one hello could arrive at different times `[decision]`.
+
+What every peer still learns from gossip before any connection exists is that a module exists, who it is, and which ports it offers with which content types; that a port's output is a bundle, its group id, its member list and its channel map are learned in the admission handshake, an open item owned by 004-18 (Open items) `[decision]`.
+
+### Validity rules
+
+Every malformed hello is dropped — or ignored, for the unconfigured domain — and counted under one member of the closed Rejection reasons enumeration; nothing is dropped silently `[decision]`. A hello matches no admitted input (Rejection reasons, Counting model), so every rejection is counted per (socket, reason) on the receiving control socket `[decision]`. The rules run in the order of the table — the magic and the version first, as Versioning requires — and the first that applies decides the outcome; a hello of the same major and another minor is accepted, as Versioning, Receiver behaviour fixes `[decision]`:
+
+| Invalid form | Required outcome |
+|---|---|
+| too short: a datagram under 4 bytes, too small for the two leading fields every message starts with | drop and count under TooShort: dropped before any field is read `[decision]` |
+| bad magic (the leading two bytes are not 0x4d4e) | drop and count under BadMagic |
+| version mismatch (the major, the high byte of the version field, is not 1) | drop and count under VersionMismatch, and raise the VersionMismatch event, the named event that stops a wrong-version module joining before any connection exists (Versioning, Receiver behaviour; C-185) — never a silent drop |
+| datagram of 4 to 31 bytes, too small for the common control header, or a hello whose size is under the 76-byte minimum (the fixed part and a 1-byte name) | drop and count under BadLength: the body does not fill the fixed size `[decision]` |
+| domain id 0, the unconfigured domain (C-11) | ignore and count under UnconfiguredDomain — never ForeignDomain (C-173); the hello changes no peer entry |
+| foreign domain: a non-zero domain id other than the local domain (C-11) | drop and count under ForeignDomain |
+| message type 0, a code no v1 control message is assigned, or a code the receiving module does not expect (Control message type codes) | drop and count under BadLength `[decision]` — provisional, as the sync and measurement layers rule; confirmed by 004-21 (Open items) |
+| oversize: a hello datagram larger than 1 252 bytes (C-17) | drop and count under OversizeControl |
+| authentication scheme non-zero | drop and count under ReservedNonZero (Reserved fields, Authentication reservation (C-12)) |
+| authentication tag non-zero | drop and count under ReservedNonZero (Reserved fields, Authentication reservation (C-12)) |
+| a reserved bit non-zero: bits 7..6 of the alarm field, or bits 7..1 of byte 1 of a port element | drop and count under ReservedNonZero (Reserved fields, General rule for later tickets) |
+| a count outside its range: name length 0 or above 64, port count above 64, or a content-type count of 0 or above 4 | drop and count under BadLength: a count outside its fixed range `[decision]` |
+| length inconsistent: the datagram size is not 75 + name length + the sum over the port elements of 3 + content-type count | drop and count under BadLength: the body does not fill the size the counts declare `[decision]` |
+| name bytes not valid UTF-8 (RFC 3629) | drop and count under BadLength `[decision]` — provisional: the bytes do not form the string the name length declares, the declared-shape case BadLength names (Content messages, Validity rules); confirmed by 004-21 (Open items) |
+| two port elements with one port id, or one content type listed twice in a port | drop and count under BadLength `[decision]` — the elements disagree with the shape the table declares |
+| content-type code above 3 in a port element | ignored: the receiver keeps the port and disregards that code; never a rejection, as an unknown content-message kind is skipped (Content messages, Kind codes) `[decision]` |
+| transport role or time state above 2 | not a rejection: the role is read as none and the time state as 0, time unusable `[decision]` |
+| liveness counter going backwards: lower than the counter of an earlier hello with the same instance nonce | not a parse rejection: every 64-bit value is valid and the comparison needs per-peer state; the hello is older than one already seen and carries no liveness progress; the discovery map decides (epic 005) `[decision]` |
+| module-id collision: two hellos with the same module id and different instance nonces (C-46) | not a parse rejection: each hello is well formed; the collision is state-machine behaviour (epic 005) `[decision]` |
+
+A module-id collision is not a parse rejection: two hellos with the same module id and different instance nonces are each valid, and what follows — the later joiner redraws its id, and third parties quarantine the id until only one nonce has been seen for one hello expiry period, 3 s (C-46, C-31) — is the discovery map's state machine, epic 005's (005-06, 005-07) `[decision]`. No value of the module id, the instance nonce, the election epoch, the believed holder, the timeline epoch, the regime stamp version number or the message counter is a malformed case: each accepts every value its type holds, and unassigned capability bits are ignored, so only the rules above reject `[decision]`.
+
+### Open items
+
+**Open item 1 — the transport role values.** The transport role is proposed as 0 none, 1 follower, 2 reference, the POC's set, with values 3 to 255 read as none so a minor version can add one. Owner: epic 005, which confirms the values; no 005 ticket names the transport role yet, so the confirmation falls to 005-06 (discovery map states and inputs, which lists the data held per peer from the hello), recorded by 005-22 (spec closure and open items). Falsifier: epic 005 needs a role the encoding cannot express — for example a claim state beside the role, as the POC's claim stamp was, that a v1 receiver must not read as none `[decision]`.
+
+**Open item 2 — bundle descriptions in the admission handshake.** The hello no longer carries the bundles; a requester learns a source's bundles — group id, member list and per-member channel count, as Bundle element lays them out, at most 130 bytes each — in the admission handshake, before or in the step where it names the members it wants. Owner: ticket 004-18 (admission handshake messages), with 004-26 (manifest encoding), which fixes the group id's width and the full channel map. Falsifier: 004-18's message set gives a requester no way to learn a bundle's member list and channel map before it names members, or a handshake message cannot carry a 32-member bundle's description within 1 252 bytes; either reopens the verdict above `[decision]`.
+
+**Open item 3 — the hello's maxima.** No constant bounds the name, the ports or the content types per port; this section fixes them at 64 bytes of UTF-8, 64 ports and 4 content types per port, and a module beyond them has no hello form and is refused at compile time (C-218) or at start. Owner: epic 004 (this ticket), with 004-26, whose manifest declares the ports, and epic 023, which implements compile-time rejections (C-218). Falsifier: a module needs more than 64 ports or a name longer than 64 bytes, or a port needs a content type outside the four kind codes `[decision]`.
+
+**Open item 4 — election epoch and time state in the election messages.** The election epoch is 32 bits compared unsigned, and the time state is 0 unusable, 1 holdover with the claim held, 2 Locked; 004-17's ticket places the time state in the election messages while 005-08 and 005-09 read the clock class from the hello, so the hello carries it and 004-17 reuses both encodings. Owner: ticket 004-17 (election messages), with 005-08 (tie-break) and 005-09 (election states and inputs). Falsifier: 004-17 lays out an election epoch of another width or a time state the three values cannot express, or 005-08's winner function needs a candidacy field the hello lacks `[decision]`.
+
+**Open item 5 — alarm semantics.** Each of the six bits is 1 while its alarm is raised, the first five on at least one connection, control-degraded on the module. Owner: ticket 005-26 (connection alarms), which decides when each alarm is raised and cleared. Falsifier: 005-26 needs an alarm state the six bits cannot express, such as a seventh alarm or a per-connection detail that must travel in the hello rather than in the regime stamp `[decision]`.
+
+**Open item 6 — the regime stamp version number.** The version is 32 bits, stale by inequality and ordered by serial comparison over half the range. Owner: ticket 004-24 (regime stamp message), which uses the same width and rules. Falsifier: 004-24 needs a different width or comparison, or a stamp changes more than 2^31 times between two versions a receiver must order `[decision]`.
+
+**Open item 7 — the liveness counter's advance and two BadLength outcomes.** The counter advances with each control message only while the data plane makes progress; an unexpected message type and an invalid UTF-8 name are counted under BadLength provisionally. Owner: ticket 005-06 (discovery map states and inputs) for the stall rule the counter serves; ticket 004-21 (validity rules completeness audit) for the two outcomes. Falsifier: a module whose data plane runs sends two consecutive hellos with an equal counter, or a stalled one sends a rising counter; or 004-21 finds a member of the closed enumeration that names either case better than BadLength `[decision]`.
 
 ## Election messages
 
