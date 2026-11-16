@@ -10,8 +10,16 @@
 # C-179 reopen count and a one-line verdict on C-90.
 #
 # The check never writes anywhere and never runs the POC. Its only other read
-# is `git diff --quiet main -- doc/design/02-constants.md`, which asserts that
-# this ticket does not edit the constants table (001-14 does that).
+# is `git diff --quiet origin/main -- doc/design/02-constants.md`, which asserts
+# that this ticket does not edit the constants table (001-14 does that). When
+# origin/main does not exist (a clone without it) that check is skipped with a
+# NOTE.
+#
+# Negation. Every keyword test below ignores an occurrence that its own clause
+# negates: a clause is the text since the last `,` `;` `:` or `.`, and
+# a negation is "not", "never", "no", "nor", "cannot", "without", "neither" or
+# "n't" in that clause before the keyword. "1000BASE-T never governs" and
+# "is not answered" therefore do not count.
 #
 # Override: REPORT_0A_BER=<path> reads another draft (a relative path is taken
 # from the repository root). With the override the constants check is skipped
@@ -26,17 +34,29 @@
 #   row names the PHY and a BER figure written as a power of ten (1e-12,
 #   10^-12, 10⁻¹², 1 × 10^-12), and also contains:
 #     - "IEEE" and "802.3";
-#     - an edition: a year, e.g. 802.3-2018, 802.3an-2006, 802.3ab-1999;
+#     - an edition designation, as the ticket words it: a published edition
+#       ("802.3-2018", "802.3an-2006", "802.3ab-1999", "802.3 (2018 edition)",
+#       "IEEE Std 802.3, 2018"), a working-group draft ("P802.3ab Draft 4.0",
+#       "802.3ab D4.0"), or a named comment record or test suite with its
+#       designation ("comment #155", "PMA test suite v2.5"). A bare date, or a
+#       year outside such a designation, does not count. Design owner's
+#       decision of 2026-11-16: working-group text is accepted for [standard]
+#       provided it is named as what it is (draft, comment record or test
+#       suite), never as the published edition. A citation of a draft, comment
+#       record or test suite is accepted; a published edition is not forced;
 #     - a clause with a subclause: "Clause 55.4.2" or "subclause 40.6.1.2"
 #       (the keyword, then a dotted number with at least one dot);
 #     - the tag [standard]. If the standard could not be consulted, [memory]
 #       is accepted instead, but only with the fallback statement below.
 #   Two complete citations of one PHY that disagree on the exponent FAIL.
 #
-# * (Governance.) One sentence names GbE or gigabit, says "govern" or "applies",
-#   names exactly one of the two PHYs (1000BASE-T for the GbE default links),
-#   gives a reason ("because", "since", "reason", "why" or "due to") and carries
-#   [decision]. The governing BER is that PHY's cited figure.
+# * (Governance.) One sentence names GbE or gigabit, says "govern" or "applies"
+#   (not negated, see above), names exactly one of the two PHYs (1000BASE-T for
+#   the GbE default links), gives a reason ("because", "since", "reason", "why"
+#   or "due to") and carries [decision]. The governing BER is that PHY's cited
+#   figure. Lead ruling 2026-11-16: 1000BASE-T is the governing PHY for the GbE
+#   default links (the ticket's reference line and the design owner's decision).
+#   This is ratified, not a design choice of this check.
 #
 # * (AC 2 and AC 3, loss-floor table.) A table whose header has cells matching
 #   BER, per-packet / probability, hours, soak (not reopen) and reopen. Each row
@@ -53,10 +73,15 @@
 #   "1 320 bytes", "10 560 bits", "2 000 packets/s", "64 000 packets/s" and
 #   "86 400", and a soak packet count of about 5.5e9.
 #
-# * (AC 4, verdict.) Exactly one line beginning with "verdict:" (case-insensitive,
-#   optional bold, list or quote markers). Its wording decides the kind:
+# * (AC 4, verdict.) The ticket (001-11, AC 4) asks for "A one-line verdict:
+#   C-90 confirmed, or corrected value proposed with the reason". Exactly one
+#   line beginning with "verdict:" (case-insensitive, optional bold, list or
+#   quote markers). Exactly one of the two verdict words, "confirmed" or
+#   "corrected", must occur as a positive (not negated) verdict; a line that
+#   carries both words, or only a negated one ("not corrected", "is correct and
+#   is not corrected", "not confirmed"), is not a verdict. Its wording decides the kind:
 #     "confirmed"          C-90 is confirmed;
-#     "corrected" / "correction" / "proposed" with a reason ("because", ...)
+#     "corrected" / "correction" / "revised" / "proposed" with a reason ("because", ...)
 #                          and, in the same line, the corrected p, the C-118
 #                          count and the C-179 reopen count (each to two
 #                          significant figures, in any form);
@@ -77,7 +102,8 @@
 #
 # * (DoD, open items.) The paragraph on the sub-question "Is the loss floor C-90
 #   computed from the right bit-error figure?" says it is answered (or handed to
-#   L1, task 019) and names a falsifier. Any paragraph saying "open item" or
+#   L1, task 019; "answered" in the sense of the ticket, not "not answered" or
+#   "unanswered") and names a falsifier. Any paragraph saying "open item" or
 #   "open sub-question" names an owner (the word "owner", "L1"-"L3" or "task NNN")
 #   and a falsifier.
 #
@@ -197,6 +223,24 @@ def find(hdr, pat, skip=None):
     return None
 
 
+NEG_RE = re.compile(r"\b(?:not|never|no|nor|cannot|without|neither)\b|n't\b", re.I)
+CLAUSE_END_RE = re.compile(r'[,;:.]')
+
+
+def negated_at(s, pos):
+    # the clause before pos: the text since the last clause boundary
+    head = s[:pos]
+    cut = 0
+    for m in CLAUSE_END_RE.finditer(head):
+        cut = m.end()
+    return bool(NEG_RE.search(head[cut:]))
+
+
+def positive(s, pat, flags=re.I):
+    # True if pat occurs in s at least once, and some occurrence is not negated
+    return any(not negated_at(s, m.start()) for m in re.finditer(pat, s, flags))
+
+
 # ---------------------------------------------------------------------------
 # Structure: lines outside fences, paragraphs, tables, units
 # ---------------------------------------------------------------------------
@@ -258,6 +302,19 @@ memory_present = bool(mem_units)
 # ---------------------------------------------------------------------------
 
 
+# An edition designation (T4, ticket wording "edition"). A year only counts as part
+# of one of these. Drafts, comment records and test suites are designations too
+# (design owner, 2026-11-16); they are not forced into a published edition.
+EDITION_RES = [
+    r'802\.3[a-z]{0,3}\s*-\s*(?:19|20)\d{2}',                        # 802.3-2018, 802.3an-2006
+    r'802\.3[a-z]{0,3}\s*\(?\s*(?:19|20)\d{2}\s+edition',           # 802.3 (2018 edition)
+    r'Std\.?\s*802\.3[a-z]{0,3}\s*,\s*(?:19|20)\d{2}\b',             # IEEE Std 802.3, 2018
+    r'802\.3[a-z]{0,3}\b[^.;]{0,40}?(?:(?i:draft)\s*\d|\bD\d)',      # P802.3ab Draft 4.0, 802.3ab D4.0
+    r'\b(?:comment|record|database|suite)\b[^.;]{0,40}?(?:#\d+|\bv\d+(?:\.\d+)*\b|\bD\d|(?i:draft)\s*\d)',
+    r'\bv\d+(?:\.\d+)*\b[^.;]{0,20}?\b(?:suite|record|database)\b',  # v2.5 test suite
+]
+
+
 def missing(u):
     m = []
     if not ber_exps(u):
@@ -266,9 +323,8 @@ def missing(u):
         m.append('"BER" or "bit error" wording')
     if not (re.search(r'IEEE', u) and re.search(r'802\.3', u)):
         m.append('the IEEE 802.3 standard name')
-    if not (re.search(r'802\.3[a-z]{0,3}\s*-\s*(?:19|20)\d{2}', u)
-            or (re.search(r'802\.3', u) and re.search(r'\b(?:19|20)\d{2}\b', u))):
-        m.append('an edition (a year, e.g. 802.3-2018)')
+    if not any(re.search(p, u) for p in EDITION_RES):
+        m.append('an edition designation (802.3-YYYY, "802.3 (YYYY edition)", a draft such as "P802.3ab Draft 4.0", or a named comment record or test suite with its designation; a bare date does not count)')
     if not SUBCL_RE.search(u):
         m.append('a clause with a subclause (a dotted number, e.g. Clause 55.4.2)')
     if '[standard]' not in u:
@@ -314,13 +370,14 @@ for phy in PHYS:
 # Governance: which cited figure governs the GbE default links
 # ---------------------------------------------------------------------------
 
+# T1: a negated keyword ("never governs", "does not govern") is not a statement
 gov_units = [u for u in units
-             if re.search(r'govern|applies', u, re.I)
+             if positive(u, r'govern|applies')
              and re.search(r'GbE|gigabit', u, re.I)
              and any(p in u for p in PHYS)]
 e_gov = None
 if not gov_units:
-    emit('BAD', 'AC 4 (governance): no sentence says which cited figure governs the GbE default links ("govern" or "applies", with GbE and the PHY name)')
+    emit('BAD', 'AC 4 (governance): no sentence positively says which cited figure governs the GbE default links ("govern" or "applies", not negated, with GbE and the PHY name)')
 else:
     u = gov_units[0]
     named = [p for p in PHYS if p in u]
@@ -454,12 +511,18 @@ else:
 
 vline = vmatches[0][0] if vmatches else ''
 if vtext is not None:
+    # T2: exactly one of the two verdict words, positive (not "not corrected",
+    # not "is correct"); a line with both words is ambiguous
+    CONF_W = r'\bconfirmed\b'
+    CORR_W = r'\b(?:corrected|correction|revised|proposed)\b'
     t = vtext.lower()
-    has_conf = bool(re.search(r'\bconfirmed\b', t) and not re.search(r'\bnot\s+(?:yet\s+)?confirmed|unconfirmed', t))
-    has_corr = bool(re.search(r'correct|proposed|revis', t))
+    words_conf = bool(re.search(CONF_W, vtext, re.I))
+    words_corr = bool(re.search(CORR_W, vtext, re.I))
+    has_conf = positive(vtext, CONF_W)
+    has_corr = positive(vtext, CORR_W)
     if 'pending' in t:
         kind = 'pending'
-    elif has_conf and has_corr:
+    elif words_conf and words_corr:
         kind = 'ambiguous'
     elif has_conf:
         kind = 'confirmed'
@@ -534,9 +597,12 @@ else:
     emit('OK', 'DoD: every paragraph with a BER figure or loss-floor quantity carries an evidence tag')
 
 sq = [p for p in paras if re.search(r'right bit-error figure', norm(p), re.I)]
+# the statement must be a positive one in its own sentences; the falsifier
+# sentence ("... measured at L1 ...") is not a handoff and does not count
+sq_stmts = [u for p in sq for u in re.split(r'(?<=[.;])\s+', p) if not re.search(r'falsifier', u, re.I)]
 if not sq:
     emit('BAD', 'DoD (open sub-question): "Is the loss floor C-90 computed from the right bit-error figure?" is not stated')
-elif any(re.search(r'answered|\bL1\b|task 019', p) and re.search(r'falsifier', p, re.I) for p in sq):
+elif any(positive(u, r'\banswered\b|\bL1\b|task 019') for u in sq_stmts) and any(re.search(r'falsifier', p, re.I) for p in sq):
     emit('OK', 'DoD (open sub-question): the sub-question is answered or handed to L1 (task 019), with its falsifier')
 else:
     emit('BAD', 'DoD (open sub-question): the sub-question is neither answered nor handed to L1 (task 019) with a falsifier')
@@ -567,12 +633,15 @@ fi
 # Constants: this ticket does not edit doc/design/02-constants.md
 # ---------------------------------------------------------------------------
 
+# T5: origin/main, not the local main ref (which can be stale or absent)
 if [ "$OVERRIDDEN" -eq 1 ]; then
-  echo "NOTE: REPORT_0A_BER is set, so the constants-table check (git diff main) is skipped"
-elif git -C "$REPO_ROOT" diff --quiet main -- doc/design/02-constants.md 2>/dev/null; then
-  ok "constants: doc/design/02-constants.md is unchanged against main (001-11 does not edit it)"
+  echo "NOTE: REPORT_0A_BER is set, so the constants-table check (git diff origin/main) is skipped"
+elif ! git -C "$REPO_ROOT" rev-parse --verify -q 'origin/main^{commit}' >/dev/null 2>&1; then
+  echo "NOTE: origin/main does not exist in this clone, so the constants-table check (git diff origin/main) is skipped"
+elif git -C "$REPO_ROOT" diff --quiet origin/main -- doc/design/02-constants.md 2>/dev/null; then
+  ok "constants: doc/design/02-constants.md is unchanged against origin/main (001-11 does not edit it)"
 else
-  bad "constants: doc/design/02-constants.md differs from main; 001-11 must not edit it (001-14 does)"
+  bad "constants: doc/design/02-constants.md differs from origin/main; 001-11 must not edit it (001-14 does)"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
