@@ -13,7 +13,7 @@ The proof of concept shows why this needs design, not goodwill. Its first measur
 - a corrupt metrics file: every module in the process opened the same path and wrote from its own offset (four writers on one file);
 - a loss counter showing values around 21.7 million while about 50 000 packets had been sent;
 - two whole check families reporting "0 of 0" for the entire run;
-- a sync rate of 37 per second at a configured 50, and 77 at a configured 1 000 (P-02).
+- a sync rate of 37 per second at a configured 50, and 77 at a configured 1 000, read from that corrupt file (superseded by the clean figures 36.1 and 71.4, P-02, REPORT-0b section (e)).
 
 Further `[code]`: a run where real-time scheduling silently failed looks identical to a good one; measurement buffers drop silently when full, and the samples lost under load are the worst ones; a version mismatch is a silent drop.
 

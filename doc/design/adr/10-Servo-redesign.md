@@ -11,7 +11,7 @@ Followers estimate their offset to the clock holder with request/reply exchanges
 Its actuation and its surroundings are not fit for the runtime `[code]`:
 
 - It steps the phase estimate at every update, so published time is discontinuous.
-- It paces requests with a receive timeout. Measured: 37 completed exchanges per second at a configured 50, and 77 at a configured 1 000 (P-02) `[measured]`, on a kernel ticking at 250 Hz (P-03).
+- It paces requests with a receive timeout. Measured: 36.1 completed exchanges per second at a configured 50, and 71.4 at a configured 1 000 (P-02) `[measured]`, on a kernel ticking at 250 Hz (P-03).
 - Its holdover never expires and carries no growing bound.
 - "Locked" is a state without a number: smoothed error below max(20 µs, path delay / 4) after at least 8 windows (P-04).
 - Receive time derives from a wall-clock kernel stamp `[kernel-doc]`; a wall-clock step between stamp and read corrupts the sample.

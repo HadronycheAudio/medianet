@@ -146,7 +146,7 @@ The follower servo is a redesign of the POC servo. It keeps the estimator idea (
 
 Why this matters: sources pace position from network time, so servo behaviour reaches hardware edges as resampler ratio. Inside the network, alignment is by position and servo wobble only consumes deadline margin.
 
-`[code]` The POC servo steps the phase estimate at every update, paces by a receive timeout, and has a holdover that never expires. All three are retired.
+`[code]` The POC servo steps the phase estimate at every update, paces by a receive timeout (at `poc-untouched`; `poc-baseline` waits for the next request deadline instead, task 003, BASELINE.md section 2), and has a holdover that never expires. All three are retired.
 
 ### 2.5 Publication
 
@@ -689,6 +689,7 @@ flowchart TD
 - Consequences: fixed-capacity peer map (C-34), control message size bound (C-17), **binary control format**.
 - Hosted builds have an edge-only feature: no holder candidacy.
 - Rewrite, not evolve: the POC is frozen as reference instrument; specific pieces are ported (ADR 21).
+- The POC is frozen after the tag `poc-baseline`: nothing is written into it except by task 003, which ended with that tag (C-130) `[decision]`.
 
 ---
 

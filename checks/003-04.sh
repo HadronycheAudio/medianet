@@ -59,8 +59,12 @@
 #
 # AC2  "Setting the stop flag ends the clock thread within 100 ms + one loop
 #      iteration."  Encoding (behavioural): a headless run
-#      `loopback --duration 3 --sync-hz 50 --no-tui` must exit with status 0
-#      within 13 s of wall clock (3 s duration + a generous 10 s margin for
+#      `loopback --duration 3 --sync-hz 50 --no-tui` must exit within 13 s of
+#      wall clock with status 0, or with status 1 whose log holds only
+#      zero-family lines (`check family <name>: 0 windows ...`, since 003-06:
+#      a 3 s run has no music or transport samples yet, so the POC
+#      legitimately reports them; AC2 accepts that and nothing else).  The
+#      3 s duration + a generous 10 s margin for
 #      the stop flag, one loop iteration and thread joins), and its log must
 #      show at least one per-second line at 3 s (the run reached its
 #      duration; it did not die early).  A clock thread that ignored the stop
@@ -136,10 +140,15 @@
 #
 # AC4  "The ticket's diff touches only the clock-thread wait code; wire
 #      format, servo and analyzer files are unchanged."  Encoding, over
-#      `git -C "$POC" diff 7a2d2e4..HEAD`:
-#        (a) HEAD must differ from 7a2d2e4 — an empty diff cannot satisfy the
-#            criterion vacuously; the fix must be committed in the POC.
-#        (b) exactly one path differs and it is src/module.rs.
+#      THE COMMITS OF THIS TICKET: the commits after 7a2d2e4 whose first line
+#      belongs to 003-04 (anchored rule: first line `003-04: ...` or
+#      `type(003-04): ...`; a later subject that merely names 003-04 does not
+#      count).  A diff from 7a2d2e4 would also measure later epic-003 commits
+#      (003-06 touches src/main.rs), so every measure below is the union over
+#      these commits (or the per-commit hunk geometry):
+#        (a) at least one 003-04 commit exists — an empty set cannot satisfy
+#            the criterion vacuously; the fix must be committed in the POC.
+#        (b) exactly one path is changed by these commits and it is src/module.rs.
 #        (c) none of transport.rs, clock.rs, audio.rs, proto.rs, net.rs,
 #            rt.rs, music.rs, main.rs differs.
 #        (d) the module.rs diff is SMALL: added + deleted lines <= 60 (the
@@ -312,11 +321,31 @@ else
   short_end=$(date +%s%N)
   wall_ms=$(( (short_end - short_start) / 1000000 ))
   echo "   running: $BIN loopback --duration 3 --sync-hz 50 --no-tui --group $GROUP"
-  if [ "$rc" -ne 0 ]; then
-    bad "AC2 short run exited with status $rc after ${wall_ms} ms (a hung clock thread shows up as timeout/124)"
+  # Exit status.  A 3 s run is too short for every check family to have
+  # samples: music and transport are legitimately at 0 windows until the
+  # claim and settle horizon have passed (REPORT-0b section (a)).  Since
+  # 003-06 the POC then exits 1 and names each such family on stderr.  So
+  # this run accepts exit 0, or exit 1 whose log holds nothing but the
+  # stdout summary ("[" lines), warning: lines and zero-family lines.  Any
+  # other non-zero status (124 = hung clock thread, a crash, an error line)
+  # still fails.  What AC2 measures (promptness, clean stop, reaching 3 s)
+  # is unchanged.
+  zero_only=0
+  if [ "$rc" -eq 1 ]; then
+    other_lines="$(grep -Ev '^\[|^warning: |^check family .*(audio|music|transport).*(0 windows|0 of 0|zero)' "$TMP/short.log" || true)"
+    zero_lines_n="$(grep -Eic '^check family .*(audio|music|transport).*(0 windows|0 of 0|zero)' "$TMP/short.log" || true)"
+    if [ -z "$other_lines" ] && [ "$zero_lines_n" -ge 1 ]; then
+      zero_only=1
+    fi
+  fi
+  if [ "$rc" -ne 0 ] && [ "$zero_only" -ne 1 ]; then
+    bad "AC2 short run exited with status $rc after ${wall_ms} ms (a hung clock thread shows up as timeout/124; only exit 1 with zero-family lines is accepted here)"
     tail -n 10 "$TMP/short.log" | while IFS= read -r l; do note "$l"; done
   elif [ "$wall_ms" -gt 13000 ]; then
     bad "AC2 short run took ${wall_ms} ms of wall clock for a 3 s duration (limit 13000 ms: duration + 10 s margin)"
+  elif [ "$zero_only" -eq 1 ]; then
+    pass "AC2 short run ended in ${wall_ms} ms with exit 1 and only zero-family lines (3 s is too short for music/transport samples; 003-06)"
+    grep -Ei '^check family ' "$TMP/short.log" | while IFS= read -r l; do note "$l"; done
   else
     pass "AC2 short run exited 0 after ${wall_ms} ms (3 s duration + a 10 s margin)"
   fi
@@ -574,24 +603,30 @@ else
 fi
 
 # -------------------------------------------------------------------- AC 4
-echo "-- AC4 diff from $BASE limited to the clock-thread wait code"
-head_commit="$(gitpoc rev-parse HEAD 2>/dev/null || true)"
-base_commit="$(gitpoc rev-parse "$BASE^{commit}" 2>/dev/null || true)"
-if [ -z "$head_commit" ]; then
-  bad "AC4 POC HEAD does not resolve to a commit"
-elif [ "$head_commit" = "$base_commit" ]; then
-  bad "AC4 no commit after $BASE: the fix is not committed in the POC (HEAD = $BASE); AC4 cannot be satisfied by an empty diff"
+echo "-- AC4 diff of this ticket's commits limited to the clock-thread wait code"
+# THIS TICKET'S commits: the commits after BASE whose first line references
+# 003-04 (anchored rule).  Later epic-003 commits (003-06 touches src/main.rs) are
+# judged by their own checks, so the bound is the union of the 003-04 diffs,
+# not a diff from BASE (which would age as later tickets land).
+t04_commits="$(gitpoc log --reverse --format='%H%x09%s' "$BASE"..HEAD 2>/dev/null \
+  | awk -F'\t' '$2 ~ /^(003-04([: ]|$)|[a-z]+\(003-04\)!?: )/ { print $1 }')"
+if [ -z "$t04_commits" ]; then
+  bad "AC4 no commit after $BASE references 003-04: the clock-wait fix is not committed in the POC; AC4 cannot be satisfied by an empty diff"
 else
-  gitpoc diff --name-only "$BASE"..HEAD > "$TMP/changed" 2>/dev/null || true
+  note "ticket commits: $(printf '%s' "$t04_commits" | cut -c1-12 | tr '\n' ' ')"
+  : > "$TMP/changed"
+  for c in $t04_commits; do
+    gitpoc show --name-only --format= "$c" >> "$TMP/changed" 2>/dev/null || true
+  done
   sed '/^$/d' "$TMP/changed" | sort -u > "$TMP/changed-u"
   n_changed="$(wc -l < "$TMP/changed-u" | tr -d ' ')"
   if [ "$n_changed" -eq 0 ]; then
-    bad "AC4 nothing differs from $BASE: the clock-wait fix is absent"
+    bad "AC4 the 003-04 commit(s) change no path: the clock-wait fix is absent"
   elif [ "$n_changed" -ne 1 ] || [ "$(cat "$TMP/changed-u")" != "src/module.rs" ]; then
-    bad "AC4 expected exactly one changed path, src/module.rs; got $n_changed path(s):"
+    bad "AC4 expected exactly one changed path, src/module.rs, in the 003-04 commit(s); got $n_changed path(s):"
     head -n 8 "$TMP/changed-u" | while IFS= read -r p; do note "$p"; done
   else
-    pass "AC4 exactly one changed path: src/module.rs"
+    pass "AC4 exactly one changed path in the 003-04 commit(s): src/module.rs"
 
     hits="$(while IFS= read -r p; do
               b="${p##*/}"
@@ -606,7 +641,8 @@ else
       printf '%s\n' "$hits" | head -n 8 | while IFS= read -r p; do note "$p"; done
     fi
 
-    stat="$(gitpoc diff --numstat "$BASE"..HEAD -- src/module.rs 2>/dev/null | awk '{ print $1, $2; exit }')"
+    stat="$(for c in $t04_commits; do gitpoc show --numstat --format= "$c" -- src/module.rs 2>/dev/null; done \
+      | awk '{ a += $1; d += $2 } END { print a + 0, d + 0 }')"
     set -- $stat
     added="${1:-0}"; deleted="${2:-0}"
     total=$(( added + deleted ))
@@ -616,19 +652,34 @@ else
       bad "AC4 module.rs diff is too large: +$added/-$deleted = $total changed line(s), expected <= 60 (the wait is a few lines)"
     fi
 
-    # (e) hunk geometry: every hunk stays in the clock-socket setup line or in
-    # fn spawn_clock, in both revisions.
-    gitpoc show "$BASE:src/module.rs" > "$TMP/old-module.rs" 2>/dev/null || true
-    cp "$SRC" "$TMP/new-module.rs"
+    # (e) hunk geometry, per 003-04 commit: each hunk stays in the clock-socket
+    # setup line or in fn spawn_clock, in that commit's parent and in the commit.
     span_of() { awk '/^fn spawn_clock\(/ { s = NR } s && /^}/ { printf "%d:%d\n", s, NR; exit }' "$1"; }
-    old_span="$(span_of "$TMP/old-module.rs")"
-    new_span="$(span_of "$TMP/new-module.rs")"
-    old_to="$(grep -n 'clock_sock\.set_read_timeout' "$TMP/old-module.rs" 2>/dev/null | head -n 1 | cut -d: -f1)"
-    new_to="$(grep -n 'clock_sock\.set_read_timeout' "$TMP/new-module.rs" 2>/dev/null | head -n 1 | cut -d: -f1)"
-
-    if [ -z "$old_span" ] || [ -z "$new_span" ]; then
-      bad "AC4 cannot locate fn spawn_clock in the base/HEAD revision of module.rs"
-    else
+    in_spans() { # $1 start, $2 end, $3 "s:e ..." list
+      local s="$1" e="$2" sp a b
+      for sp in $3; do
+        a="${sp%%:*}"; b="${sp##*:}"
+        if [ "$s" -ge "$a" ] && [ "$e" -le "$b" ]; then return 0; fi
+      done
+      return 1
+    }
+    nhunks=0
+    bad_hunks=0
+    : > "$TMP/bad-hunks"
+    geom_err=0
+    for c in $t04_commits; do
+      parent="$(gitpoc rev-parse "$c^" 2>/dev/null || true)"
+      gitpoc show "$parent:src/module.rs" > "$TMP/old-module.rs" 2>/dev/null || : > "$TMP/old-module.rs"
+      gitpoc show "$c:src/module.rs" > "$TMP/new-module.rs" 2>/dev/null || : > "$TMP/new-module.rs"
+      old_span="$(span_of "$TMP/old-module.rs")"
+      new_span="$(span_of "$TMP/new-module.rs")"
+      old_to="$(grep -n 'clock_sock\.set_read_timeout' "$TMP/old-module.rs" 2>/dev/null | head -n 1 | cut -d: -f1)"
+      new_to="$(grep -n 'clock_sock\.set_read_timeout' "$TMP/new-module.rs" 2>/dev/null | head -n 1 | cut -d: -f1)"
+      if [ -z "$old_span" ] || [ -z "$new_span" ]; then
+        bad "AC4 cannot locate fn spawn_clock in the parent/commit revision of module.rs (${c:0:12})"
+        geom_err=1
+        continue
+      fi
       old_spans="$old_span"
       if [ -n "$old_to" ]; then
         os=$(( old_to - 3 )); [ "$os" -lt 1 ] && os=1
@@ -640,7 +691,7 @@ else
         new_spans="$new_spans $ns:$(( new_to + 3 ))"
       fi
 
-      gitpoc diff -U0 "$BASE"..HEAD -- src/module.rs > "$TMP/diff-module.patch" 2>/dev/null || true
+      gitpoc show -U0 --format= "$c" -- src/module.rs > "$TMP/diff-module.patch" 2>/dev/null || true
       awk '
         /^@@ / {
           s = $0
@@ -653,18 +704,6 @@ else
           print o[1] + 0, oc, nn[1] + 0, nc
         }' "$TMP/diff-module.patch" > "$TMP/hunks"
 
-      in_spans() { # $1 start, $2 end, $3 "s:e ..." list
-        local s="$1" e="$2" sp a b
-        for sp in $3; do
-          a="${sp%%:*}"; b="${sp##*:}"
-          if [ "$s" -ge "$a" ] && [ "$e" -le "$b" ]; then return 0; fi
-        done
-        return 1
-      }
-
-      nhunks=0
-      bad_hunks=0
-      : > "$TMP/bad-hunks"
       while read -r os oc ns nc; do
         [ -n "${os:-}" ] || continue
         nhunks=$(( nhunks + 1 ))
@@ -680,21 +719,20 @@ else
         fi
         if [ "$okhunk" -ne 1 ]; then
           bad_hunks=$(( bad_hunks + 1 ))
-          printf 'hunk old %s+%s new %s+%s\n' "$os" "$oc" "$ns" "$nc" >> "$TMP/bad-hunks"
+          printf '%s: hunk old %s+%s new %s+%s\n' "${c:0:12}" "$os" "$oc" "$ns" "$nc" >> "$TMP/bad-hunks"
         fi
       done < "$TMP/hunks"
+    done
 
-      note "allowed old spans: $old_spans"
-      note "allowed new spans: $new_spans"
-      if [ "$nhunks" -eq 0 ]; then
-        bad "AC4 diff from $BASE has no hunks in src/module.rs (the clock-wait fix is absent)"
-      elif [ "$bad_hunks" -eq 0 ]; then
-        pass "AC4 all $nhunks diff hunk(s) fall inside the clock-socket setup line or fn spawn_clock"
-      else
-        bad "AC4 $bad_hunks of $nhunks hunk(s) fall outside the clock-thread wait code:"
-        head -n 8 "$TMP/bad-hunks" | while IFS= read -r l; do note "$l"; done
-        grep -E '^[+-][^+-]' "$TMP/diff-module.patch" | head -n 10 | while IFS= read -r l; do note "$l"; done
-      fi
+    if [ "$geom_err" -ne 0 ]; then
+      :
+    elif [ "$nhunks" -eq 0 ]; then
+      bad "AC4 the 003-04 commit(s) have no hunks in src/module.rs (the clock-wait fix is absent)"
+    elif [ "$bad_hunks" -eq 0 ]; then
+      pass "AC4 all $nhunks hunk(s) of the 003-04 commit(s) fall inside the clock-socket setup line or fn spawn_clock"
+    else
+      bad "AC4 $bad_hunks of $nhunks hunk(s) fall outside the clock-thread wait code:"
+      head -n 8 "$TMP/bad-hunks" | while IFS= read -r l; do note "$l"; done
     fi
   fi
 fi

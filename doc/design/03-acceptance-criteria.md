@@ -24,7 +24,7 @@ Thresholds marked *proposal* are pending-simulation or pending-measurement in th
 | AC-4 | Lock is honest | SIM, property test | The servo never reports Locked while true error exceeds its published bound | One counter-example |
 | AC-5 | Handover is frequency-continuous | SIM, then L2 | With a 50 ppm crystal difference (C-78), rate change stays within C-61 and published time has no step | A rate step at handover |
 | AC-6 | Holdover is bounded and expires | SIM | Bound grows by 1 µs/s (C-64); alignment claim lapses when it exceeds the margin (about 25 s, C-65); the state is never reported usable beyond that | Holdover reported usable with a stale bound |
-| AC-7 | Achieved sync rate equals configured rate | SIM + L0 | Within 2 % over the whole accepted range of 10 to 200 requests per second (C-112); the achieved rate is reported | The POC behaviour (37/s at 50, 77/s at 1 000, P-02) |
+| AC-7 | Achieved sync rate equals configured rate | SIM + L0 | Within 2 % over the whole accepted range of 10 to 200 requests per second (C-112); the achieved rate is reported | The POC behaviour (36.1/s at 50, 71.4/s at 1 000, P-02) |
 | AC-25 | A holder serves its follower cap | L1 / L3 | 64 followers (C-35) at 50 requests/s each with no growth in serving lateness; the 65th is refused with a named event. Followers beyond the 63 real ones a 64-module medianet allows are synthetic (C-114) | Serving lateness grows below 64 |
 | AC-36 | A healed partition converges | L0 with injected partition | One holder within election window plus hello period (C-33 + C-30 = 1.4 s); the losing side receives a timeline epoch change and its streams restart at an announced position | Two holders persist; a silent step |
 

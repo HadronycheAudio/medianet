@@ -21,7 +21,7 @@ Clarifications:
 - **A line that cannot apply to a task** (a task with no parser, or one that touches no stamp field) is marked not applicable with its reason, never silently dropped (C-125).
 - **"Constants table first"** means [02-constants.md](02-constants.md) is edited before any other file repeats a changed value.
 - **A measured number that replaces a proposal** changes the constant's status from pending to decided in the same change, with the measurement recorded in the evidence appendix.
-- **No smoke assertion may depend on sync-rate timing.** The POC's timeout-paced sync delivered 37 and 77 exchanges per second where 50 and 1 000 were configured; an assertion tied to that rate would have encoded the bug.
+- **No smoke assertion may depend on sync-rate timing.** The POC's timeout-paced sync delivered 36.1 and 71.4 exchanges per second where 50 and 1 000 were configured (P-02); an assertion tied to that rate would have encoded the bug.
 - **A check family with zero samples is a failure**, in every harness.
 
 ## DoD-release: every roadmap phase

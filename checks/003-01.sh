@@ -271,7 +271,7 @@ else
     for c in $(gitpoc rev-list HEAD --not "$tag_commit" 2>/dev/null); do
       post_count=$((post_count + 1))
       subject="$(gitpoc log -1 --format=%s "$c" 2>/dev/null)"
-      if ! printf '%s' "$subject" | grep -Eq '003-[0-9]{2}'; then
+      if ! printf '%s' "$subject" | grep -Eq '^(003-[0-9]{2}([: ]|$)|[a-z]+\(003-[0-9]{2}\)!?: )'; then
         printf '%s %s\n' "$(printf '%s' "$c" | cut -c1-12)" "$subject" >> "$TMP/bad-commits"
       fi
     done
