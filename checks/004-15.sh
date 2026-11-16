@@ -689,12 +689,14 @@ if not ok_rate:
 # stated signed ("−3.10 Mbit/s"); it must equal streams x per-stream rate − C-22. A percent is
 # stated signed ("−3.7 %"); over C-22's rounded figure, or over C-21 x streams when the sentence
 # or row names that unrounded base, it must equal the difference's share.
-SIGNED_MBIT = re.compile(r"(?<![\w\-])[−-]\s*(\d+)(?:\.(\d+))?\s*Mbit/s")
-SIGNED_PCT = re.compile(r"(?<![\w\-])[−-]\s*(\d+)(?:\.(\d+))?\s*%")
+SIGNED_MBIT = re.compile(r"(?<![\w\-])([−+-])\s*(\d+)(?:\.(\d+))?\s*Mbit/s")
+SIGNED_PCT = re.compile(r"(?<![\w\-])([−+-])\s*(\d+)(?:\.(\d+))?\s*%")
 
 
 def signed_num(m):
-    return float(m.group(1) + ("." + m.group(2) if m.group(2) else "")), len(m.group(2) or "")
+    """(magnitude, decimals, sign) of a signed figure: '+' or '−'/'-' before the digits."""
+    return (float(m.group(2) + ("." + m.group(3) if m.group(3) else "")), len(m.group(3) or ""),
+            -1 if m.group(1) in "−-" else 1)
 
 
 for ch, streams, c22_rate, pps in C22:
@@ -706,17 +708,17 @@ for ch, streams, c22_rate, pps in C22:
             if ch not in n or c22_rate not in n:
                 continue
             for m in SIGNED_MBIT.finditer(t):
-                v, d = signed_num(m)
-                if not close(-v, exp_diff, tol_of(d)):
-                    fail("AC 2", f"the {ch}-channel difference from C-22 is stated as -{v:g} Mbit/s, but the computed "
+                v, d, sg = signed_num(m)
+                if not close(sg * v, exp_diff, tol_of(d)):
+                    fail("AC 2", f"the {ch}-channel difference from C-22 is stated as {sg * v:+g} Mbit/s, but the computed "
                                  f"difference is {exp_diff:+.3f} Mbit/s ({streams} x {RATE_STREAM:.3f} - {c22_rate}): "
                                  + t[:100])
             unrounded = any(abs(v - base2) <= 0.05 for v, _ in floats(t))
             bases = [base2] if unrounded else [c22_rate, base2]
             for m in SIGNED_PCT.finditer(t):
-                p, d = signed_num(m)
+                p, d, _sg = signed_num(m)
                 if not any(abs(p - abs(exp_diff) / b * 100) <= max(0.1, tol_of(d)) for b in bases):
-                    fail("AC 2", f"the {ch}-channel share of the C-22 difference is stated as -{p:g} %, but "
+                    fail("AC 2", f"the {ch}-channel share of the C-22 difference is stated as {p:g} %, but "
                                  f"{abs(exp_diff):.3f} over {' or '.join(f'{b:g}' for b in bases)} is "
                                  f"{' or '.join(f'{abs(exp_diff) / b * 100:.2f} %' for b in bases)}: " + t[:100])
 
