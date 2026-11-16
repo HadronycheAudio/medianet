@@ -20,6 +20,7 @@ dependencies = [
 name = "hadronyche-vectors"
 version = "0.1.0"
 dependencies = [
+ "hadronyche-vectors",
  "serde",
  "serde_json",
 ]

@@ -1,4 +1,11 @@
 # Fuzz target list (ticket 007a-03 registers, ticket 007a-15 owns the harness).
 # One target per line: <name> <harness source> <corpus directory>, all relative
 # to hadronyche-tools/. Read by 007a-15 and 007b-21 to schedule the C-95 budget.
+#
+# vector-reader: the run-time surface of the no_std reader of 007a-03. The
+# reader parses nothing at run time (build.rs parses the vector files with
+# serde_json on the host and a malformed file fails the build), so the target
+# covers the lookups that take caller data: reader::with_bytes (by encoding),
+# reader::find (by id) and reader::Reason::from_name, then walks every match.
+# It is not a wire decoder; wire parsing is fuzzed through UnderTest::decode.
 vector-reader src/bin/vector-reader-fuzz.rs fuzz-corpus/vector-reader
