@@ -10,10 +10,12 @@
 # C-179 reopen count and a one-line verdict on C-90.
 #
 # The check never writes anywhere and never runs the POC. Its only other read
-# is `git diff --quiet origin/main -- doc/design/02-constants.md`, which asserts
-# that this ticket does not edit the constants table (001-14 does that). When
-# origin/main does not exist (a clone without it) that check is skipped with a
-# NOTE.
+# is `git diff --quiet <base> -- doc/design/02-constants.md`, where <base> is
+# `git merge-base origin/main HEAD`: the comparison is with the merge base, not the
+# tip of origin/main, so a later change of the constants table on main is not
+# blamed on this branch. It asserts that this ticket does not edit the constants
+# table (001-14 does that). When origin/main does not exist (a clone without it,
+# the house convention of the other checks) that check is skipped with a NOTE.
 #
 # Negation. Every keyword test below ignores an occurrence that its own clause
 # negates: a clause is the text since the last `,` `;` `:` or `.`, and
@@ -41,7 +43,8 @@
 #       designation ("comment #155", "PMA test suite v2.5"), or a working-group
 #       document with all of: a named 802.3 group ("Study Group", "Task Force",
 #       "Working Group"), a title or kind ("Objectives", "comment", "minutes",
-#       "presentation"), and a month-and-year or place-and-year date
+#       "presentation"), and a month name with a four-digit year (e.g.
+#       "September 2003"); a bare year, or "read YYYY", never counts
 #       ("IEEE 802.3 10GBASE-T Study Group, Objectives, Portonovo, Italy,
 #       September 2003"). A bare date, or a year outside such a designation,
 #       does not count. Design owner's
@@ -77,6 +80,19 @@
 #   other row is checked the same way. The draft must state the inputs
 #   "1 320 bytes", "10 560 bits", "2 000 packets/s", "64 000 packets/s" and
 #   "86 400", and a soak packet count of about 5.5e9.
+#
+# * (C-179 reopen level, R2-T2.) The ticket (001-11) states the reopen level as
+#   "clean-medianet loss above 10 × the floor, about 580 losses in the 24-hour soak"
+#   (Context), "the C-179 reopen count, 10 × that prediction (about 580 at 1e-12)"
+#   (Work) and "the C-179 reopen count (10 × it)" (AC 3). Design owner decision
+#   2026-11-16, decision (3): "C-179's reopen level stays about 580 losses in the
+#   24-hour soak, an absolute level decoupled from the published figure". The
+#   check accepts EITHER: a loss table whose reopen column equals 10 × its soak
+#   figure (the ticket's rule; a column labelled "superseded" must still equal
+#   it), OR a [decision]-tagged paragraph stating the absolute level of about 580
+#   losses per 24-hour soak (not negated). It rejects a report that states
+#   neither, one that states the absolute level negated, and a "superseded"
+#   column without the decided level.
 #
 # * (AC 4, verdict.) The ticket (001-11, AC 4) asks for "A one-line verdict:
 #   C-90 confirmed, or corrected value proposed with the reason". Exactly one
@@ -323,13 +339,14 @@ EDITION_RES = [
 # A working-group document (design owner, 2026-11-16: accepted for [standard] when
 # named as what it is). It needs ALL of: (i) a named IEEE 802.3 group, "Study
 # Group", "Task Force" or "Working Group", with "802.3" in the same citation;
-# (ii) a document title or kind; (iii) a month-and-year or a place-and-year
-# date. A bare date fails (no group or title), and a group with no date fails.
+# (ii) a document title or kind; (iii) a month name with a four-digit year
+# ("September 2003"). A bare date, a bare year and "read YYYY" fail, and so does a
+# group with no date. Place-and-year is not accepted (it took "Group, Comments" as a
+# place, R2-T1).
 MONTHS = r'(?:January|February|March|April|May|June|July|August|September|October|November|December)'
 WG_GROUP_RE = re.compile(r'\b(?:Study Group|Task Force|Working Group)\b')
 WG_KIND_RE = re.compile(r'\b(?:Objectives?|comments?|minutes|presentations?|contributions?|proposals?|straw ?polls?|agendas?|drafts?)\b', re.I)
-WG_DATE_RE = re.compile(r'\b' + MONTHS + r'\s+(?:19|20)\d{2}\b'
-                        r'|\b[A-Z][a-z]+,\s*[A-Z][a-z]+\b[^.;]{0,20}?\b(?:19|20)\d{2}\b')
+WG_DATE_RE = re.compile(r'\b' + MONTHS + r'\s+(?:19|20)\d{2}\b')
 
 
 def wg_designated(u):
@@ -423,6 +440,7 @@ else:
 # ---------------------------------------------------------------------------
 
 loss_rows, loss_tables = [], 0
+loss_has_re, loss_superseded = False, False
 for t in tables:
     hdr = cells(t[0])
     ber_i = find(hdr, r'^\W*ber\b')
@@ -430,9 +448,13 @@ for t in tables:
     h_i = find(hdr, r'hour')
     re_i = find(hdr, r'reopen')
     so_i = find(hdr, r'soak', skip=re_i)
-    if None in (ber_i, p_i, h_i, re_i, so_i):
+    if None in (ber_i, p_i, h_i, so_i):
         continue
     loss_tables += 1
+    if re_i is not None:
+        loss_has_re = True
+        if re.search(r'superseded', hdr[re_i], re.I):
+            loss_superseded = True
     for r in t[1:]:
         if is_sep(r):
             continue
@@ -443,10 +465,11 @@ for t in tables:
             emit('BAD', 'AC 2: loss-floor row without a BER power of ten: "%s"' % snip(r))
             continue
         loss_rows.append({'e': exps[0], 'row': r, 'p': parse_num(g(p_i)), 'h': parse_num(g(h_i)),
-                          'so': parse_num(g(so_i)), 'ro': parse_num(g(re_i))})
+                          'so': parse_num(g(so_i)), 'ro': parse_num(g(re_i)) if re_i is not None else None,
+                          'has_re': re_i is not None})
 
 if loss_tables == 0:
-    emit('BAD', 'AC 2: no loss-floor table with BER, per-packet probability, hours, soak and reopen columns')
+    emit('BAD', 'AC 2: no loss-floor table with BER, per-packet probability, hours and soak columns')
 if e_gov is not None and not any(r['e'] == e_gov for r in loss_rows):
     emit('BAD', 'AC 2: no loss-floor row for the governing BER 1e%d' % e_gov)
 
@@ -479,7 +502,9 @@ for r in loss_rows:
              % (lab, gov, r['so'], so_rec))
     else:
         emit('OK', 'AC 3: %s%s soak count %g agrees with recomputed %.3g' % (lab, gov, r['so'], so_rec))
-    if r['ro'] is None:
+    if not r['has_re']:
+        pass
+    elif r['ro'] is None:
         emit('BAD', 'AC 3: %s%s row states no C-179 reopen count' % (lab, gov))
     elif sf2(r['ro']) != sf2(ro_rec):
         emit('BAD', 'AC 3: %s%s reopen count stated %g, recomputed %.3g = 10 x soak (2 significant figures)'
@@ -513,6 +538,30 @@ else:
 # ---------------------------------------------------------------------------
 # AC 4: the verdict
 # ---------------------------------------------------------------------------
+
+# C-179 decided level (R2-T2). See the header: either form is accepted.
+ABS_KW = r'\babsolute\b|\bdecoupled\b'
+REO_KW = r'\breopen|\bC-179\b'
+
+
+def has580(s):
+    return any(sf2(v) == sf2(580.0) for v in all_nums(s) if v > 0)
+
+
+abs_ok = any(positive(p, ABS_KW) and positive(p, REO_KW) and has580(p) and '[decision]' in p
+             for p in paras)
+abs_neg = any(not positive(p, ABS_KW) and re.search(ABS_KW, p, re.I) and re.search(REO_KW, p, re.I)
+              and has580(p) for p in paras)
+if abs_neg:
+    emit('BAD', 'AC 3 (C-179): the decided absolute reopen level (about 580 losses in the 24-hour soak) is stated negated; decision (3) of 2026-11-16 stands')
+elif abs_ok:
+    emit('OK', 'AC 3 (C-179): the decided absolute reopen level (about 580 losses per 24-hour soak, [decision]) is stated')
+elif loss_superseded:
+    emit('BAD', 'AC 3 (C-179): a reopen column is labelled superseded, but the decided absolute level (about 580 losses, [decision]) is not stated')
+elif loss_has_re:
+    emit('OK', 'AC 3 (C-179): the reopen count is stated as 10 x soak (the ticket rule)')
+else:
+    emit('BAD', 'AC 3 (C-179): neither a reopen count of 10 x soak nor the decided absolute level (about 580 losses per 24-hour soak, [decision]) is stated')
 
 VERDICT_RE = re.compile(r'^(?:[-*+]\s+|>\s*)?\**\s*verdict\s*\**\s*:\s*\**\s*(.*)$', re.I)
 vmatches = []
@@ -587,12 +636,18 @@ if vtext is not None:
 
             def has(x):
                 return any(sf2(v) == sf2(x) for v in vals if v > 0)
-            for name, x in [('per-packet p %.2e' % p_rec, p_rec), ('C-118 soak count %.3g' % so_rec, so_rec),
-                            ('C-179 reopen count %.3g' % ro_rec, ro_rec)]:
+            for name, x in [('per-packet p %.2e' % p_rec, p_rec), ('C-118 soak count %.3g' % so_rec, so_rec)]:
                 if has(x):
                     emit('OK', 'AC 4: the corrected verdict states %s' % name)
                 else:
                     emit('BAD', 'AC 4: the corrected verdict does not state %s (2 significant figures, governing BER 1e%d)' % (name, e_gov))
+            # R2-T2: the C-179 level is either 10 x soak (ticket) or the decided ~580 (decision 3)
+            if has(ro_rec):
+                emit('OK', 'AC 4: the corrected verdict states the C-179 reopen count %.3g (10 x soak)' % ro_rec)
+            elif has(580.0) and positive(vtext, r'\babsolute\b|\bdecoupled\b|\bdecided\b|\bdecision\b|\bstays?\b'):
+                emit('OK', 'AC 4: the corrected verdict states the decided C-179 reopen level, about 580')
+            else:
+                emit('BAD', 'AC 4: the corrected verdict states neither the C-179 reopen count %.3g (10 x soak) nor the decided absolute level of about 580' % ro_rec)
         else:
             emit('BAD', 'AC 4: the verdict is %s; it must say either "C-90 confirmed" or a corrected value with its reason' % kind)
 
@@ -657,13 +712,18 @@ fi
 
 # T5: origin/main, not the local main ref (which can be stale or absent)
 if [ "$OVERRIDDEN" -eq 1 ]; then
-  echo "NOTE: REPORT_0A_BER is set, so the constants-table check (git diff origin/main) is skipped"
+  echo "NOTE: REPORT_0A_BER is set, so the constants-table check (merge base with origin/main) is skipped"
 elif ! git -C "$REPO_ROOT" rev-parse --verify -q 'origin/main^{commit}' >/dev/null 2>&1; then
-  echo "NOTE: origin/main does not exist in this clone, so the constants-table check (git diff origin/main) is skipped"
-elif git -C "$REPO_ROOT" diff --quiet origin/main -- doc/design/02-constants.md 2>/dev/null; then
-  ok "constants: doc/design/02-constants.md is unchanged against origin/main (001-11 does not edit it)"
+  echo "NOTE: origin/main does not exist in this clone, so the constants-table check (merge base with origin/main) is skipped"
 else
-  bad "constants: doc/design/02-constants.md differs from origin/main; 001-11 must not edit it (001-14 does)"
+  MB="$(git -C "$REPO_ROOT" merge-base origin/main HEAD 2>/dev/null || true)"
+  if [ -z "$MB" ]; then
+    bad "constants: no merge base between origin/main and HEAD, so the constants table cannot be compared"
+  elif git -C "$REPO_ROOT" diff --quiet "$MB" -- doc/design/02-constants.md 2>/dev/null; then
+    ok "constants: doc/design/02-constants.md is unchanged against the merge base with origin/main (001-11 does not edit it)"
+  else
+    bad "constants: doc/design/02-constants.md differs from the merge base with origin/main; 001-11 must not edit it (001-14 does)"
+  fi
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
