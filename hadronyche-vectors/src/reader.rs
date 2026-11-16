@@ -7,41 +7,62 @@
 //! [`Outcome`]: the decoded structure of a valid wire vector, the rejection
 //! reason of an invalid one.
 //!
+//! # Two embedded sets, both always present
+//!
+//! * **The conformance set**: every vector under the crate's `vectors/`
+//!   directory (007a-05 onward), enumerated by [`all`], [`of_kind`], [`find`]
+//!   and [`with_bytes`]. It is empty until 007a-05 lands data.
+//! * **The examples**: the six hand-written example fixtures of 007a-02
+//!   (`tests/fixtures/vectors/examples/`), enumerated only by [`examples`] and
+//!   [`examples_of_kind`]. They are test fixtures, not conformance vectors: no
+//!   example is reachable through the conformance functions.
+//!
+//! No cargo feature changes what any enumeration yields, so a device, a host
+//! tool and a test all see the same two sets. On a device the examples cost
+//! 5 048 bytes of read-only data (measured on x86_64, 2026-11-16, by walking
+//! the tables and counting each distinct static once: the 6 `Vector` entries
+//! at 120 bytes each, `Field`s at 40 bytes, `Value`s at 24 bytes, string bytes
+//! and wire bytes). Another 64-bit target is the same; a 32-bit one is
+//! smaller.
+//!
 //! # Nothing is parsed at run time
 //!
 //! The build script (`build.rs`) parses every vector file on the host and
 //! generates constant Rust data: strings, numbers and nested slices, with the
 //! wire bytes embedded by `include_bytes!`. A malformed file fails the build.
-//! At run time the reader only walks static tables, so there is no input it
-//! can be fed except the two lookups that take caller data, [`find`] (by id)
-//! and [`with_bytes`] (by encoding), plus [`Reason::from_name`]. Those are what
-//! the `vector-reader` fuzz target of 007a-15 exercises.
+//! At run time the reader only walks static tables; the only functions that
+//! take caller data are the lookups [`find`] (by id), [`with_bytes`] (by
+//! encoding) and [`Reason::from_name`]. Those are what the `vector-reader`
+//! fuzz target exercises.
 //!
 //! The reader does not decode wire bytes: the decoded structure and the
 //! rejection reason are the ones the vector file *records*. Decoding is the
 //! implementation under test's job (epic 009 onward, through 007a-04's runner).
 //!
-//! # Which vectors are embedded
+//! # File layout the build relies on
 //!
-//! * Always: every vector under the crate's `vectors/` directory, the
-//!   conformance data (007a-05 onward).
-//! * With the non-default `examples` feature: also the six hand-written
-//!   example fixtures of 007a-02 under `tests/fixtures/vectors/examples/`.
-//!   They are schema samples, not conformance vectors, so a production
-//!   runner does not see them; this crate's own tests enable the feature.
+//! Every `*.json` file below `vectors/` is a vector of the kind its directory
+//! names, as 007a-02's validator (`validate_tree` in `tests/support`) also
+//! requires. Files with other extensions are ignored unless a wire vector
+//! names them as its `.bin`. The scripted inputs 007a-02 allows under
+//! `vectors/reference/` ("any file type") must therefore not use the `.json`
+//! extension; 007a-05 and 007b-18, which write them, must respect this.
 //!
-//! The order is fixed: by kind in [`Kind::ALL`] order, then by the file's
-//! path (`vectors/` before the examples).
+//! The order within a set is fixed: by kind in [`Kind::ALL`] order, then by
+//! the file's path.
+
+pub use crate::reason::Reason;
 
 mod generated {
-    //! The tables `build.rs` writes, one per kind.
+    //! The tables `build.rs` writes: one per set and kind, plus one
+    //! `DECODED_n` static per wire-valid vector, shared by its outcome and
+    //! its document.
     #![allow(
         clippy::approx_constant,
         clippy::excessive_precision,
         clippy::unreadable_literal
     )]
-    // While a kind's directory is empty (the default set before 007a-05),
-    // its table names none of these types.
+    // A kind whose directories are empty names none of these types.
     #[allow(unused_imports)]
     use super::{Case, Decoded, Field, Kind, Outcome, Reason, Rejection, Value, Vector};
     include!(concat!(env!("OUT_DIR"), "/vectors.rs"));
@@ -87,7 +108,7 @@ impl Kind {
         }
     }
 
-    /// The embedded table of this kind.
+    /// The conformance table of this kind.
     fn table(self) -> &'static [Vector] {
         match self {
             Kind::WireValid => generated::WIRE_VALID,
@@ -96,6 +117,18 @@ impl Kind {
             Kind::Timeline => generated::TIMELINE,
             Kind::Transport => generated::TRANSPORT,
             Kind::Reference => generated::REFERENCE,
+        }
+    }
+
+    /// The example table of this kind.
+    fn example_table(self) -> &'static [Vector] {
+        match self {
+            Kind::WireValid => generated::EXAMPLE_WIRE_VALID,
+            Kind::WireInvalid => generated::EXAMPLE_WIRE_INVALID,
+            Kind::Control => generated::EXAMPLE_CONTROL,
+            Kind::Timeline => generated::EXAMPLE_TIMELINE,
+            Kind::Transport => generated::EXAMPLE_TRANSPORT,
+            Kind::Reference => generated::EXAMPLE_REFERENCE,
         }
     }
 }
@@ -216,88 +249,6 @@ impl Rejection {
     }
 }
 
-/// The closed `Reject` enumeration of ticket 004-03 (`doc/design/spec/wire.md`
-/// "Rejection reasons", `wire.toml`), with its `u8` values. Values 13..=255
-/// are reserved for a future major version.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u8)]
-pub enum Reason {
-    /// 0
-    TooShort = 0,
-    /// 1
-    BadMagic = 1,
-    /// 2
-    VersionMismatch = 2,
-    /// 3
-    ForeignDomain = 3,
-    /// 4
-    UnconfiguredDomain = 4,
-    /// 5
-    UnknownStream = 5,
-    /// 6
-    UnadmittedSource = 6,
-    /// 7
-    BadLength = 7,
-    /// 8
-    BadChecksum = 8,
-    /// 9
-    BadPacketIndex = 9,
-    /// 10
-    WrongEpoch = 10,
-    /// 11
-    OversizeControl = 11,
-    /// 12
-    ReservedNonZero = 12,
-}
-
-impl Reason {
-    /// Every reason, in value order.
-    pub const ALL: [Reason; 13] = [
-        Reason::TooShort,
-        Reason::BadMagic,
-        Reason::VersionMismatch,
-        Reason::ForeignDomain,
-        Reason::UnconfiguredDomain,
-        Reason::UnknownStream,
-        Reason::UnadmittedSource,
-        Reason::BadLength,
-        Reason::BadChecksum,
-        Reason::BadPacketIndex,
-        Reason::WrongEpoch,
-        Reason::OversizeControl,
-        Reason::ReservedNonZero,
-    ];
-
-    /// The wire value.
-    pub const fn value(self) -> u8 {
-        self as u8
-    }
-
-    /// The name, as `wire.md` spells it.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Reason::TooShort => "TooShort",
-            Reason::BadMagic => "BadMagic",
-            Reason::VersionMismatch => "VersionMismatch",
-            Reason::ForeignDomain => "ForeignDomain",
-            Reason::UnconfiguredDomain => "UnconfiguredDomain",
-            Reason::UnknownStream => "UnknownStream",
-            Reason::UnadmittedSource => "UnadmittedSource",
-            Reason::BadLength => "BadLength",
-            Reason::BadChecksum => "BadChecksum",
-            Reason::BadPacketIndex => "BadPacketIndex",
-            Reason::WrongEpoch => "WrongEpoch",
-            Reason::OversizeControl => "OversizeControl",
-            Reason::ReservedNonZero => "ReservedNonZero",
-        }
-    }
-
-    /// The reason with this exact name, if any.
-    pub fn from_name(name: &str) -> Option<Reason> {
-        Reason::ALL.into_iter().find(|r| r.name() == name)
-    }
-}
-
 /// A JSON value recorded in a vector file, as constant data.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Value {
@@ -398,26 +349,38 @@ impl Field {
     }
 }
 
-/// Every embedded vector, by kind in [`Kind::ALL`] order, then by path.
+/// Every vector of the conformance set, by kind in [`Kind::ALL`] order, then
+/// by path. Never yields an example.
 pub fn all() -> impl Iterator<Item = Vector> + Clone {
     Kind::ALL.into_iter().flat_map(of_kind)
 }
 
-/// The embedded vectors of one kind, by path.
+/// The conformance vectors of one kind, by path.
 pub fn of_kind(kind: Kind) -> impl ExactSizeIterator<Item = Vector> + Clone {
     kind.table().iter().copied()
 }
 
-/// The embedded vector with this `id`, if any.
+/// The conformance vector with this `id`, if any. Never finds an example.
 pub fn find(id: &str) -> Option<Vector> {
     all().find(|v| v.id == id)
 }
 
-/// The embedded wire vectors (valid and invalid) whose bytes equal `bytes`,
-/// in enumeration order: a lookup of the recorded outcome of an encoding,
-/// not a decoder.
+/// The conformance wire vectors (valid and invalid) whose bytes equal
+/// `bytes`, in enumeration order: a lookup of the recorded outcome of an
+/// encoding, not a decoder. Never yields an example.
 pub fn with_bytes(bytes: &[u8]) -> impl Iterator<Item = Vector> {
     of_kind(Kind::WireValid)
         .chain(of_kind(Kind::WireInvalid))
         .filter(move |v| v.bytes == bytes)
+}
+
+/// The six example fixtures of 007a-02, by kind in [`Kind::ALL`] order: test
+/// fixtures, not conformance vectors.
+pub fn examples() -> impl Iterator<Item = Vector> + Clone {
+    Kind::ALL.into_iter().flat_map(examples_of_kind)
+}
+
+/// The example fixtures of one kind.
+pub fn examples_of_kind(kind: Kind) -> impl ExactSizeIterator<Item = Vector> + Clone {
+    kind.example_table().iter().copied()
 }

@@ -19,7 +19,12 @@
 //! * `reader::find` — a vector by id (the input as UTF-8, when it is);
 //! * `reader::Reason::from_name` — a rejection reason by name.
 //!
-//! Every outcome found is then walked to the leaves of its recorded JSON.
+//! The conformance set is empty until 007a-05, so each input is also matched
+//! against the 007a-02 examples (`reader::examples`, by bytes and by id, with
+//! the same comparisons the lookups make); the seed corpus holds the two
+//! example encodings, so a default run matches and walks real data.
+//!
+//! Every vector found is then walked to the leaves of its recorded JSON.
 //! This is not a wire decoder: decoding wire bytes is the implementation's
 //! job (epic 009 onward), fuzzed through `UnderTest::decode` by 007a-15.
 
@@ -76,7 +81,14 @@ fn run_one(bytes: &[u8]) -> usize {
         std::hint::black_box(walk(vector));
         hits += 1;
     }
-    if let Ok(text) = std::str::from_utf8(bytes) {
+    let text = std::str::from_utf8(bytes).ok();
+    for vector in reader::examples() {
+        if vector.bytes() == bytes || text == Some(vector.id()) {
+            std::hint::black_box(walk(vector));
+            hits += 1;
+        }
+    }
+    if let Some(text) = text {
         if let Some(vector) = reader::find(text) {
             std::hint::black_box(walk(vector));
             hits += 1;
@@ -105,9 +117,10 @@ fn main() {
         hits += run_one(&bytes);
     }
     println!(
-        "vector-reader-fuzz: {} input(s) looked up without a panic ({} match(es) among {} embedded vector(s))",
+        "vector-reader-fuzz: {} input(s) looked up without a panic ({} match(es) among {} conformance vector(s) and {} example(s))",
         files.len(),
         hits,
-        reader::all().count()
+        reader::all().count(),
+        reader::examples().count()
     );
 }

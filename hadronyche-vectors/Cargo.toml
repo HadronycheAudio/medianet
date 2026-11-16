@@ -5,15 +5,6 @@ edition.workspace = true
 
 [dependencies]
 
-[features]
-default = []
-# Ticket 007a-03: also embed the six hand-written example fixtures of 007a-02
-# (tests/fixtures/vectors/examples/) beside vectors/. They are schema samples,
-# not conformance vectors, so the default set leaves them out; the crate's own
-# tests enable the feature through the dev-dependency on this crate below.
-# The feature adds data only: no std, no allocator.
-examples = []
-
 [build-dependencies]
 # Ticket 007a-03: build.rs parses the vector files on the host with the
 # standard JSON parser (not hand-written, so it needs no fuzzing under C-95)
@@ -28,6 +19,3 @@ serde_json = "1"
 # crate's `no_std` builds (`cargo build --target aarch64-unknown-none`).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Ticket 007a-03: the tests read the 007a-02 example fixtures through the
-# reader, so they build this crate with the `examples` feature.
-hadronyche-vectors = { path = ".", features = ["examples"] }

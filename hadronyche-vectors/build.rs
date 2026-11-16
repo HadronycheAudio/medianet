@@ -10,12 +10,24 @@
 //! are `include_bytes!` of the `.bin` sidecar. Nothing is left to parse at run
 //! time.
 //!
-//! Embedded roots:
+//! Two sets are embedded, always, each in tables of its own (no cargo
+//! feature changes either):
 //!
-//! * `vectors/` — always; the crate's conformance data (007a-05 onward).
-//! * `tests/fixtures/vectors/examples/` — only with the non-default `examples`
-//!   feature: the six hand-written example fixtures of 007a-02, which are
-//!   schema samples, not conformance vectors.
+//! * the conformance set, from `vectors/` (007a-05 onward), tables
+//!   `WIRE_VALID` .. `REFERENCE`;
+//! * the six hand-written example fixtures of 007a-02, from
+//!   `tests/fixtures/vectors/examples/`, tables `EXAMPLE_WIRE_VALID` ..
+//!   `EXAMPLE_REFERENCE`. They are test fixtures, not conformance vectors.
+//!
+//! Every `*.json` file below a root is a vector, as 007a-02's validator
+//! (`tests/support`, `validate_tree`) also requires; other files are ignored
+//! unless a wire vector names them as its `.bin`. So the scripted inputs that
+//! 007a-02 allows under `vectors/reference/` ("any file type") must not use
+//! the `.json` extension (007a-05 and 007b-18 write them).
+//!
+//! A wire-valid vector's decoded structure is emitted once, as a named
+//! static (`DECODED_n`) that both its `Outcome::Valid` and its document's
+//! `decoded` member reference.
 //!
 //! A malformed file fails the build with one line per problem, naming the
 //! file. The full 007a-02 schema (unknown fields, closed sets beyond the
@@ -29,24 +41,14 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
-/// The closed `Reject` enumeration of ticket 004-03 (`doc/design/spec/wire.toml`),
-/// in value order. Each name is also a variant of `reader::Reason`; the
-/// generated code names the variant, so a name missing there fails to compile.
-const REJECT_REASONS: [&str; 13] = [
-    "TooShort",
-    "BadMagic",
-    "VersionMismatch",
-    "ForeignDomain",
-    "UnconfiguredDomain",
-    "UnknownStream",
-    "UnadmittedSource",
-    "BadLength",
-    "BadChecksum",
-    "BadPacketIndex",
-    "WrongEpoch",
-    "OversizeControl",
-    "ReservedNonZero",
-];
+/// The crate's own `Reason` (the closed `Reject` enumeration of 004-03), so
+/// the build validates a vector's `reason` against the one copy the reader
+/// exposes; `tests/reason_pin.rs` pins that copy to `wire.toml`.
+#[allow(dead_code)]
+#[path = "src/reason.rs"]
+mod reason;
+
+use reason::Reason;
 
 /// The six kinds: the generated table's name, the reader's variant, and the
 /// directory below an embedded root that fixes the kind (007a-02).
@@ -64,9 +66,17 @@ const WIRE_VALID: usize = 0;
 /// Index of wire invalid in [`KINDS`].
 const WIRE_INVALID: usize = 1;
 
+/// The two embedded sets: table-name prefix and root below the manifest.
+const SETS: [(&str, &str); 2] = [
+    ("", "vectors"),
+    ("EXAMPLE_", "tests/fixtures/vectors/examples"),
+];
+
 /// One parsed vector file, ready to be written out.
 struct Entry {
     path: PathBuf,
+    /// Index into [`SETS`].
+    set: usize,
     kind: usize,
     id: String,
     spec_version: String,
@@ -77,11 +87,9 @@ struct Entry {
 
 fn main() {
     let manifest = PathBuf::from(env_var("CARGO_MANIFEST_DIR"));
-    let mut roots = vec![manifest.join("vectors")];
-    if std::env::var_os("CARGO_FEATURE_EXAMPLES").is_some() {
-        roots.push(manifest.join("tests/fixtures/vectors/examples"));
-    }
+    let roots: Vec<PathBuf> = SETS.iter().map(|(_, dir)| manifest.join(dir)).collect();
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/reason.rs");
     for root in &roots {
         println!("cargo:rerun-if-changed={}", root.display());
     }
@@ -116,7 +124,7 @@ fn env_var(name: &str) -> String {
 /// Parse every `*.json` file below the roots, in root order then path order.
 fn collect(roots: &[PathBuf], errors: &mut Vec<String>) -> Vec<Entry> {
     let mut entries = Vec::new();
-    for root in roots {
+    for (set, root) in roots.iter().enumerate() {
         let mut files = Vec::new();
         if let Err(e) = walk_json(root, &mut files) {
             errors.push(format!("{}: {e}", root.display()));
@@ -126,7 +134,7 @@ fn collect(roots: &[PathBuf], errors: &mut Vec<String>) -> Vec<Entry> {
         for file in files {
             println!("cargo:rerun-if-changed={}", file.display());
             match parse(root, &file) {
-                Ok(entry) => entries.push(entry),
+                Ok(entry) => entries.push(Entry { set, ..entry }),
                 Err(mut e) => errors.append(&mut e),
             }
         }
@@ -182,11 +190,12 @@ fn parse(root: &Path, file: &Path) -> Result<Entry, Vec<String>> {
         check_valid(&doc, &mut errors);
     } else if kind == WIRE_INVALID {
         let reason = required_str(&doc, "reason", &mut errors);
-        if !reason.is_empty() && !REJECT_REASONS.contains(&reason.as_str()) {
+        if !reason.is_empty() && Reason::from_name(&reason).is_none() {
+            let names: Vec<&str> = Reason::ALL.iter().map(|r| r.name()).collect();
             errors.push(format!(
                 "`reason` is {reason:?}, not a member of the closed Reject enumeration \
                  of ticket 004-03 ({})",
-                REJECT_REASONS.join(", ")
+                names.join(", ")
             ));
         }
     }
@@ -195,6 +204,7 @@ fn parse(root: &Path, file: &Path) -> Result<Entry, Vec<String>> {
     }
     Ok(Entry {
         path: file.to_path_buf(),
+        set: 0,
         kind,
         id,
         spec_version,
@@ -273,7 +283,8 @@ fn case_variant(case: &str) -> Option<&'static str> {
     }
 }
 
-/// Ids are unique across the embedded set (007a-02 Work 2).
+/// Ids are unique across both embedded sets (007a-02 Work 2: "unique across
+/// the crate").
 fn unique_ids(entries: &[Entry], errors: &mut Vec<String>) {
     let mut seen: BTreeMap<&str, &Path> = BTreeMap::new();
     for entry in entries {
@@ -290,21 +301,43 @@ fn unique_ids(entries: &[Entry], errors: &mut Vec<String>) {
 
 // ------------------------------------------------------------ generation ---
 
-/// The generated module body: one `pub(super) static` slice per kind.
+/// The generated module body: the decoded structures, then one
+/// `pub(super) static` slice per set and kind.
 fn generate(entries: &[Entry]) -> String {
     let mut out = String::from("// @generated by hadronyche-vectors/build.rs; do not edit.\n");
-    for (index, (table, _, dir)) in KINDS.iter().enumerate() {
-        let _ = writeln!(out, "\n/// Embedded `{dir}` vectors.");
-        let _ = writeln!(out, "pub(super) static {table}: &[Vector] = &[");
-        for entry in entries.iter().filter(|e| e.kind == index) {
-            write_entry(&mut out, entry);
+    // The n-th wire-valid entry's decoded structure is `DECODED_n`.
+    let mut decoded = Vec::with_capacity(entries.len());
+    let mut count = 0;
+    for entry in entries {
+        if entry.kind == WIRE_VALID {
+            let map = entry.doc.get("decoded").and_then(Value::as_object);
+            let len = map.map_or(0, Map::len);
+            let body = map.map_or_else(|| "[]".to_owned(), fields);
+            let _ = writeln!(out, "\n// {:?}", entry.path);
+            let _ = writeln!(out, "static DECODED_{count}: [Field; {len}] = {body};");
+            decoded.push(Some(format!("DECODED_{count}")));
+            count += 1;
+        } else {
+            decoded.push(None);
         }
-        out.push_str("];\n");
+    }
+    for (set, (prefix, root)) in SETS.iter().enumerate() {
+        for (kind, (table, _, dir)) in KINDS.iter().enumerate() {
+            let _ = writeln!(out, "\n/// Embedded `{root}/{dir}` vectors.");
+            let _ = writeln!(out, "pub(super) static {prefix}{table}: &[Vector] = &[");
+            for (entry, name) in entries.iter().zip(&decoded) {
+                if entry.set == set && entry.kind == kind {
+                    write_entry(&mut out, entry, name.as_deref());
+                }
+            }
+            out.push_str("];\n");
+        }
     }
     out
 }
 
-fn write_entry(out: &mut String, entry: &Entry) {
+/// One `Vector` literal; `decoded` names the entry's `DECODED_n` static.
+fn write_entry(out: &mut String, entry: &Entry, decoded: Option<&str>) {
     let variant = KINDS[entry.kind].1;
     let _ = writeln!(out, "    // {:?}", entry.path);
     let _ = writeln!(out, "    Vector {{");
@@ -321,28 +354,48 @@ fn write_entry(out: &mut String, entry: &Entry) {
         }
         None => out.push_str("        bytes: &[],\n"),
     }
-    let _ = writeln!(out, "        outcome: {},", outcome(entry));
-    let _ = writeln!(out, "        document: &{},", fields(&entry.doc));
+    let _ = writeln!(out, "        outcome: {},", outcome(entry, decoded));
+    let _ = writeln!(out, "        document: &{},", document(&entry.doc, decoded));
     out.push_str("    },\n");
 }
 
 /// The recorded outcome: the decoded structure, the rejection reason, or
 /// `NotWire` for the four scenario kinds.
-fn outcome(entry: &Entry) -> String {
+fn outcome(entry: &Entry, decoded: Option<&str>) -> String {
     let text = |key: &str| entry.doc.get(key).and_then(Value::as_str).unwrap_or("");
-    match entry.kind {
-        WIRE_VALID => format!(
-            "Outcome::Valid(Decoded {{ message: {:?}, case: Case::{}, value: {} }})",
+    match (entry.kind, decoded) {
+        (WIRE_VALID, Some(decoded)) => format!(
+            "Outcome::Valid(Decoded {{ message: {:?}, case: Case::{}, value: Value::Object(&{decoded}) }})",
             text("message"),
             case_variant(text("case")).unwrap_or("Minimal"),
-            value(entry.doc.get("decoded").unwrap_or(&Value::Null))
         ),
-        WIRE_INVALID => format!(
-            "Outcome::Rejected(Rejection {{ reason: Reason::{} }})",
-            text("reason")
-        ),
+        (WIRE_INVALID, _) => match Reason::from_name(text("reason")) {
+            Some(reason) => {
+                format!("Outcome::Rejected(Rejection {{ reason: Reason::{reason:?} }})")
+            }
+            None => {
+                // parse() has already rejected such a file; never emit a guess.
+                eprintln!("hadronyche-vectors: {:?}: unknown reason", entry.path);
+                std::process::exit(1);
+            }
+        },
         _ => "Outcome::NotWire".to_owned(),
     }
+}
+
+/// The whole file's members; a wire-valid file's `decoded` member points at
+/// its `DECODED_n` static instead of a second copy.
+fn document(map: &Map<String, Value>, decoded: Option<&str>) -> String {
+    let items: Vec<String> = map
+        .iter()
+        .map(|(name, v)| match decoded {
+            Some(decoded) if name == "decoded" => {
+                format!("Field {{ name: {name:?}, value: Value::Object(&{decoded}) }}")
+            }
+            _ => format!("Field {{ name: {name:?}, value: {} }}", value(v)),
+        })
+        .collect();
+    format!("[{}]", items.join(", "))
 }
 
 /// A JSON value as a constant `reader::Value` expression.
