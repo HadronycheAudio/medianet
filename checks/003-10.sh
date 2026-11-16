@@ -74,20 +74,18 @@ APPENDIX = DESIGN / "06-evidence-appendix.md"
 ARCH = DESIGN / "01-architecture.md"
 EPIC003 = "implementation/003-POC-smoke-fixes.md"
 
-# L2: frozen rows, pinned by the sha256 of the exact line (no newline).
-P02_SHA = "bd9b54d70227a6e567df073e55338e5dc540455d1029b12ea7dff9de9641d900"
-P03_SHA = "efa69476086bc34c84f08ca4c4eca981e1c59edb5c47042e35b46646a28b3e7c"
 P_KEEP = ["P-01", "P-02", "P-03", "P-04", "P-05", "P-06"]
-# R1: the constants table is pinned except for ONE added row naming the tag.
-CONST_LINES = 280          # lines of 02-constants.md today (none names the tag)
-CONST_SHA = "8bde3759c7c583a7c6e20fbdb7e9bd6c808c3be5e898ddc17451fb8156652efb"
-C130_SHA = "5f717dc8b082d6ed50c7075629c208648821c1c30b5d9065d83cdcfbee089882"
-# R5/R3: pre-existing paragraphs that mention the tag and are unchanged by this
-# ticket.  Exempt from the tag rule (R5) and the loss rule (R3).
-EXEMPT_PREEXISTING_SHA = {
-    "8ec1c81468e78c9dd98bf2c542acfdd5b0f8e1b32b80e51f401be8843543cdb2",  # 007b:55 (no tag)
-    "d06f6876d5f6c28679ce3d76ab8f24e1061e34cec62968c4be046e1a623808fa",  # 06:32 REPORT-0b (b) (loss, descriptive)
+# T1: row-level pins of the frozen constants rows (sha256 of the exact line).
+# The whole file is not pinned: a later ticket may add a constants row.
+FROZEN_ROW_SHA = {
+    "P-01": "7465b6516948da18b1dc6c9db74c8cb251454ca0d3ff238901ed159061130c5b",
+    "P-02": "bd9b54d70227a6e567df073e55338e5dc540455d1029b12ea7dff9de9641d900",
+    "P-03": "efa69476086bc34c84f08ca4c4eca981e1c59edb5c47042e35b46646a28b3e7c",
+    "P-04": "e4c6da1c75ee29970142037d7200782595fdc4be6d8fce190e7ee0357ed92aef",
+    "P-05": "c7617da689dfa8dde75897d5f069de51929f522c7980728c037cb3f5c5527256",
+    "P-06": "bbed1c843f8ff7e737f3b551f6557a22a80e7c935c67d076dcfd04f6392bef9d",
 }
+C130_SHA = "5f717dc8b082d6ed50c7075629c208648821c1c30b5d9065d83cdcfbee089882"
 
 TAG_RE = re.compile(r"\[(code|measured|decision|kernel-doc|memory|standard)\]")
 EXC_RE = re.compile(r"task 003|tasks? [\d ,and]*003|epic 003|\bC-130\b|003-(AC|\d)", re.I)
@@ -108,7 +106,6 @@ LOSS_NUM_RE = re.compile(
 )
 NOT_CITABLE_RE = re.compile(r"not (citable|citeable)", re.I)
 HEADLESS_NO_TERM_RE = re.compile(r"\bno terminal\b|\bwithout (a )?terminal\b", re.I)
-MACHINE_RE = re.compile(r"hackrobustus|i7-1365U")
 
 results = []  # (group, ok, message)
 
@@ -263,6 +260,31 @@ def p_rows(text):
     return rows
 
 
+def baseline_text():
+    r = git("show", "%s:BASELINE.md" % TAG)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def subsection(path):
+    """Heading naming the tag, up to the next heading of the same or higher level."""
+    lines = path.read_text(encoding="utf-8").split("\n")
+    heads = []
+    for i, l in enumerate(lines, 1):
+        m = re.match(r"^(#{1,6})\s+(.*)$", l)
+        if m:
+            heads.append((i, len(m.group(1)), l))
+    named = [h for h in heads if TAG in h[2]]
+    if not named:
+        return None
+    start, lvl, _ = named[0]
+    end = next((h[0] for h in heads if h[0] > start and h[1] <= lvl), len(lines) + 1)
+    return start, end, "\n".join(lines[start - 1:end - 1])
+
+
+def runs_ok(text, n):
+    return ("%s s" % n) in text and re.search(r"\b(two|2|both)\b[^.\n]{0,25}\bruns?\b", text, re.I) is not None
+
+
 def run():
     G_SETUP = "setup"
     if not DESIGN.is_dir():
@@ -277,6 +299,13 @@ def run():
     appendix_blocks = read_blocks(APPENDIX)
     arch_blocks = read_blocks(ARCH)
     figs, err = read_baseline_figures()
+    base_txt = baseline_text()
+    mh = re.search(r"^Machine: host (\S+?),", base_txt, re.M)
+    mc = re.search(r"^Machine: .*?(i\d-\d+[A-Z]*)\b", base_txt, re.M)
+    mr = re.search(r"runs were (\d+) s long", base_txt)
+    HOST = mh.group(1) if mh else None
+    CPU = mc.group(1) if mc else None
+    RUN_S = mr.group(1) if mr else None
     if figs is None:
         bad(G_SETUP, err)
         fig50 = fig1000 = None
@@ -289,27 +318,23 @@ def run():
     else:
         bad(G_SETUP, "tag %s does not exist in the POC at %s" % (TAG, POC))
 
-    # ---- AC1: POC reference row next to P-02; P-02 unchanged ----
+    # ---- AC1: POC reference row next to P-02; frozen rows unchanged ----
     G1 = "AC1 constants table"
     rows = p_rows(constants)
     p02 = [r for r in rows if r[2] == "P-02"]
-    p03 = [r for r in rows if r[2] == "P-03"]
-    if len(p02) != 1:
-        bad("AC1 P-02 unchanged", "P-02 row found %d times" % len(p02))
-    else:
-        h = hashlib.sha256(p02[0][1].encode("utf-8")).hexdigest()
-        if h == P02_SHA:
-            ok("AC1 P-02 unchanged", "P-02 row (line %d) is byte-identical to the frozen row" % p02[0][0])
+    for rid, want in sorted(FROZEN_ROW_SHA.items()):
+        cand = [r for r in rows if r[2] == rid]
+        if len(cand) != 1:
+            bad("AC1 frozen rows", "%s row found %d times" % (rid, len(cand)))
+        elif hashlib.sha256(cand[0][1].encode("utf-8")).hexdigest() == want:
+            ok("AC1 frozen rows", "%s row (line %d) is byte-identical to the frozen row" % (rid, cand[0][0]))
         else:
-            bad("AC1 P-02 unchanged", "P-02 row (line %d) changed: sha256 %s" % (p02[0][0], h))
-    if len(p03) != 1:
-        bad("AC1 P-02 unchanged", "P-03 row found %d times" % len(p03))
+            bad("AC1 frozen rows", "%s row (line %d) changed: sha256 %s" % (rid, cand[0][0], hashlib.sha256(cand[0][1].encode("utf-8")).hexdigest()))
+    c130 = [l for l in constants.split("\n") if l.startswith("| C-130 |")]
+    if len(c130) == 1 and hashlib.sha256(c130[0].encode("utf-8")).hexdigest() == C130_SHA:
+        ok("AC3 rule", "C-130 row is unchanged (pinned) and states the exception 'except by task 003'")
     else:
-        h = hashlib.sha256(p03[0][1].encode("utf-8")).hexdigest()
-        if h == P03_SHA:
-            ok("AC1 P-02 unchanged", "P-03 row (line %d) is byte-identical to the frozen row" % p03[0][0])
-        else:
-            bad("AC1 P-02 unchanged", "P-03 row (line %d) changed: sha256 %s" % (p03[0][0], h))
+        bad("AC3 rule", "C-130 row changed or missing: it is a decided constant and is never edited")
     ids = [r[2] for r in rows]
     missing = [k for k in P_KEEP if ids.count(k) != 1]
     if not missing:
@@ -340,33 +365,20 @@ def run():
             ok(G1, "new row %s is tagged [measured]" % rid)
         else:
             bad(G1, "new row %s is not tagged [measured]" % rid)
-        if "CONFIG_HZ=250" in line and MACHINE_RE.search(line):
-            ok(G1, "new row %s names the machine (host or CPU) and CONFIG_HZ=250" % rid)
+        if "CONFIG_HZ=250" in line and HOST and HOST in line:
+            ok(G1, "new row %s names the host %s and CONFIG_HZ=250" % (rid, HOST))
         else:
-            bad(G1, "new row %s lacks the machine (hackrobustus or i7-1365U) and CONFIG_HZ=250" % rid)
+            bad(G1, "new row %s lacks the host %s and CONFIG_HZ=250" % (rid, HOST))
+        if RUN_S and runs_ok(line, RUN_S):
+            ok(G1, "new row %s states the run count and %s s length of BASELINE.md" % (rid, RUN_S))
+        else:
+            bad(G1, "new row %s must state the run count (two) and %s s length as BASELINE.md does" % (rid, RUN_S))
         for sha in hex_commits(line):
             good, why = is_ancestor(sha)
             if good:
                 ok(G1, "commit %s named in the new row is an ancestor of %s" % (sha, TAG))
             else:
                 bad(G1, "new row %s: %s" % (rid, why))
-
-    # R1: the constants table is pinned; C-130 is a decided constant, never edited
-    c130 = [l for l in constants.split("\n") if l.startswith("| C-130 |")]
-    if len(c130) == 1 and hashlib.sha256(c130[0].encode("utf-8")).hexdigest() == C130_SHA:
-        ok("AC3 rule", "C-130 row is unchanged (pinned) and states the exception 'except by task 003'")
-    else:
-        bad("AC3 rule", "C-130 row changed or missing: it is a decided constant and is never edited")
-    all_lines = constants.split("\n")
-    no_tag = [l for l in all_lines if TAG not in l]
-    if len(no_tag) == CONST_LINES:
-        ok("AC1 constants table", "02-constants.md has %d lines outside the one new row (today's count)" % CONST_LINES)
-    else:
-        bad("AC1 constants table", "02-constants.md: %d lines without %s, expected %d (only ONE row may be added)" % (len(no_tag), TAG, CONST_LINES))
-    if hashlib.sha256("\n".join(no_tag).encode("utf-8")).hexdigest() == CONST_SHA:
-        ok("AC1 constants table", "02-constants.md is byte-identical to today apart from the one new row")
-    else:
-        bad("AC1 constants table", "02-constants.md differs from today beyond the one new row (sha256 of the rest changed)")
 
     # ---- AC2: evidence appendix carries the same figures ----
     G2 = "AC2 evidence appendix"
@@ -381,8 +393,10 @@ def run():
         miss = []
         if "[measured]" not in entry["text"]:
             miss.append("[measured]")
-        if not MACHINE_RE.search(entry["text"]):
-            miss.append("machine (hackrobustus or i7-1365U)")
+        if not (HOST and CPU and HOST in entry["text"] and CPU in entry["text"]):
+            miss.append("machine: host %s and CPU %s" % (HOST, CPU))
+        if not (RUN_S and runs_ok(entry["text"], RUN_S)):
+            miss.append("run count and %s s length" % RUN_S)
         if "CONFIG_HZ=250" not in entry["text"]:
             miss.append("CONFIG_HZ=250")
         if miss:
@@ -454,10 +468,40 @@ def run():
     for b in offenders:
         bad(G3, "%s:%d: freeze or no-code statement without task 003 or C-130: \"%s\"" % (rel(b), b["line"], quote(b)))
 
+    # ---- scope of the loss and tag rules (T2): what this ticket owns ----
+    sub = subsection(APPENDIX)
+    scope = []
+    if sub is None:
+        bad("AC2 evidence appendix", "no heading of the appendix names %s (the baseline subsection)" % TAG)
+    else:
+        scope += [b for b in appendix_blocks if sub[0] < b["line"] < sub[1]]
+    scope += [b for b in read_blocks(CONSTANTS) if b["text"].startswith("| P-") and TAG in b["text"]]
+    scope += [b for b in arch_blocks if TAG in b["text"] and "frozen" in b["text"]]
+
+    # ---- (a) the baseline subsection cites no untracked working notes ----
+    G6 = "AC6 baseline subsection sources"
+    if sub is None:
+        bad(G6, "cannot check sources: no baseline subsection")
+    else:
+        text = sub[2]
+        if "swarm/" in text or re.search(r"working notes", text, re.I):
+            bad(G6, "the baseline subsection cites swarm/ working notes (untracked) as a source")
+        else:
+            ok(G6, "the baseline subsection cites no swarm/ or working notes")
+        for tok in re.findall(r"`([^`\s]+)`", text):
+            if "/" not in tok or tok.startswith("/") or tok.startswith("http"):
+                continue
+            here = (ROOT / tok).exists()
+            there = git("cat-file", "-e", "%s:%s" % (TAG, tok)).returncode == 0
+            if here or there:
+                ok(G6, "source path %s exists in the repository or at %s" % (tok, TAG))
+            else:
+                bad(G6, "source path %s named by the baseline subsection exists neither here nor at %s" % (tok, TAG))
+
     # ---- L4: lock sub-question and known-inert answer ----
     G4 = "L4 lock and known-inert"
     lock_ok = [b for b in corpus(exclude=())
-               if re.search(r"4\.1 ?s\b", b["text"]) and re.search(r"LOCK", b["text"], re.I)
+               if re.search(r"(?<![0-9.])4\.1 ?s\b", b["text"]) and re.search(r"LOCK", b["text"], re.I)
                and re.search(r"25 ?s\b", b["text"]) and "[measured]" in b["text"]
                and (TAG in b["text"] or POC_RE.search(b["text"]))]
     if lock_ok:
@@ -472,29 +516,28 @@ def run():
     else:
         bad(G4, "no tagged paragraph records, for %s, that no in-scope check family is known-inert" % TAG)
 
-    # ---- L5: headless only with --no-tui; loss figures not citable ----
+    # ---- headless: only the epic 003 file (T2) ----
     G5 = "L5 headless and loss"
-    for b in corpus(exclude=()):
+    epic_blocks = [b for b in corpus(exclude=()) if rel(b) == EPIC003]
+    for b in epic_blocks:
         if HEADLESS_NO_TERM_RE.search(b["text"]):
             bad(G5, "%s:%d: says headless when there is no terminal (headless is --no-tui only): \"%s\"" % (rel(b), b["line"], quote(b)))
-    if not any(HEADLESS_NO_TERM_RE.search(b["text"]) for b in corpus(exclude=())):
-        ok(G5, "no paragraph says the POC runs headless when there is no terminal")
-    for b in corpus(exclude=(EPIC003,)):
-        # R3: a paragraph that mentions the tag may carry a loss number only with "not citable"
-        if hashlib.sha256(b["text"].encode("utf-8")).hexdigest() in EXEMPT_PREEXISTING_SHA:
-            continue
+    if epic_blocks and not any(HEADLESS_NO_TERM_RE.search(b["text"]) for b in epic_blocks):
+        ok(G5, "epic 003 does not say the POC runs headless when there is no terminal")
+
+    # ---- L5: loss numbers in the ticket's own text only (T2) ----
+    for b in scope:
         if TAG in b["text"] and LOSS_NUM_RE.search(b["text"]) and not NOT_CITABLE_RE.search(b["text"]):
             bad(G5, "%s:%d: POC loss figure with no 'not citable' statement: \"%s\"" % (rel(b), b["line"], quote(b)))
 
-    # ---- L7: tags on paragraphs that mention the tag; open items ----
+    # ---- AC4: tags on the ticket's own paragraphs (T2) ----
     G7 = "AC4 tags"
-    for b in corpus(exclude=(EPIC003,)):
+    for b in scope:
         if b["text"].lstrip().startswith("#"):
-            continue
-        if hashlib.sha256(b["text"].encode("utf-8")).hexdigest() in EXEMPT_PREEXISTING_SHA:
             continue
         if TAG in b["text"] and not TAG_RE.search(b["text"]):
             bad(G7, "%s:%d: paragraph mentions %s without an evidence tag: \"%s\"" % (rel(b), b["line"], TAG, quote(b)))
+    ok(G7, "%d paragraphs of the ticket's own text checked for tags" % len(scope))
     G5b = "AC5 open items"
     for b in corpus(exclude=(EPIC003,)):
         t = b["text"].lstrip().lstrip("*_ ").lower()
