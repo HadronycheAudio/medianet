@@ -586,19 +586,39 @@ need("families", re.search(r"(?<![0-9])5 s", S_FAM) is not None and re.search(r"
      "a headless --duration run shorter than about 5 s exits non-zero by design")
 
 # ---------------------------------------------------------------- smoke
-need("smoke", "tools/smoke.sh --no-tui" in doc, "the smoke command line `tools/smoke.sh --no-tui` is written out")
+fenced_cmds = []
+fence = False
+for line in doc_lines:
+    if line.lstrip().startswith("```"):
+        fence = not fence
+        continue
+    if fence:
+        fenced_cmds.append(line.strip())
+if any(re.match(r"^(\S+=\S+\s+)*tools/smoke\.sh\s+--group\s+239\.72\.68\.44:(\d{1,5}|<port>|PORT)(\s|$)", c) for c in fenced_cmds):
+    ok("smoke: a fenced run command passes a caller-supplied group: tools/smoke.sh --group 239.72.68.44:<port>")
+else:
+    bad("smoke: no fenced run command of the form `tools/smoke.sh --group 239.72.68.44:<port>` (the caller's isolation group, passed as an argument)")
+if re.search(r"tools/smoke\.sh\s+--check-metrics\s+\S+", S_SMOKE):
+    ok("smoke: the metrics-only form `tools/smoke.sh --check-metrics <file>` is written out")
+else:
+    bad("smoke: write out the metrics-only form `tools/smoke.sh --check-metrics <file>`")
+if re.search(r"(script|smoke)[^.\n]{0,80}(passes|supplies)[^.\n]{0,20}--no-tui", S_SMOKE, re.I):
+    ok("smoke: the prose says the script itself passes --no-tui to hadropoc")
+else:
+    bad("smoke: say in prose that the script itself passes --no-tui to hadropoc (not a caller's command)")
 bad_fenced = []
 fence = False
 for i, line in enumerate(doc_lines):
     if line.lstrip().startswith("```"):
         fence = not fence
         continue
-    if fence and "smoke.sh" in line and "--no-tui" not in line and "--check-metrics" not in line:
+    if fence and re.search(r"smoke\.sh\b.*--no-tui", line):
         bad_fenced.append(i + 1)
 if bad_fenced:
-    bad("smoke: a command line naming tools/smoke.sh lacks --no-tui (lines %s)" % bad_fenced[:5])
+    bad("smoke: a command passes --no-tui to tools/smoke.sh (lines %s); the script passes it itself, so hadropoc gets the flag twice and the run fails"
+        % bad_fenced[:5])
 else:
-    ok("smoke: every command line naming tools/smoke.sh carries --no-tui")
+    ok("smoke: no command passes --no-tui to tools/smoke.sh")
 for lit, what in (("HADROPOC_BIN", "the binary override HADROPOC_BIN"),
                   ("--check-metrics", "the metrics-only mode --check-metrics"),
                   ("--group", "the caller-supplied --group argument"),
@@ -613,7 +633,7 @@ need("smoke", re.search(r"four modules|4 modules", S_SMOKE, re.I) is not None, "
 need("smoke", re.search(r"lock.{0,60}column", S_SMOKE, re.I | re.S) is not None and "Locked" in S_SMOKE
      and re.search(r"headless", S_SMOKE, re.I) is not None,
      "every module's lock column is judged, not the headless clock field")
-need("smoke", re.search(r"\b101\b", S_SMOKE) is not None and "--no-tui" in S_SMOKE,
+need("smoke", re.search(r"\b101\b", S_SMOKE) is not None and "--no-tui" in S_SMOKE and re.search(r"headless", S_SMOKE, re.I) is not None,
      "the POC has no headless fallback: without --no-tui and a terminal it exits 101")
 need("smoke", re.search(r"asserts?\s+nothing", S_SMOKE, re.I) is not None
      and re.search(r"sync rate", S_SMOKE, re.I) and re.search(r"latency", S_SMOKE, re.I)
@@ -677,6 +697,18 @@ PY
       *) bad "AC5 unexpected checker output: $line" ;;
     esac
   done <<< "$py_out"
+fi
+
+# ------------------------------------------------ SCRIPT (verified at run time)
+echo "-- SCRIPT tools/smoke.sh at HEAD passes --no-tui to its own hadropoc command and appends \"\$@\""
+if gitpoc show "HEAD:tools/smoke.sh" > "$OUT/smoke-head.sh" 2>/dev/null; then
+  if grep -Eq 'loopback .*--no-tui' "$OUT/smoke-head.sh" && grep -Fq '"$@"' "$OUT/smoke-head.sh"; then
+    pass "SCRIPT tools/smoke.sh passes --no-tui to hadropoc and appends \"\$@\" (so a caller must not add --no-tui)"
+  else
+    bad "SCRIPT tools/smoke.sh at HEAD no longer passes --no-tui to its hadropoc command or no longer appends \"\$@\": the smoke section of this check must be revised, not silently accepted"
+  fi
+else
+  bad "SCRIPT tools/smoke.sh cannot be read at HEAD"
 fi
 
 # ---------------------------------------------------------------- TREE
