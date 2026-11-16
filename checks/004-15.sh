@@ -592,35 +592,49 @@ if not eth_total:
     fail("AC 1", f"the Ethernet framing total of {ETH} bytes is not stated beside 'Ethernet'")
 
 # Evidence of the Ethernet framing units (C-132, DoD).
-FRAMING = re.compile(r"\bFCS\b|frame check|check sequence|preamble|inter-?frame|"
-                     r"Ethernet framing|Ethernet[^.;|]{0,12}header|\bEthernet\b", re.I)
+FRAMING_TERM = re.compile(r"\bFCS\b|frame check|check sequence|preamble|start-of-frame|inter-?frame|"
+                          r"\bIFG\b|Ethernet (?:header|framing)", re.I)
+IPV_NAMED = re.compile(r"\bIPv4\b|\bUDP\b")
+FRAMING_FIGURES = (14, 4, 8, 12, 38)
 CHECKER_RE = re.compile(r"\b\d{3}[a-z]?-\d{2}\b")
 CHECK_WORD = re.compile(r"\b(checks?|checker|pins?|pinned|verifies|verify|checked by)\b", re.I)
-CLAUSE_RE = re.compile(r"\b[Cc]lause\s+\d+(?:\.\d+)+")
+# A clause reference: "clause 3.2.9", "subclause 4.4.2", "§ 3.1", or a standard designation with a
+# dotted clause number ("802.3-2022 3.2.9", "IEEE 802.3 3.2.9").
+CLAUSE_RE = re.compile(r"\b(?:sub)?clause\s+\d+(?:\.\d+)+|§\s*\d+(?:\.\d+)+|"
+                       r"\b(?:IEEE\s+)?(?:Std\s+)?\d+\.\d+(?:-\d{4})?\s+\d+(?:\.\d+)+", re.I)
+
+
+def is_framing(text, label=None):
+    """A framing unit names an Ethernet framing part (FCS, preamble, inter-frame gap, Ethernet header or
+    framing), or 'Ethernet' with one of the framing figures. A row whose label names IPv4 or UDP is not."""
+    if label is not None and IPV_NAMED.search(label):
+        return False
+    body = re.sub(r"\b\d{3}[a-z]?-\d{2}\b", " ", text)
+    if FRAMING_TERM.search(body):
+        return True
+    return bool(re.search(r"\bEthernet\b", body, re.I) and any(v in ints(body) for v in FRAMING_FIGURES))
+
+
 for u in UNITS:
     own = u.get("own", u["text"])
-    figures = ints(re.sub(r"\b\d{3}[a-z]?-\d{2}\b", " ", own))
-    if not FRAMING.search(own) or not any(v in figures for v in (14, 4, 8, 12, 38)):
-        continue   # a framing unit states a figure; a mention without one is not a figure
+    label = u["cells"][0] if u["kind"] == "row" else None
+    if not is_framing(own, label):
+        continue
     tags = {t.lower() for t in TAG_RE.findall(own)}
     if not tags:
-        fail("DoD", "an Ethernet framing figure has no [memory] or [standard] tag (C-132): " + own[:80])
+        fail("DoD", "an Ethernet framing unit has no [memory] or [standard] tag (C-132): " + own[:80])
         continue
-    if "[memory]" in tags:
-        if not (CHECKER_RE.search(own) and CHECK_WORD.search(own)):
-            fail("DoD", "an Ethernet framing figure tagged [memory] names no checking task "
+    if "[memory]" in tags and not (CHECKER_RE.search(own) and CHECK_WORD.search(own)):
+        fail("DoD", "an Ethernet framing unit tagged [memory] names no checking task "
                     "(a ticket id with checks/pins/verifies/checker): " + own[:80])
-    if "[standard]" in own.lower():
-        if u["kind"] == "row":
-            label_is_ethernet = re.match(r"\s*Ethernet", u["cells"][0], re.I) is not None
-            if label_is_ethernet and not CLAUSE_RE.search(own):
-                fail("DoD", "an Ethernet framing row tagged [standard] has no clause with a dotted number: " + own[:80])
-        else:
-            for sent in re.split(r"(?<=[.;])\s+", own):
-                if "[standard]" in sent.lower() and re.search(r"Ethernet|FCS|preamble|inter-?frame", sent, re.I) \
-                        and not CLAUSE_RE.search(sent):
-                    fail("DoD", "an Ethernet framing sentence tagged [standard] has no clause with a dotted "
-                                "number: " + sent[:80])
+    if u["kind"] == "row":
+        if "[standard]" in own.lower() and not CLAUSE_RE.search(own):
+            fail("DoD", "an Ethernet framing row tagged [standard] has no clause reference: " + own[:80])
+    else:
+        for sent in re.split(r"(?<=[.;])\s+", own):
+            if "[standard]" in sent.lower() and is_framing(sent) and not IPV_NAMED.search(sent) \
+                    and not CLAUSE_RE.search(sent):
+                fail("DoD", "an Ethernet framing sentence tagged [standard] has no clause reference: " + sent[:80])
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +688,18 @@ for x in DIFF_UNITS:
 if not ok_bytes:
     fail("AC 2", f"no unit gives the byte difference {DIFF_B:+d} bytes against {C20} (C-20) and "
                  f"{PCT_B:+.1f} % in one sentence or row")
+# Every percent stated in a sentence that gives the difference from C-20 (or C-21) must be the share.
+for x in DIFF_UNITS:
+    if C20 in ints(x) and abs(DIFF_B) in ints(x):
+        for v, d in pcts(x):
+            if not abs(v - abs(PCT_B)) <= max(0.1, tol_of(d)):
+                fail("AC 2", f"a percent beside C-20 and the {abs(DIFF_B)}-byte difference is {v:g} %, but the "
+                             f"computed share is {abs(PCT_B):.2f} %: " + x[:100])
+    if re.search(r"(?<![\w.])21\.1(?![\d])", x) and any(close(v, abs(DIFF_R), tol_of(d)) for v, d in floats(x)):
+        for v, d in pcts(x):
+            if not abs(v - abs(PCT_R)) <= max(0.1, tol_of(d)):
+                fail("AC 2", f"a percent beside C-21 and the {abs(DIFF_R):.3f} Mbit/s difference is {v:g} %, but the "
+                             f"computed share is {abs(PCT_R):.2f} %: " + x[:100])
 ok_rate = False
 for x in DIFF_UNITS:
     if re.search(r"(?<![\w.])%s(?![\d])" % re.escape(f"{C21:g}"), x):
@@ -721,6 +747,24 @@ for ch, streams, c22_rate, pps in C22:
                     fail("AC 2", f"the {ch}-channel share of the C-22 difference is stated as {p:g} %, but "
                                  f"{abs(exp_diff):.3f} over {' or '.join(f'{b:g}' for b in bases)} is "
                                  f"{' or '.join(f'{abs(exp_diff) / b * 100:.2f} %' for b in bases)}: " + t[:100])
+
+# AC 2 (R2-c): a percent stated against "C-21 x streams" (before C-22's rounding) is the per-stream
+# share (per-stream rate − C-21) / C-21; the stream count cancels, so every source has the same share.
+SHARE_TRIGGER = re.compile(r"C-21 ?[×x] ?streams|C-21 times|before C-22", re.I)
+for u in UNITS:
+    for t in sentences_of(u):
+        if not SHARE_TRIGGER.search(t):
+            continue
+        for m in SIGNED_PCT.finditer(t):
+            p, d, sg = signed_num(m)
+            if not close(sg * p, PCT_R, max(0.1, tol_of(d))):
+                fail("AC 2", f"the share against C-21 x streams is stated as {sg * p:+g} %, but the per-stream share "
+                             f"is {PCT_R:+.2f} % ((per-stream - C-21) / C-21): " + t[:100])
+        for m in re.finditer(r"(?<![\w.\-−+])(\d+)(?:\.(\d+))?\s*%", t):
+            p, d = float(m.group(1) + ("." + m.group(2) if m.group(2) else "")), len(m.group(2) or "")
+            if not close(p, abs(PCT_R), max(0.1, tol_of(d))):
+                fail("AC 2", f"the share against C-21 x streams is stated as {p:g} %, but the per-stream share "
+                             f"is {abs(PCT_R):.2f} %: " + t[:100])
 
 # AC 2 (T2): a per-channel figure in a comparison sentence is the computed per-channel rate
 # (per stream / 6), C-21's per-channel figure, or their difference; a per-stream figure is
@@ -797,9 +841,11 @@ five = [s for s in sentences if re.search(r"(?<![\w.])5 ?%", s)]
 if not five:
     fail("AC 3", "no sentence states the 5 % rule (a sentence with '5 %' and exceed / within / below / above)")
 for s in five:
-    within = re.search(r"\bwithin\b|\bbelow\s+(?:the\s+)?5|\bunder\s+(?:the\s+)?5|\bnot exceed|"
-                       r"\bdoes not exceed|\bdo not exceed|\bno more than", s, re.I)
-    exceed = re.search(r"exceed|above", s, re.I) and not within
+    within = re.search(r"\bwithin\b|\bbelow\s+(?:the\s+)?5|\bunder\s+(?:the\s+)?5|\bless than\s+(?:the\s+)?5|"
+                       r"\bsmaller than\s+(?:the\s+)?5|\bnot exceed|\bdoes not exceed|\bdo not exceed|"
+                       r"\bno more than", s, re.I)
+    exceed = re.search(r"exceed|above|\bmore than\s+(?:the\s+)?5|\bgreater than\s+(?:the\s+)?5|"
+                       r"\bover\s+(?:the\s+)?5", s, re.I) and not within
     if not (within or exceed):
         fail("AC 3", "a '5 %' sentence states no direction: " + s[:90])
         continue
@@ -838,13 +884,20 @@ for t in sentences:
     bits = [to_int(m.group(1)) for m in re.finditer(r"(\d[\d ]*\d|\d)\s*bit/s", t)]
     mb = mbit_list(t)
     if mb or bits:
-        if not (any(close(v, AUD_BITS / 1e6, tol_of(d)) for v, d in mb) or any(abs(b - AUD_BITS) <= 0.5 for b in bits)):
-            fail("AC 4", f"the audio declared rate is not {AUD_BYTES} bytes (cap {CAP} + audio {AUDIO} + {OVH}) "
-                         f"at {AUD_BITS:,} bit/s: " + t[:100])
+        # every rate figure of the sentence is one the layout computes (default, largest v1, format maximum,
+        # or the audio cap form), and the cap form is among them
+        allowed_mbit = [w * 8 * SLICE_RATE / 1e6 for w in (DEF_PAY + OVH, V1_LARGEST_PAY + OVH, ANN_MAX_PAY + OVH,
+                                                          AUD_BYTES)]
+        if not all(any(close(v, a, tol_of(d)) for a in allowed_mbit) for v, d in mb) or \
+                not all(any(abs(b - a * 1e6) <= 0.5 for a in allowed_mbit) for b in bits):
+            fail("AC 5", f"an audio declared rate is stated as a figure the layout does not compute (the cap form is "
+                         f"{AUD_BYTES} bytes, {AUD_BITS:,} bit/s): " + t[:100])
+        elif not (any(close(v, AUD_BITS / 1e6, tol_of(d)) for v, d in mb) or any(abs(b - AUD_BITS) <= 0.5 for b in bits)):
+            fail("AC 5", f"the audio declared rate is not the cap form, {AUD_BYTES} bytes at {AUD_BITS:,} bit/s: " + t[:100])
     big = [to_int(m.group(1)) for m in re.finditer(r"(\d[\d ]*\d|\d)\s*bytes", t)
            if to_int(m.group(1)) >= 1000]
     if big and AUD_BYTES not in big:
-        fail("AC 4", f"the audio declared rate's bytes are not {AUD_BYTES} (cap + audio + 66): " + t[:100])
+        fail("AC 5", f"the audio declared rate's bytes are not {AUD_BYTES} (cap + audio + 66): " + t[:100])
 
 # ---------------------------------------------------------------------------
 # AC 4: the controller-stream wire cost of C-219.
