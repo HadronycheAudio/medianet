@@ -797,6 +797,18 @@ def entry_nodes(node, out=None):
     return out
 
 
+def exact_product_results(text):
+    """Results c of every chain product 'a × b × ... = c' in text whose factors multiply exactly to c (chain parser)."""
+    out = set()
+    for expr, c in re.findall(r"((?:\d+\s*(?:×|\bx\b|\*)\s*)+\d+)\s*=\s*(\d+)", text):
+        prod = 1
+        for fac in re.split(r"\s*(?:×|\bx\b|\*)\s*", expr.strip()):
+            prod *= int(fac)
+        if prod == int(c):
+            out.add(int(c))
+    return out
+
+
 def has_num2(text, n):
     """A number as a whole token: 17 does not match C-17, and -324 matches only as a negative."""
     s = str(n)
@@ -963,10 +975,45 @@ else:
           f"the overflow report gives the threshold in entries, (64 − {S_OTHER} − {S_NEW}) × {F_H} = {THRESH}")
     check("AC1", bool(re.search(r"\bcap", best, re.I)), "the overflow report names the connection cap that the design owner sets")
     check("DoD", has_evidence(best), "the overflow report paragraph carries an evidence tag")
+    # C2 (review): the closed-form cap condition states the width it assumes, the limit for its own entry size and for an
+    # alternative entry size as exact arithmetic, per-input entries (Open item 17), and the section types not yet laid out.
+    CAP_PARAS = [x for x in PARAS if "18⌉" in x and re.search(r"\bcap\b", x)]
+    union = "\n".join(CAP_PARAS)
+    check("AC1", bool(CAP_PARAS), "the cap condition is stated in closed form over ⌈ ⌉ of 18 member entries per section")
+    check("AC1", any(re.search(r"assum", x, re.I) and re.search(r"bit|bytes", x, re.I) and has_evidence(x)
+                     for x in sentences(union)),
+          "the cap condition states, in a tagged sentence, the figure width it assumes (review C2 (a))")
+    check("AC1", bool(re.search(r"per[- ]input", union, re.I)) and "Open item 17" in union,
+          "the cap condition assumes per-input alignment entries and names Open item 17 (review C2 (b))")
+    for tok, what in [(r"path[ -]MTU", "the path MTU"), (r"013-08", "013-08"), (r"006-19", "006-19")]:
+        check("AC1", bool(re.search(tok, union, re.I)),
+              f"the cap condition names {what}, a section type not yet laid out that lowers the bound (review C2 (c))")
+    if NEW.get("alignment", {}).get("ok") and NEW.get("dscp", {}).get("ok"):
+        own_F = [f["maxc"] for f, _ in NEW["alignment"]["root"]["rows"] if f["maxc"]][0]
+        own_size = NEW["alignment"]["entries"][0]["size"] // 8
+        budget = (SECTION_MAX or 64) - S_OTHER - NEW["dscp"]["Nt"]
+
+        def limit(Fa):
+            e = 0
+            while cdiv(e + 1, F_H) + cdiv(e + 1, Fa) <= budget:
+                e += 1
+            return e
+
+        L_own = limit(own_F)
+        alt = [(int(x), int(y)) for x, y in re.findall(r"⌊\s*1193\s*/\s*(\d+)\s*⌋\s*=\s*(\d+)", union)
+               if int(x) != own_size and int(y) != own_F]
+        prods = exact_product_results(union)
+        check("AC1", L_own in prods,
+              f"the cap condition gives the limit for its own entry size as exact arithmetic k × n = {L_own} (review C2 (a))")
+        alt_L = limit(alt[0][1]) if alt else None
+        check("AC1", alt_L is not None and alt_L in prods,
+              f"the cap condition gives the limit for one alternative entry size as exact arithmetic k × n = "
+              f"{alt_L if alt_L is not None else 'unstated'}, with ⌊1 193 / X⌋ = Y stating the alternative (review C2 (a))")
 
 # ---------------------------------------------------------------------------
 # AC 2, Work 1: the observed DSCP section
 # ---------------------------------------------------------------------------
+DSCP_WIDE_FLAG = [False]
 if not ("dscp" in NEW and NEW["dscp"]["ok"]):
     check("AC2", False, "the observed DSCP section is missing: the peer id, the hello and sync DSCP, the not-observed encoding "
           "and the dropped-request counter cannot be checked")
@@ -991,14 +1038,34 @@ else:
     check("AC2", any(len(set(x.lower()[:4] for x in re.findall(r"wrap|saturat", f["meaning"] + " " + f["valid"], re.I))) == 1
                      for f in dropped),
           "the dropped-request counter states exactly one wrap or saturation rule (Work 1)")
+    # Work 1 asks for "a distinct 'not observed' encoding" and fixes no shape. Any stated encoding passes if it is told
+    # from an observed DSCP 0 to 63: (a) a sentinel code whose not-observed clause holds no value in 0 to 63,
+    # (b) a one-bit flag, (c) a C-129 state field whose four states are the only states, with the DSCP field
+    # counted only when the state says present (zero otherwise).
     notobs = [f for f in ent if re.search(r"not observed", f["meaning"] + " " + f["valid"], re.I)]
-    check("AC2", bool(notobs), "the not-observed encoding of the sync request DSCP is stated (Work 1)")
-    sentinel = [f for f in ent if re.search(r"not observed", f["meaning"] + " " + f["valid"], re.I)
-                and any(int(x) > 63 for x in re.findall(r"\d+", re.sub(r"C-\d+", "", f["valid"])))]
+
+    def not_observed_codes(valid):
+        out = []
+        for cl in re.split(r";", re.sub(r"C-\d+", "", valid)):
+            if re.search(r"not observed", cl, re.I):
+                out += [int(x) for x in re.findall(r"\b\d+\b", cl)]
+        return out
+
+    sentinel = [f for f in notobs if not_observed_codes(f["valid"]) and all(x > 63 for x in not_observed_codes(f["valid"]))]
+    collide = [f for f in notobs if any(x <= 63 for x in not_observed_codes(f["valid"]))]
     flag = [f for f in ent if re.search(r"observed", f["meaning"], re.I) and f["bits"] == 1
             and re.search(r"\b0 or 1\b|\b0 to 1\b|\b0/1\b", f["valid"])]
-    check("AC2", bool(sentinel) or bool(flag),
-          "the not-observed encoding is distinct from every valid DSCP: a sentinel above 63 or a one-bit flag")
+    state = [f for f in ent if re.search(r"C-129", f["meaning"]) and re.search(r"\bstate", f["meaning"], re.I)]
+    for f in state:
+        counts = [int(b) - int(a) + 1 for a, b in re.findall(r"(\d+) to (\d+)", f["valid"]) if int(a) >= 1]
+        check("AC2", counts == [4], f"the C-129 state field enumerates four states (C-129), found {counts}")
+    state_dscp = [f for f in ent if re.search(r"DSCP", f["meaning"]) and re.search(r"zero|present", f["meaning"] + " " + f["valid"], re.I)]
+    state_ok = bool(state) and bool(state_dscp)
+    check("AC2", not collide and (bool(sentinel) or bool(flag) or state_ok),
+          "the not-observed encoding is stated and told from an observed DSCP 0 to 63 (a sentinel, a one-bit flag, or a C-129 state field)")
+    check("AC2", any(re.search(r"DSCP", f["meaning"]) and re.search(r"0 to 63", f["valid"]) for f in ent),
+          "the DSCP proper is 0 to 63, six bits (C-13), in the observed DSCP entry")
+    DSCP_WIDE_FLAG[0] = any(re.search(r"DSCP", f["meaning"]) and f["bits"] >= 7 for f in ent)
     check("AC2", bool(re.search(r"order", d["text"], re.I)), "the entry order of the observed DSCP section is stated")
     check("AC2", bool(re.search(r"C-34|C-114|C-217", d["text"])), "the observed DSCP entry count derives from the constants (C-34, C-114)")
     dlist = [f for f, _ in d["root"]["rows"] if f["maxc"]]
@@ -1098,7 +1165,37 @@ for key, r in ROWS:
 for cat, pat in [("a DSCP value above 63", r"DSCP"), ("a count above its maximum", r"count|above|exceed|more than|maximum"),
                  ("a length that disagrees", r"length"), ("percentiles out of non-decreasing order", r"non-decreasing|percentile|50th|99th"),
                  ("reserved bits non-zero", r"reserved|non-?zero")]:
+    if cat == "a DSCP value above 63" and not DSCP_WIDE_FLAG[0]:
+        continue  # a six-bit DSCP field holds no value above 63, so no such form is needed
     check("AC4", any(re.search(pat, r[0], re.I) for _, r in ROWS), f"an invalid form covers: {cat} (Work 3)")
+
+# C1 (review): the entry is listed from the moment its connection first goes live (coder text, Alignment group section),
+# and 009-13 says "The maximum since live starts when `finish_aligning` switches to `Live`". So an entry can hold a
+# since-live maximum with no sample yet: its no-sample value must be stated and must not be rejected or excluded.
+if "alignment" in NEW and NEW["alignment"]["ok"]:
+    ga = NEW["alignment"]
+    gent = [f for n in ga["entries"] for f, _ in n["rows"]]
+    nos = [f for f in gent if re.search(r"since", f["meaning"], re.I)
+           and re.search(r"no (live |lateness )?sample|first live sample", f["meaning"] + " " + f["valid"], re.I)]
+    check("AC3", bool(nos), "the maximum since live states the value it carries when it has no sample (C-182; 009-13: it starts when finish_aligning switches to Live)")
+    vals = set()
+    for f in nos:
+        for cl in re.split(r";", f["valid"]):
+            if re.search(r"sample", cl, re.I):
+                vals |= set(re.findall(r"-2\^63|-?\d+", cl))
+    excluded = any(re.search(r"other than\s*" + re.escape(v) + r"(?![\w^])", f["valid"]) for f in nos for v in vals)
+    listed_first = bool(re.search(r"first live sample", ga["text"], re.I))
+    check("AC3", bool(nos) and ((bool(vals) and not excluded) or listed_first),
+          "the no-sample value of the maximum since live is admitted by its own valid range, or entries are listed only from the first live sample (C1)")
+    pct = [x for x in sentences(ga["text"]) if re.search(r"non-decreasing", x, re.I)]
+    check("AC3", any(re.search(r"exempt|holds? for|no (live |lateness )?sample|no-sample|first live sample|-2\^63", x, re.I) for x in pct),
+          "the percentile order rule is stated to hold or be exempt for the no-sample encoding (C1)")
+    for key, r in ROWS:
+        if key != "alignment" or not re.search(r"since", r[0], re.I):
+            continue
+        for v in vals:
+            if re.search(r"(?<![\w^-])" + re.escape(v) + r"(?![\w^])", r[0]):
+                fail("AC4", f"an invalid form rejects the since-live maximum that holds its no-sample value {v}: {r[0][:70]}")
 
 # ---------------------------------------------------------------------------
 # DoD: evidence tags, open items, reserved fields
@@ -1110,6 +1207,9 @@ for key in NEW:
                 and len(re.sub(r"[`*_|>#-]", " ", x).split()) >= 5 and not has_evidence(x)]
     check("DoD", not untagged, f"every prose paragraph of 5 or more words in the {key} subsection carries an evidence tag"
           + (f"; untagged: {untagged[:2]}" if untagged else ""))
+share = [x for x in sentences(STAMP) if re.search(r"share", x) and re.search(r"address", x) and re.search(r"host", x)]
+check("DoD", all(re.search(r"Admission|Receiver report", x) for x in share),
+      "review C4: the sentence on two modules on one host sharing an address cites the merged wire text (Admission or Receiver report), not 01-architecture § 2.6 alone")
 _open = [x for k, x in prose_blocks(STAMP) if re.search(r"open item", x, re.I)]
 check("DoD", all(re.search(r"owner", x, re.I) and re.search(r"falsifier", x, re.I) for x in _open),
       f"every Open item paragraph of the regime stamp section names an owner and a falsifier ({len(_open)} found)")
