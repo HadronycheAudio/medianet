@@ -3319,52 +3319,12 @@ valid = "any 16-bit value as far as parsing goes; a value no outstanding probe c
 #
 # The stamp itself is not a datagram: it is the set of sections that share
 # one sender module id, instance nonce, stamp version and section count, at
-# most 64 sections, 64 x 1 252 = 80 128 bytes. The current schema can declare
-# no control message above 1 252 bytes and has no notion of a payload joined
-# from several messages (the tooling gap owned by ticket 004-23, as for the
-# manifest), so the parent named by section_of, "regime stamp", is declared
-# by the 21 bytes of identity its sections share (8 + 8 + 4 + 1), a key that
-# is never sent alone [decision]. The section types (the bodies) are laid
-# out by 004-25, 004-28 and later epics, each as its own table.
-
-[[message]]
-name = "regime stamp"
-layer = "control"
-dscp = 40
-max_size = 21
-rejection_reasons = ["BadLength"]
-
-[[message.field]]
-name = "module_id"
-offset = 0
-width = 64
-type = "u64"
-meaning = "sender module id (C-11) that every section of the stamp carries; a key, never sent alone"
-valid = "any 64-bit value"
-
-[[message.field]]
-name = "instance_nonce"
-offset = 64
-width = 64
-type = "u64"
-meaning = "instance nonce (C-11) of the sender that every section of the stamp carries"
-valid = "any 64-bit value"
-
-[[message.field]]
-name = "stamp_version"
-offset = 128
-width = 32
-type = "u32"
-meaning = "stamp version number (C-18), the hello's width and rules, that every section of the stamp carries"
-valid = "any 32-bit value"
-
-[[message.field]]
-name = "section_count"
-offset = 160
-width = 8
-type = "u8"
-meaning = "section count: how many sections make up the stamp; every section of one version states the same count"
-valid = "1 to 64"
+# most 64 sections, 64 x 1 252 = 80 128 bytes. section_of names it as the
+# parent, "regime stamp", without declaring it: the current schema can
+# declare no control message above 1 252 bytes and has no notion of a
+# payload joined from several messages (the tooling gap owned by ticket
+# 004-23, as for the manifest) [decision]. The section types (the bodies)
+# are laid out by 004-25, 004-28 and later epics, each as its own table.
 
 [[message]]
 name = "regime stamp section"
