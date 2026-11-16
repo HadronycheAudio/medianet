@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use super::pycompat::{PyStr, normpath};
+
 /// Where the unmodified documents come from.
 #[derive(Debug, Clone)]
 pub enum Source {
@@ -45,11 +47,25 @@ impl Docs {
     }
 
     /// The documents of `commit` in the git repository at `repo`.
-    pub fn at_commit(repo: impl Into<PathBuf>, commit: &str) -> Docs {
-        Docs::from_source(Source::Git {
-            repo: repo.into(),
+    ///
+    /// Fails loudly: `Err` when the commit is not in the repository or its
+    /// tree cannot be listed (never an empty tree, on which a red-phase test
+    /// would fail every criterion vacuously).
+    pub fn at_commit(repo: impl Into<PathBuf>, commit: &str) -> Result<Docs, String> {
+        let repo = repo.into();
+        if !commit_exists(&repo, commit) {
+            return Err(format!(
+                "commit {commit} is not in the repository at {}",
+                repo.display()
+            ));
+        }
+        let tree = git_tree(&repo, commit)?;
+        let docs = Docs::from_source(Source::Git {
+            repo,
             commit: commit.to_string(),
-        })
+        });
+        *docs.tree.lock().expect("docs tree poisoned") = Some(Arc::new(tree));
+        Ok(docs)
     }
 
     fn from_source(source: Source) -> Docs {
@@ -100,6 +116,9 @@ impl Docs {
     /// The text of `path`, or `None` when it does not exist or is not UTF-8.
     pub fn read(&self, path: &str) -> Option<Arc<str>> {
         let key = norm(path);
+        if outside(&key) {
+            return None;
+        }
         if let Some(over) = self.overrides.get(&key) {
             return over.clone();
         }
@@ -127,6 +146,9 @@ impl Docs {
     /// True when `path` is a file of this set.
     pub fn is_file(&self, path: &str) -> bool {
         let key = norm(path);
+        if outside(&key) {
+            return false;
+        }
         if let Some(over) = self.overrides.get(&key) {
             return over.is_some();
         }
@@ -179,7 +201,10 @@ impl Docs {
             return tree.clone();
         }
         let tree = match &self.source {
-            Source::Git { repo, commit } => Arc::new(git_tree(repo, commit)),
+            Source::Git { repo, commit } => Arc::new(
+                git_tree(repo, commit)
+                    .unwrap_or_else(|e| panic!("the tree of {commit} vanished: {e}")),
+            ),
             Source::Dir(_) => Arc::new(BTreeSet::new()),
         };
         *slot = Some(tree.clone());
@@ -286,19 +311,12 @@ pub fn commit_exists(repo: &Path, commit: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// Normalises a repository-relative path: `/` separators, no `.` or `..`.
+/// Normalises a repository-relative path as Python's `os.path.normpath`
+/// (`\\` read as `/`), except that the repository root is `""`, not `"."`.
+/// A leading `..` is kept: [`outside`] tells such a path apart.
 pub fn norm(path: &str) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for part in path.split(['/', '\\']) {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            p => parts.push(p),
-        }
-    }
-    parts.join("/")
+    let p = normpath(&path.replace('\\', "/"));
+    if p == "." { String::new() } else { p }
 }
 
 /// The directory part of a repository-relative path (`""` at the root).
@@ -308,12 +326,21 @@ pub fn dirname(path: &str) -> &str {
 
 /// `rel` resolved against the directory `base` (Python
 /// `os.path.normpath(os.path.join(base, rel))`).
+///
+/// [`PathNorm::PyNormpath`](super::policy::PathNorm::PyNormpath): a leading
+/// `..` is kept, so a link that climbs above the repository yields a path
+/// outside the documents, which no [`Docs`] holds.
 pub fn join(base: &str, rel: &str) -> String {
     if base.is_empty() {
-        norm(rel)
+        normpath(rel)
     } else {
-        norm(&format!("{base}/{rel}"))
+        normpath(&format!("{base}/{rel}"))
     }
+}
+
+/// True when a normalised path lies outside the repository (`..`, `/`, `.`).
+pub fn outside(key: &str) -> bool {
+    key.starts_with('/') || key == ".." || key.starts_with("../")
 }
 
 fn under(path: &str, prefix: &str) -> bool {
@@ -342,7 +369,7 @@ fn walk(root: &Path, prefix: &str) -> BTreeSet<String> {
     out
 }
 
-fn git_tree(repo: &Path, commit: &str) -> BTreeSet<String> {
+fn git_tree(repo: &Path, commit: &str) -> Result<BTreeSet<String>, String> {
     let out = Command::new("git")
         .args([
             "--no-optional-locks",
@@ -353,11 +380,17 @@ fn git_tree(repo: &Path, commit: &str) -> BTreeSet<String> {
         ])
         .current_dir(repo)
         .output()
-        .expect("git ls-tree runs");
-    String::from_utf8_lossy(&out.stdout)
+        .map_err(|e| format!("git ls-tree {commit}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git ls-tree {commit} failed: {}",
+            String::from_utf8_lossy(&out.stderr).py_strip()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
         .map(str::to_string)
-        .collect()
+        .collect())
 }
 
 fn git_bytes(repo: &Path, commit: &str, path: &str) -> Option<Vec<u8>> {
@@ -388,6 +421,18 @@ mod tests {
             "doc/design/spec/wire.md"
         );
         assert_eq!(join("", "./a/b"), "a/b");
+        let up = join("doc/design/spec", "../../../../doc/design/spec/wire.md");
+        assert_eq!(up, "../doc/design/spec/wire.md", "a leading .. is kept");
+        assert!(outside(&up));
+        assert!(
+            !Docs::repo().is_file(&up),
+            "nothing outside the tree is a document"
+        );
+        assert!(
+            Docs::repo()
+                .read("../hadronyche-tools/Cargo.toml")
+                .is_none()
+        );
         assert_eq!(dirname("doc/design/spec/wire.md"), "doc/design/spec");
         assert_eq!(dirname("README.md"), "");
     }
@@ -426,11 +471,16 @@ mod tests {
 
     #[test]
     fn a_commit_reads_through_git() {
-        let docs = Docs::at_commit(repo_root(), "HEAD");
+        let docs = Docs::at_commit(repo_root(), "HEAD").expect("HEAD is a commit");
         assert!(docs.is_file("Cargo.toml"));
         assert!(docs.read("Cargo.toml").unwrap().contains("[workspace]"));
         assert!(docs.read("no/such/file").is_none());
         assert!(commit_exists(&repo_root(), "HEAD"));
+        let missing = "0000000000000000000000000000000000000000";
+        assert!(
+            Docs::at_commit(repo_root(), missing).is_err(),
+            "never an empty tree"
+        );
         assert!(!commit_exists(
             &repo_root(),
             "0000000000000000000000000000000000000000"

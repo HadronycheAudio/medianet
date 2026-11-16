@@ -24,16 +24,41 @@ use super::super::text::rx;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// How a script run ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptOutcome {
+    /// Exit 0, no FAIL line.
+    Pass,
+    /// FAIL lines (exit 1, or exit 0: then [`ScriptVerdict::anomaly`]).
+    Red,
+    /// A Python traceback, a non-zero exit with no FAIL line, or a timeout:
+    /// never matched to a port's red (lead ruling R6).
+    Crash,
+}
+
 /// A script's verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScriptVerdict {
-    /// Exit status 0.
-    pub passed: bool,
+    pub outcome: ScriptOutcome,
     /// The labels of its `FAIL <label>:` lines.
     pub criteria: BTreeSet<String>,
+    /// FAIL lines but exit status 0: counted red, and reported.
+    pub anomaly: bool,
     /// The last lines of its output, for the log.
     pub tail: String,
 }
+
+impl ScriptVerdict {
+    /// True for [`ScriptOutcome::Pass`].
+    pub fn passed(&self) -> bool {
+        self.outcome == ScriptOutcome::Pass
+    }
+}
+
+/// Seconds a script may run under the harness before it counts as crashed
+/// (the scripts' own cargo timeouts were 900 s; their document part takes
+/// well under a second).
+pub const SCRIPT_TIMEOUT_S: u32 = 300;
 
 /// An exported tree with one script in it; removed on drop.
 #[derive(Debug)]
@@ -83,7 +108,9 @@ impl Sandbox {
     pub fn run(&self) -> ScriptVerdict {
         let path = std::env::var("PATH").unwrap_or_default();
         let stub = self.root.join(".harness-bin");
-        let out = Command::new("bash")
+        let out = Command::new("timeout")
+            .arg(SCRIPT_TIMEOUT_S.to_string())
+            .arg("bash")
             .arg(&self.script)
             .current_dir(&self.root)
             .envs(self.env.iter().map(|(k, v)| (k, v)))
@@ -98,22 +125,62 @@ impl Sandbox {
                     String::from_utf8_lossy(&o.stderr)
                 ),
             ),
-            Err(e) => verdict(false, &format!("FAIL HARNESS: cannot run bash: {e}")),
+            Err(e) => verdict(
+                false,
+                &format!("Traceback (most recent call last): harness cannot run bash: {e}"),
+            ),
         }
     }
 
-    /// Runs the script with `m` applied to its file, then restores it.
-    pub fn run_mutated(&self, docs: &Docs, m: &Mutation) -> ScriptVerdict {
-        let file = self.root.join(&m.file);
+    /// Runs the script with `file` replaced by `text` (deleted for `None`),
+    /// then restores it. Every write and restore is read back; any error
+    /// aborts (a mutation that could not be applied must never read "same").
+    pub fn run_edited(&self, file: &str, text: Option<&str>) -> Result<ScriptVerdict, String> {
+        let path = self.root.join(file);
+        let original = fs::read(&path).ok();
+        match text {
+            Some(t) => write_checked(&path, t.as_bytes())?,
+            None => {
+                if path.exists() {
+                    fs::remove_file(&path).map_err(|e| format!("cannot delete {file}: {e}"))?;
+                }
+            }
+        }
+        let v = self.run();
+        match &original {
+            Some(bytes) => write_checked(&path, bytes)?,
+            None => {
+                if path.exists() {
+                    fs::remove_file(&path).map_err(|e| format!("cannot restore {file}: {e}"))?;
+                }
+            }
+        }
+        Ok(v)
+    }
+
+    /// Runs the script with mutation `m` applied to its file.
+    pub fn run_mutated(&self, docs: &Docs, m: &Mutation) -> Result<ScriptVerdict, String> {
         let original = docs
             .read(&m.file)
-            .map(|t| t.to_string())
-            .unwrap_or_default();
-        let _ = fs::write(&file, m.apply_text(&original));
-        let v = self.run();
-        let _ = fs::write(&file, original);
-        v
+            .ok_or_else(|| format!("{} is not in the documents", m.file))?;
+        self.run_edited(&m.file, Some(&m.apply_text(&original)))
     }
+}
+
+fn write_checked(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    fs::write(path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    let back = fs::read(path).map_err(|e| format!("cannot read back {}: {e}", path.display()))?;
+    if back != bytes {
+        return Err(format!(
+            "{} does not hold what was written (disk full?)",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 impl Drop for Sandbox {
@@ -134,17 +201,26 @@ fn make_executable(_path: &Path) -> std::io::Result<()> {
 }
 
 /// The verdict of a script from its exit status and output.
-pub fn verdict(passed: bool, output: &str) -> ScriptVerdict {
-    let criteria = rx(r"(?m)^FAIL ([A-Za-z]+ ?[0-9]*):")
+pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
+    let criteria: BTreeSet<String> = rx(r"(?m)^FAIL ([A-Za-z]+ ?[0-9]*):")
         .captures_iter(output)
         .map(|c| c[1].replace(' ', ""))
         .collect();
+    let crashed =
+        output.contains("Traceback (most recent call last)") || (!exit_ok && criteria.is_empty());
+    let outcome = if crashed {
+        ScriptOutcome::Crash
+    } else if exit_ok && criteria.is_empty() {
+        ScriptOutcome::Pass
+    } else {
+        ScriptOutcome::Red
+    };
     let lines: Vec<&str> = output.lines().collect();
-    let tail = lines[lines.len().saturating_sub(3)..].join(" / ");
     ScriptVerdict {
-        passed,
+        outcome,
+        anomaly: exit_ok && !criteria.is_empty(),
         criteria,
-        tail,
+        tail: lines[lines.len().saturating_sub(3)..].join(" / "),
     }
 }
 
@@ -163,6 +239,19 @@ pub fn script_source(repo: &Path, id: &str) -> Option<(String, String)> {
     let at = format!("{}^", deleted.trim());
     let text = git(repo, &["show", &format!("{at}:{rel}")])?;
     Some((text, format!("{rel} at {at}")))
+}
+
+/// The commit the working tree is at (`git rev-parse HEAD`), marked when
+/// the tree has uncommitted changes (the port that ran is then not exactly
+/// that commit's).
+pub fn head_commit(repo: &Path) -> Option<String> {
+    let head = git(repo, &["rev-parse", "HEAD"])?.trim().to_string();
+    let dirty = git(repo, &["status", "--porcelain", "--untracked-files=no"]).is_some();
+    Some(if dirty {
+        format!("{head} with uncommitted changes")
+    } else {
+        head
+    })
 }
 
 /// The commit that first added `checks/<id>.sh` (the red-phase commit).
@@ -198,25 +287,37 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         assert_eq!(v.criteria, want);
-        assert!(!v.passed);
+        assert_eq!(v.outcome, ScriptOutcome::Red);
+        let crash = verdict(false, "Traceback (most recent call last):\n  boom");
+        assert_eq!(crash.outcome, ScriptOutcome::Crash);
+        assert_eq!(verdict(false, "").outcome, ScriptOutcome::Crash);
+        let odd = verdict(true, "FAIL AC1: x");
+        assert!(odd.anomaly && odd.outcome == ScriptOutcome::Red);
     }
 
     #[test]
     fn a_sandbox_runs_a_script_on_mutated_exports_and_stubs_cargo() {
-        let docs = Docs::repo().with("doc/x.md", "keep me\n");
+        // a one-file tree: the unit test exports a few bytes, not doc/
+        let docs = Docs::dir("/nonexistent-doccheck-tree").with("doc/x.md", "keep me\n");
         let script = "cd \"$(dirname \"$0\")/..\"\ngrep -q 'keep me' doc/x.md || { echo 'FAIL AC1: gone'; exit 1; }\nif [ -n \"${RUN_CARGO:-}\" ]; then cargo test || { echo 'FAIL DoD: cargo'; exit 1; }; fi\necho OK\n";
         let sb = Sandbox::new(&docs, "000-00", script, &[]).unwrap();
         assert!(sb.root.starts_with(std::env::temp_dir()));
-        assert!(sb.run().passed);
+        assert!(sb.run().passed());
         let m = Mutation {
             file: "doc/x.md".into(),
             edit: super::super::super::mutate::Edit::DeleteLines { lo: 0, hi: 0 },
             label: "delete".into(),
         };
         let v = sb.run_mutated(&docs, &m);
-        assert!(!v.passed);
+        let v = v.expect("applied");
+        assert!(!v.passed());
         assert!(v.criteria.contains("AC1"));
-        assert!(sb.run().passed, "the file is restored after a mutation");
+        assert!(sb.run().passed(), "the file is restored after a mutation");
+        assert!(
+            !sb.run_edited("doc/x.md", None).unwrap().passed(),
+            "a deletion"
+        );
+        assert!(sb.run().passed(), "restored after a deletion");
         let cargo = Sandbox::new(&docs, "000-00", script, &[("RUN_CARGO", "1")]).unwrap();
         assert!(cargo.run().criteria.contains("DoD"), "the cargo stub fails");
         let root = sb.root.clone();

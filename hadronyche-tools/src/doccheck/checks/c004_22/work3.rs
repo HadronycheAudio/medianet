@@ -1,6 +1,7 @@
 //! AC4, Work 3: every subsection 3.N accounted for, the known
 //! contradictions recorded, and no over-claiming scope sentence.
 
+use crate::doccheck::pycompat::{PyStr, is_space, is_word};
 use super::record::Record;
 use super::{ARCH_MD, Inputs, Trace};
 use crate::doccheck::Report;
@@ -8,7 +9,7 @@ use crate::doccheck::markdown::norm_title;
 use crate::doccheck::text::{rx, split_nl};
 
 fn is_item(line: &str) -> bool {
-    line.trim().starts_with('|') || rx(r"^\s*([-*]|\d+\.)\s+").is_match(line)
+    line.py_strip().starts_with('|') || rx(r"^\s*([-*]|\d+\.)\s+").is_match(line)
 }
 
 fn no_diff(line: &str) -> bool {
@@ -34,7 +35,7 @@ fn s3_lines(rec_lines: &[&str]) -> Vec<String> {
     let mut out = Vec::new();
     let mut in_s3 = false;
     for line in rec_lines {
-        if line.trim_start().starts_with('#') {
+        if line.py_lstrip().starts_with('#') {
             in_s3 = rx(r"§\s*3\b").is_match(line);
             continue;
         }
@@ -72,8 +73,22 @@ fn subsections(inp: &Inputs, rec_lines: &[&str], s3: &[String], report: &mut Rep
     }
 }
 
+/// `re.sub(r"\s+", " ", text)` (Python's white space, [`is_space`]).
 fn flat(text: &str) -> String {
-    rx(r"\s+").replace_all(text, " ").into_owned()
+    let mut out = String::with_capacity(text.len());
+    let mut in_space = false;
+    for c in text.chars() {
+        if is_space(c) {
+            if !in_space {
+                out.push(' ');
+            }
+            in_space = true;
+        } else {
+            out.push(c);
+            in_space = false;
+        }
+    }
+    out
 }
 
 fn contradictions(inp: &Inputs, rec_lines: &[&str], report: &mut Report) {
@@ -107,10 +122,11 @@ fn contradictions(inp: &Inputs, rec_lines: &[&str], report: &mut Report) {
     }
 }
 
+/// `[re.sub(r"[^\w/.\-]", "", t).lower() for t in re.findall(r"\S+", text)]`
+/// (Python's `\w`, [`is_word`]).
 fn tokens(text: &str) -> Vec<String> {
-    rx(r"\S+")
-        .find_iter(text)
-        .map(|m| rx(r"[^\w/.\-]").replace_all(m.as_str(), "").to_lowercase())
+    text.py_split()
+        .map(|t| t.chars().filter(|&c| is_word(c) || "/.-".contains(c)).collect::<String>().to_lowercase())
         .collect()
 }
 

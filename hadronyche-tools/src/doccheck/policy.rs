@@ -66,3 +66,111 @@ pub enum RowSplit {
     /// Plain `split("|")`: an escaped pipe breaks the cell (004-22).
     Plain,
 }
+
+/// How a document's text becomes lines (inventory 4f; review finding 1c).
+/// Every script read with `open()` in text mode, so `\r\n` and a lone `\r`
+/// are already `\n` (universal newlines, [`super::pycompat::universal_newlines`]);
+/// the variants differ in how they split after that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LineSplit {
+    /// `text.split("\n")` (004-22): U+2028, form feed and the other Python
+    /// boundaries stay inside a line.
+    #[default]
+    Nl,
+    /// `text.splitlines()` (the 004 family): every Python line boundary
+    /// ([`super::pycompat::splitlines`]) starts a line.
+    PySplitlines,
+}
+
+impl LineSplit {
+    /// `text` as the script saw it, rejoined with `\n`: universal newlines,
+    /// then for [`LineSplit::PySplitlines`] every Python boundary as `\n`.
+    pub fn normalize(self, text: &str) -> String {
+        let text = super::pycompat::universal_newlines(text);
+        match self {
+            LineSplit::Nl => text,
+            LineSplit::PySplitlines => super::pycompat::splitlines(&text).join("\n"),
+        }
+    }
+}
+
+/// Which second line makes a run of `|` lines a table with a header
+/// (inventory 4i; review finding 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SeparatorRule {
+    /// Every non-empty cell is `:?-+:?` and one cell is not empty (004-22).
+    #[default]
+    CellWise,
+    /// The line matches `^\s*\|?[\s:|-]+\|?\s*$` and holds a `-` (the 004
+    /// family's `parse_tables`, 23 scripts).
+    LineRegex,
+}
+
+/// What a run of `|` lines without a separator row is (review finding 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HeaderlessRuns {
+    /// A table with no header whose every line is a row (004-22).
+    #[default]
+    Keep,
+    /// Not a table (the 004 family).
+    Drop,
+}
+
+/// How a table is read: row splitting, separator rule, headerless runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TableRules {
+    pub split: RowSplit,
+    pub separator: SeparatorRule,
+    pub headerless: HeaderlessRuns,
+}
+
+impl TableRules {
+    /// 004-22's `tables_in`.
+    pub const T004_22: TableRules = TableRules {
+        split: RowSplit::Plain,
+        separator: SeparatorRule::CellWise,
+        headerless: HeaderlessRuns::Keep,
+    };
+    /// The 004 family's `parse_tables` (004-01, 03-06, 08-13, 16-21, 24-29).
+    pub const FAMILY_004: TableRules = TableRules {
+        split: RowSplit::Escaped,
+        separator: SeparatorRule::LineRegex,
+        headerless: HeaderlessRuns::Drop,
+    };
+}
+
+/// How a relative link path is resolved (review finding 1a).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PathNorm {
+    /// `os.path.normpath(os.path.join(base, rel))`: a leading `..` is kept,
+    /// so a path that climbs above the repository names no document of the
+    /// [`super::Docs`] (the only variant any script used).
+    #[default]
+    PyNormpath,
+}
+
+/// Which TOML reader the script used (review finding 1f, lead ruling R3).
+/// Ports read wire.toml with the crate's parser either way; the policy names
+/// what the harness must expect and how differences are classified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TomlReader {
+    /// `tomllib` (004-22): a full TOML parser, the same language.
+    Tomllib,
+    /// The hand-written subset reader of the 004 family (004-03, 06, 08-13,
+    /// 16-20, 24-29). It rejects valid TOML (`"""` strings) and accepts
+    /// invalid TOML (bare keys with spaces, integers beyond 64 bits).
+    /// Values are read through [`super::pycompat`] (`py_int`, `py_iter`,
+    /// `py_eq_int`) so type errors the script caught still fail. Where only
+    /// the readers differ, the difference is classified
+    /// `DiffClass::SubsetTomlReader` (the subset reader rejected valid TOML)
+    /// or `DiffClass::PortStricterTyped` (the typed parser rejects what the
+    /// subset reader let through).
+    SubsetReader,
+}
+
+/// The regex word class (lead ruling R1). Not a parameter: every pattern
+/// given to [`super::text::rx`] has Python's `\w`/`\s`
+/// ([`super::pycompat::translate`]); [`super::text::rx_raw`] is for the
+/// library's own Unicode-property patterns only. Listed here so the policy
+/// list is complete.
+pub const WORD_CLASS: &str = "python";

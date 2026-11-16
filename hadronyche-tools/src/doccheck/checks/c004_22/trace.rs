@@ -1,10 +1,12 @@
 //! AC1 (rules 1 to 22) and AC2 (the constants of the ticket's list).
 
+use crate::doccheck::pycompat::{PyStr, parse_int, py_eq_int};
+use toml::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::refs::{base_of, dangling, py_list, reference_resolves, rule_number};
 use super::{Inputs, Trace, WIRE_MD};
-use crate::doccheck::policy::RowSplit;
+use crate::doccheck::policy::TableRules;
 use crate::doccheck::tables::Row;
 use crate::doccheck::text::{full, head, rx};
 use crate::doccheck::ticket::{cid, expand_constant_ids};
@@ -83,7 +85,7 @@ const UNIT_AFTER: &str = r"\b(bytes?|ns|fs|ps|µs|us|ms|samples?|frames?|packets
 /// "`name` (N bits, unit)" or "`a`, `b`: N bits each, unit", N equal to a
 /// wire.toml width of the field (bytes converted), a unit after the width,
 /// and no other wire.toml field of the row without a width.
-pub fn width_problems(row: &Row, widths: &BTreeMap<String, Vec<Option<i64>>>) -> (usize, Vec<String>) {
+pub fn width_problems(row: &Row, widths: &BTreeMap<String, Vec<Option<Value>>>) -> (usize, Vec<String>) {
     let text = row.joined();
     let res = [
         rx(&format!(r"{NAMES}\s*\(\s*(\d+)\s*(bits?|bytes?)\b([^)]*)\)")),
@@ -93,17 +95,21 @@ pub fn width_problems(row: &Row, widths: &BTreeMap<String, Vec<Option<i64>>>) ->
     for re in &res {
         for gm in re.captures_iter(&text) {
             let names: Vec<String> = rx(r"`([^`]+)`").captures_iter(&gm[1]).map(|c| c[1].to_string()).collect();
-            let width: i64 = gm[2].parse().unwrap_or(0);
-            let bits = if gm[3].starts_with("bit") { width } else { width * 8 };
+            let bits = match parse_int(&gm[2]) {
+                Ok(w) if gm[3].starts_with("bit") => Some(w),
+                Ok(w) => w.checked_mul(8),
+                Err(_) => None,
+            };
             for n in &names {
                 covered.insert(n.clone());
                 stated += 1;
-                match widths.get(n) {
-                    None => problems.push(format!("`{n}` is not a wire.toml field")),
-                    Some(w) if !w.contains(&Some(bits)) => {
-                        problems.push(format!("`{n}` is stated at {bits} bits but wire.toml gives {}", py_list(w)));
+                match (widths.get(n), bits) {
+                    (None, _) => problems.push(format!("`{n}` is not a wire.toml field")),
+                    (Some(_), None) => problems.push(format!("`{n}` is stated at {} {}, beyond what the check can compare", &gm[2], &gm[3])),
+                    (Some(w), Some(b)) if !w.iter().flatten().any(|v| py_eq_int(v, b)) => {
+                        problems.push(format!("`{n}` is stated at {b} bits but wire.toml gives {}", py_list(w)));
                     }
-                    Some(_) => {}
+                    (Some(_), Some(_)) => {}
                 }
             }
             if !rx(UNIT_AFTER).is_match(&gm[4]) {
@@ -121,7 +127,7 @@ pub fn width_problems(row: &Row, widths: &BTreeMap<String, Vec<Option<i64>>>) ->
 
 fn constant_rows(inp: &Inputs, trace: &Trace) -> Vec<Row> {
     inp.wire
-        .tables_with(trace.span, RowSplit::Plain)
+        .tables_with(trace.span, TableRules::T004_22)
         .into_iter()
         .filter(|t| t.header.is_some() && t.head_norm()[0].contains("constant"))
         .flat_map(|t| t.rows)
@@ -179,7 +185,7 @@ fn not_visible_reasons(trace: Option<&Trace>, report: &mut Report) {
         let ids = expand_constant_ids(&text);
         let Some(first) = ids.first() else { continue };
         let rest = rx(r"^[\s:;,\-–—(]+").replace(&text[m.end()..], "").into_owned();
-        if rest.split_whitespace().count() < 3 {
+        if rest.py_split().count() < 3 {
             report.fail_at("AC2", WIRE_MD, row.line + 1, format!("a row says {} is not wire-visible without a reason of at least three words", cid(*first)));
         }
     }

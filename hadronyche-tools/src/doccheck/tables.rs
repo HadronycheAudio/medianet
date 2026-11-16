@@ -7,7 +7,8 @@
 //! Cells are split on `|` not preceded by `\`, trimmed, `\|` unescaped.
 
 use super::markdown::norm_title;
-use super::policy::RowSplit;
+use super::policy::{HeaderlessRuns, RowSplit, SeparatorRule, TableRules};
+use super::pycompat::PyStr;
 use super::text::{full, rx};
 
 /// One data row of a table.
@@ -35,7 +36,7 @@ impl Row {
             .get(1..)
             .map(|c| c.join(" | "))
             .unwrap_or_default()
-            .trim()
+            .py_strip()
             .to_string()
     }
 }
@@ -79,17 +80,17 @@ pub fn split_row_with(line: &str, split: RowSplit) -> Vec<String> {
     match split {
         RowSplit::Escaped => split_row(line),
         RowSplit::Plain => {
-            let s = line.trim();
+            let s = line.py_strip();
             let s = s.strip_prefix('|').unwrap_or(s);
             let s = s.strip_suffix('|').unwrap_or(s);
-            s.split('|').map(|c| c.trim().to_string()).collect()
+            s.split('|').map(|c| c.py_strip().to_string()).collect()
         }
     }
 }
 
 /// Splits a table line into trimmed cells ([`RowSplit::Escaped`]).
 pub fn split_row(line: &str) -> Vec<String> {
-    let s = line.trim();
+    let s = line.py_strip();
     let s = s.strip_prefix('|').unwrap_or(s);
     let s = s.strip_suffix('|').unwrap_or(s);
     let mut cells = Vec::new();
@@ -106,7 +107,7 @@ pub fn split_row(line: &str) -> Vec<String> {
     cells.push(cur);
     cells
         .into_iter()
-        .map(|c| c.trim().replace("\\|", "|"))
+        .map(|c| c.py_strip().replace("\\|", "|"))
         .collect()
 }
 
@@ -119,15 +120,20 @@ pub fn is_separator(cells: &[String]) -> bool {
             .all(|c| full(":?-+:?", c))
 }
 
+/// The 004 family's separator line: `^\s*\|?[\s:|-]+\|?\s*$` holding a `-`.
+pub fn is_separator_line(line: &str) -> bool {
+    rx(r"^\s*\|?[\s:|-]+\|?\s*$").is_match(line) && line.contains('-')
+}
+
 /// The tables of `lines[lo..hi]`, given the code mask of the document.
 pub fn parse_tables(
     lines: &[String],
     in_code: &[bool],
     lo: usize,
     hi: usize,
-    split: RowSplit,
+    rules: TableRules,
 ) -> Vec<Table> {
-    let is_row = |i: usize| !in_code[i] && lines[i].trim_start().starts_with('|');
+    let is_row = |i: usize| !in_code[i] && lines[i].py_lstrip().starts_with('|');
     let mut out = Vec::new();
     let mut i = lo;
     while i < hi {
@@ -139,30 +145,36 @@ pub fn parse_tables(
         while i < hi && is_row(i) {
             i += 1;
         }
-        out.push(build(lines, start, i, split));
+        if let Some(t) = build(lines, start, i, rules) {
+            out.push(t);
+        }
     }
     out
 }
 
-fn build(lines: &[String], start: usize, end: usize, split: RowSplit) -> Table {
+fn build(lines: &[String], start: usize, end: usize, rules: TableRules) -> Option<Table> {
+    let split = rules.split;
     let row = |k: usize| Row {
         line: k,
         cells: split_row_with(&lines[k], split),
     };
-    let headed = end - start > 1 && is_separator(&split_row_with(&lines[start + 1], split));
+    let headed = end - start > 1
+        && match rules.separator {
+            SeparatorRule::CellWise => is_separator(&split_row_with(&lines[start + 1], split)),
+            SeparatorRule::LineRegex => is_separator_line(&lines[start + 1]),
+        };
     if headed {
-        Table {
+        return Some(Table {
             line: start,
             header: Some(split_row_with(&lines[start], split)),
             rows: (start + 2..end).map(row).collect(),
-        }
-    } else {
-        Table {
-            line: start,
-            header: None,
-            rows: (start..end).map(row).collect(),
-        }
+        });
     }
+    (rules.headerless == HeaderlessRuns::Keep).then(|| Table {
+        line: start,
+        header: None,
+        rows: (start..end).map(row).collect(),
+    })
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! AC4: the review record — reviewer, date, the architecture heading, the
 //! discrepancy list with resolutions, the attached table, its links.
 
+use crate::doccheck::pycompat::PyStr;
 use super::audit::Audit;
 use super::refs::{base_of, dangling, rule_number};
 use super::{ARCH_MD, Inputs, REPORTS_DIR, Trace, WIRE_MD};
@@ -29,7 +30,7 @@ fn find_record(inp: &Inputs, trace: Option<&Trace>, docs: &Docs) -> Option<Recor
             }
             let p = join(dirname(WIRE_MD), target);
             if docs.is_file(&p) && p.starts_with(&format!("{REPORTS_DIR}/")) {
-                let text = docs.read(&p)?.to_string();
+                let text = super::LINES.normalize(&docs.read(&p)?);
                 return Some(Record { text, path: p, in_wire: false });
             }
         }
@@ -47,7 +48,7 @@ fn find_record(inp: &Inputs, trace: Option<&Trace>, docs: &Docs) -> Option<Recor
 fn reviewer_and_date(rt: &str, report: &mut Report) {
     let reviewer = split_nl(rt).iter().any(|line| {
         let Some(m) = rx(r"(?i)reviewer").find(line) else { return false };
-        let after = rx(r"[*_|:`]").replace_all(&line[m.end()..], " ").trim().to_string();
+        let after = rx(r"[*_|:`]").replace_all(&line[m.end()..], " ").py_strip().to_string();
         after.chars().count() >= 2 && !rx(r"(?i)^(tbd|todo|unknown|\?)").is_match(&after)
     });
     if !reviewer {
@@ -138,9 +139,9 @@ fn discrepancies(rt: &str, report: &mut Report) -> String {
     let mut tables: Vec<Vec<&str>> = Vec::new();
     let mut k = at + 1;
     while k < end {
-        if lines[k].trim().starts_with('|') {
+        if lines[k].py_strip().starts_with('|') {
             let lo = k;
-            while k < end && lines[k].trim().starts_with('|') {
+            while k < end && lines[k].py_strip().starts_with('|') {
                 k += 1;
             }
             tables.push(lines[lo..k].to_vec());
@@ -158,9 +159,9 @@ fn discrepancies(rt: &str, report: &mut Report) -> String {
     }
     for li in items {
         if !rx(r"(?i)resolution\s*[:→—–-]\s*\S").is_match(li) {
-            report.fail("AC4", format!("a discrepancy list item has no resolution: '{}'", head(li.trim(), 100)));
+            report.fail("AC4", format!("a discrepancy list item has no resolution: '{}'", head(li.py_strip(), 100)));
         } else if names_other_doc(li) && !owned(li) {
-            report.fail("AC4", format!("a resolution changes a design document other than wire.md without naming 004-23 or an owner: '{}'", head(li.trim(), 100)));
+            report.fail("AC4", format!("a resolution changes a design document other than wire.md without naming 004-23 or an owner: '{}'", head(li.py_strip(), 100)));
         }
     }
     body
@@ -172,7 +173,7 @@ fn attached(rt: &str, trace: Option<&Trace>) -> bool {
     });
     let rules: std::collections::BTreeSet<u32> = split_nl(rt)
         .iter()
-        .filter(|l| l.trim().starts_with('|'))
+        .filter(|l| l.py_strip().starts_with('|'))
         .filter_map(|l| rule_number(split_row_with(l, RowSplit::Plain).first().map_or("", String::as_str)))
         .collect();
     linked || (1..=22).all(|n| rules.contains(&n))
