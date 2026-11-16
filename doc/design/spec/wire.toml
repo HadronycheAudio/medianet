@@ -2690,11 +2690,13 @@ max_count = 1196
 
 # Path-MTU probe pair (ticket 004-27): the machine-readable copy of wire.md's
 # "Path-MTU probe pair" section, which is the authority. Codes 32 and 33 in the
-# block 32 to 35 the Hello reserves; both messages are sent at the probe's
-# intended packet size, 54 to 65 507 bytes, and are the only messages that carry
-# the C-116 exemption from the 1 252-byte control bound (C-17). The padding is
+# block 32 to 35 the Hello reserves. The request is sent at the probe's intended
+# packet size, 54 to 65 507 bytes, and is the only message that carries the
+# C-116 exemption from the 1 252-byte control bound (C-17); its padding is
 # counted by the intended packet size: its count is that size less the 54-byte
-# fixed part, as the audio message's samples are counted by its length.
+# fixed part, as the audio message's samples are counted by its length. The
+# reply is a small acknowledgement of 54 bytes, fixed, with no padding and no
+# exemption (design owner's decision, 2026-11-16).
 
 [[message]]
 name = "path-MTU probe request"
@@ -2806,8 +2808,7 @@ max_count = 65453
 name = "path-MTU probe reply"
 layer = "control"
 dscp = 40
-max_size = 65507
-exempt_from_control_bound = "C-116"
+max_size = 54
 rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "ReservedNonZero"]
 
 [[message.field]]
@@ -2895,18 +2896,9 @@ name = "echoed_intended_packet_size"
 offset = 416
 width = 16
 type = "u16"
-meaning = "echoed intended packet size: the probe's intended packet size, echoed verbatim; the reply's own size"
-valid = "54 to 65 507"
+meaning = "echoed intended packet size: the probe's intended packet size, echoed verbatim, at the request's width; it names which probe of the handshake this reply acknowledges"
+valid = "54 to 65 507; a value no outstanding probe carries matches none (Matching a reply to its probe)"
 
-[[message.field]]
-name = "padding"
-offset = 432
-width = 8
-type = "pad"
-meaning = "padding: echoed intended packet size − 54 bytes, which bring the reply to the probe's size; senders write zero (Reserved fields, General rule for later tickets)"
-valid = "0 only; echoed intended packet size − 54 bytes, at most 65 453"
-count = "echoed_intended_packet_size"
-max_count = 65453
 
 # The refusal reasons (ticket 004-18, C-185): the closed set of 18, values
 # 0 to 17 in C-185's order (the RefuseReason discriminants of 012-01),
