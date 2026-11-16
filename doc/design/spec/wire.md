@@ -101,8 +101,8 @@ The enumeration — one row per variant, with its `u8` value, its meaning, and t
 | 2 | VersionMismatch | the version field is not the version of this major version: counted like every rejection and also raises a named event (never a silent drop); the version travels in the hello, so the mismatch is found before a connection exists | control, sync, media, measurement |
 | 3 | ForeignDomain | the domain id is a non-zero domain other than this module's (C-11): dropped and counted | control, sync, media, measurement |
 | 4 | UnconfiguredDomain | the domain id is 0, the unconfigured domain (C-11): the packet is ignored and counted, not refused, and is never a `ForeignDomain` (C-173) | control, sync, media, measurement |
-| 5 | UnknownStream | the stream number names no stream this consumer admits | media |
-| 6 | UnadmittedSource | the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply) | media, sync |
+| 5 | UnknownStream | the stream number names no stream this consumer admits; on the measurement layer, a receiver-report row whose stream number is not the member admitted to the reporting consumer at that row (Receiver report) | media, measurement |
+| 6 | UnadmittedSource | the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply); on the measurement layer, a receiver report whose bundle identity is not the receiving producer's module id or whose first row's stream number names no bundle admitted for the module its reporter identity names, a probe request from a module that shares no admitted connection with the responder, or a probe reply without matching fields (Receiver report, One-way probe) | media, sync, measurement |
 | 7 | BadLength | a declared length or count disagrees with the message's own size rules: a count above its fixed maximum, or a body that does not fill the fixed size | control, sync, media, measurement |
 | 8 | BadChecksum | the checksum does not match the recomputed value; the checksum arrives with 004-13 | media |
 | 9 | BadPacketIndex | the packet index lies outside the packet count its slice declares | media |
@@ -198,7 +198,7 @@ When duplication arrives — a later version retransmitting a slice as copies 1 
 
 ### Authentication reservation (C-12)
 
-Every control message carries the authentication reservation (C-12): scheme 8 bits (0 = none) + message counter 64 bits + tag 128 bits — 200 bits in all — placed by 004-16 to 004-18. The reservation is wire space for an authentication scheme a later version may define; v1 defines none `[decision]`.
+Every control message carries the authentication reservation (C-12): scheme 8 bits (0 = none) + message counter 64 bits + tag 128 bits — 200 bits in all — placed by 004-16 to 004-18. The reservation is wire space for an authentication scheme a later version may define; v1 defines none `[decision]`. Measurement messages do not carry it: the receiver report and the one-way probe are data-plane messages, which ADR 22 leaves outside the reserved scheme (Receiver report, Authentication reservation) `[decision]`.
 
 In v1 (C-115) the scheme is 0 and the tag is 128 zero bits, while the 64-bit message counter is live: it is the liveness counter, it increments with every control message a source sends, and it carries any value — it is not a reserved zero field, so no rule of this section applies to it `[decision]`.
 
@@ -1153,11 +1153,238 @@ No value of the message counter or of any timestamp, origin or module id field i
 
 ## Receiver report
 
-To be filled by 004-20 (receiver report layout, including the consumer's current A, C-198).
+The receiver report is a consumer's account of one bundle to the bundle's producer: the consumer's data thread sends one report per bundle every 100 ms (C-40), carrying per member the eleven counters of C-159 and the observed DSCP, per bundle the socket and interface drop counters, and the consumer's current A (C-198) `[decision]`. The v1 measurement layer has exactly two message kinds, this report and the one-way probe with its request and reply (One-way probe below); there is no third `[decision]`. The report is also the producer's only evidence that its consumer is alive: a producer times out after 2 s without receiver reports (C-41), which is behaviour, not a field `[decision]`.
+
+### Transport
+
+Reports travel by UDP unicast over IPv4 (C-100) at DSCP CS5 (40) (C-13), from the consumer to the reverse port its producer gave in the admission handshake; 004-18 lays out that port and its negotiation `[decision]`. The report is unicast only, never multicast, and there is no query message: a third party sees stream health in the regime stamps, where producer and consumer each publish per-connection counters (C-47, C-159) in the sections 004-25 lays out `[decision]`. The sender sets the IPv4 don't-fragment bit, as on every packet of the protocol (ADR 01) `[decision]`. Forward media packets carry no per-receiver state, and round-trip closure uses this measurement path (rule 8) `[decision]`.
+
+No field carries a rate, an interval or a timeout: one report per bundle every 100 ms (C-40) and the producer's 2 s timeout (C-41) are behaviour of the state machines of epics 005 and 006, and a change of A travelling upstream one hop per report, with each fan-in that inherited the old value re-aligning (C-198, C-186), is behaviour too; this section fixes only what the fields mean `[decision]`.
+
+### Size bound of the measurement layer
+
+No landed rule bounds measurement messages: rule 5 of Field-table format and C-17 are written for control messages, and the Layer overview states no bound for the measurement layer `[decision]`. This section adopts the same bound for both measurement messages: every receiver report and every probe fits one unfragmented datagram on the fallback path, at most 1 252 bytes of UDP payload (C-06, C-100) `[decision]`. The reason is ADR 01: IP fragmentation is forbidden, and a connection may run on the 1 280-byte fallback path (C-06), so a report that did not fit there could not be sent on such a connection at all, and its producer would time out (C-41) on a healthy stream `[decision]`.
+
+### Authentication reservation
+
+The receiver report and the one-way probe do not carry the authentication reservation of C-12: neither message has a scheme, a message counter or a tag field, in v1 `[decision]`. Falsifier: a later authentication scheme is to cover the receiver report or the one-way probe, which requires ADR 22's exclusion of the data plane to be revised, and the scheme then cannot be added without a major change; in that case this decision is wrong and epic 004 reopens both layouts `[decision]`.
+
+**Why not carry it.** Four arguments decide it, in order of weight `[decision]`:
+
+1. ADR 22 settles the scope of the reserved scheme: "The data plane is unauthenticated, in v1 and in the reserved scheme". Both measurement messages are data-plane messages: C-198 places the report's carriage of A "on the data plane", the consumer's data thread sends it (01-architecture.md § 3.6), and the probe rides the media class EF (46) to measure the media path (C-13). Wire space in them would be space that no planned scheme fills `[decision]`.
+2. A forged report could do harm, and that is stated plainly: one carrying the consumer's module id could keep a producer sending after its consumer died (C-41 never fires), carry a changed A that makes every fan-in that inherited A re-align (C-198, C-186), or falsify the counters the producer publishes in its regime stamp. v1 guarantees protection against accident, not against attack (ADR 22): a report from a foreign domain, for another source's module id, or from a reporter with no admitted connection for the bundle its rows name is dropped and counted (Validity rules below), which is the protection the media layer has (only admitted peers are parsed, 01-architecture.md § 6.4) `[decision]`.
+3. Cost is not the argument: the reservation is 25 bytes per message, at one report per bundle per 100 ms 250 bytes per second per bundle, and the report fits the bound with or without it (Maximum size below) `[decision]`.
+4. Adding it later is a major change, because both messages have sizes their tables fix and a receiver rejects every other size under BadLength (Validity rules below); that is exactly the case the falsifier names, and the falsifier ties it to the revision of ADR 22 that would have to come first `[decision]`.
+
+The Reserved fields section stays true as it stands: its C-12 rows name control and sync messages only, and the measurement messages carry no reserved field other than padding, which follows that section's general rule `[decision]`.
+
+### Fixed part
+
+Little-endian (Byte order), packed with no padding for alignment (Alignment and padding); offsets are byte distances from the first byte of the UDP payload. Bytes 0 to 6 are the common header the sync messages start with — magic, version, domain, message type — and byte 7 is the member count, so bytes 0 to 7 are the part every measurement message starts with; the fixed part is 38 bytes `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
+| 6 | 1 | u8 | Message type: 1 = receiver report (Message type codes below) | 1 only |
+| 7 | 1 | u8 | Member count: how many member rows follow the fixed part, one per bundle member admitted to this consumer (C-08) | 1 to 32 |
+| 8 | 8 | u64 | Bundle identity: the module id (C-11) of the bundle's source, the producer the report goes to; with the rows' stream numbers it names exactly one bundle (Bundle identity and member rows) | any 64-bit value; a producer accepts only its own module id |
+| 16 | 8 | u64 | Reporter identity: the module id (C-11) of the consumer that sends the report (Bundle identity and member rows) | any 64-bit value; a producer keys the connection by this identity with the bundle the first row's stream number names, and accepts only a module admitted for that bundle |
+| 24 | 2 | u16 | Report number: 0 for the connection's first report after admission, then incremented by one for every report the consumer sends for this bundle; it wraps modulo 2^16 (Report number) | any 16-bit value |
+| 26 | 4 | u32 | Socket drop: datagrams the kernel dropped at the consumer's receiving socket of this bundle for lack of buffer room, the per-socket overflow counter (01-architecture.md § 6.4); cumulative, wraps modulo 2^32 | any 32-bit value |
+| 30 | 4 | u32 | Interface drop: packets the consumer's receiving interface dropped, the low 32 bits of the interface's own drop count; cumulative, wraps modulo 2^32 | any 32-bit value |
+| 34 | 4 | u32 | Current A: the consumer's current A (C-198), its own or the one it inherited (C-142), in nanoseconds; 0 = no A known to the reporter (Current A) | 0 to 4 294 967 295 ns: every value is valid; 0 = no A known |
+
+### Per-member part
+
+The member rows follow the fixed part back to back, one per member admitted to this consumer, in the order of the consumer's admission (Bundle identity and member rows). Each row is 37 bytes: six counters are 32 bits wide and five are 16 bits, by the unit each counts (Counters); offsets are byte distances from the row's first byte, and the sub-byte fields of byte 36 are numbered as Bit-field numbering fixes `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Stream number (C-10) at the bundle's source of the member this row reports on | 0 to 255 (C-09); the member admitted to this consumer at this row |
+| 2 | 4 | u32 | Received: slices of this member accepted with content, neither late, missing nor a marked gap | any 32-bit value (Counters) |
+| 6 | 4 | u32 | Late: slices counted missing at their deadline that arrived later, while their position was within the ring span, and were reclassified late and discarded (C-108) | any 32-bit value (Counters) |
+| 10 | 4 | u32 | Missing: slices absent at their deadline and not reclassified late since; decreases by one on every reclassification (C-108) | any 32-bit value (Counters) |
+| 14 | 2 | u16 | Marked gap: positions the producer marked with a gap slice (rule 10), counted in slices | any 16-bit value (Counters) |
+| 16 | 4 | u32 | Other-epoch: packets on another timeline epoch, each counted under WrongEpoch and never a miss (C-135, C-102) | any 32-bit value (Counters) |
+| 20 | 4 | u32 | Too-early: packets that arrived too early for the consumer to place their slice and were discarded, as the gap classification of epic 009 decides | any 32-bit value (Counters) |
+| 24 | 4 | u32 | Duplicates: packets discarded as duplicates by stream, position and packet index, the first valid copy winning (rule 9) | any 32-bit value (Counters) |
+| 28 | 2 | u16 | Incomplete reassemblies: multi-packet slices not complete at their reassembly deadline (C-15, C-110), counted in slices | any 16-bit value (Counters) |
+| 30 | 2 | u16 | Demoted rounds: rounds of the consumer, one per slice period (C-156), in which this member was in the health state Demoted and treated as gapped (C-109) | any 16-bit value (Counters) |
+| 32 | 2 | u16 | Interrupted events: entries of this member into Interrupted, 8 consecutive missed slices (C-38, C-102); events, not slices | any 16-bit value (Counters) |
+| 34 | 2 | u16 | Dead: entries of this member into Dead, 2 s without data counted from the last slice with content or a marked gap (C-39, C-111); events, not slices | any 16-bit value (Counters) |
+| 36 | 1 bit | uint | Observed: bit 0 of byte 36; 1 = the observed DSCP holds a value read from a received packet of this member, 0 = no packet read yet, or the consumer cannot read the DSCP of received packets | 0 or 1 |
+| 36 | 1 bit | pad | Padding, bit 1 of byte 36: senders write zero (Reserved fields, general rule) | 0 only |
+| 36 | 6 bits | uint | Observed DSCP: bits 7..2 of byte 36, the DSCP of the IPv4 header of the last packet of this member the consumer received; EF (46) is what the producer sent (C-13) | 0 to 63; senders write 0 when Observed is 0, and a receiver then ignores the value |
+
+**Message type codes.** The message type is scoped to the measurement layer, which has its own receiving socket (Rejection reasons, Counting model): 1 is the receiver report, 2 the one-way probe request and 3 the one-way probe reply; 0 and 4 to 255 are unused in v1, so a zeroed buffer is never a valid message `[decision]`.
+
+**The observed DSCP.** The consumer verifies the producer's marking by reading the DSCP of each received packet and reporting it (01-architecture.md § 3.5); it reports it per member, because the regime stamps carry the observed DSCP per connection (C-47) and each member is marked on its own `[decision]`. The Observed bit exists because a stack that cannot read the received DSCP would otherwise report 0, which reads as a remarking to the default class; with the bit at 0 the producer records the value as not observed (C-129's absent or unverified state, as 004-25 stamps it) `[decision]`.
+
+### Counters
+
+Every counter of the report — the eleven per-member counters and the socket and interface drops — is cumulative and wraps modulo 2^w at its width w, 32 or 16 bits as the tables state; no counter saturates `[decision]`. The per-member counters start at 0 when the connection is admitted; the drop counters carry the low 32 bits of the counters the consumer reads from its socket and its interface `[decision]`.
+
+A producer reads each counter's change between two reports as the difference of the two values modulo 2^w, taken as a signed value from −2^(w−1) to 2^(w−1) − 1 `[decision]`. Nothing is lost with a lost report: the next report's cumulative values carry every count the lost one held `[decision]`. The producer builds the per-connection counters of its regime stamp (C-47, C-159) from these changes, at whatever width 004-25 lays them out; the report's widths bound only the change between two reports a producer uses `[decision]`.
+
+**The width rule.** A width must keep a change unambiguous across every report a producer may miss: the change between two reports the producer uses must stay within −2^(w−1) to 2^(w−1) − 1, that is 32 767 for 16 bits `[decision]`. Two consecutive reports a producer uses are never more than 2 s apart, by the report number's rule (Report number below): after 2 s without a newer report the producer has timed out (C-41), and its next report after re-admission starts a new baseline `[decision]`. Each counter's worst-case change in those 2 s is derived below in the unit it counts, under every regime v1 admits: the frames field admits slices of 1 to 65 535 frames and the packet count 1 to 65 535 packets per slice (Slice header), so the slice rate S of a member is at most 96 000 per second, 1-frame slices at the domain rate (C-01), and its packet rate is bounded only by its admission `[decision]`:
+
+| Counter | Unit | Worst-case change in 2 s | Width | Unambiguous |
+|---|---|---|---|---|
+| received | slices | 2S: at most 192 000; 4 000 at defaults (C-02) | 32 bits | under every admitted regime |
+| late | slices | S × (2 s + ring span): the slices whose deadline passed in the window or within one ring span before it, the span being sized to A (C-96), at most 4.29 s (Current A); at most about 604 000 | 32 bits | under every admitted regime |
+| missing | slices, signed | +2S new misses and −S × (2 s + ring span) reclassifications: within ±604 000 | 32 bits | under every admitted regime |
+| marked gap | slices | 2S: at most 192 000; 4 000 at defaults | 16 bits | while S ≤ 16 383 per second, slices of 6 frames or more (Open item 2) |
+| other-epoch | packets | the packets the member can deliver in 2 s, bounded by the receiving interface's line rate: under 300 million even at 100 Gbit/s | 32 bits | under every admitted regime |
+| too-early | packets | as other-epoch: under 300 million | 32 bits | under every admitted regime |
+| duplicates | packets | as other-epoch: under 300 million; the drain bound (C-16, C-156) gives 8 000 × k in 2 s at defaults with k packets per slice, above 32 767 from k = 5 | 32 bits | under every admitted regime |
+| incomplete reassemblies | slices | 2S: at most 192 000 | 16 bits | while S ≤ 16 383 per second (Open item 2) |
+| demoted rounds | rounds | 2S, one round per slice period: at most 192 000 | 16 bits | while S ≤ 16 383 per second (Open item 2) |
+| interrupted events | events | 2S / 9: an entry needs 8 consecutive misses (C-38) and a re-entry a slice that ends the run first; about 21 333 | 16 bits | under every admitted regime |
+| dead | events | 2: an entry needs 2 s without data (C-39, C-111) | 16 bits | under every admitted regime |
+
+The packet bound is the line rate: an Ethernet frame occupies at least 84 bytes of wire time with its preamble and inter-frame gap, a figure recalled and not read from IEEE Std 802.3 in this ticket; ticket 004-22 pins it, as it pins the byte-order and CRC citations `[memory]`. From that figure, 100 Gbit/s carries no more than 148.8 million frames per second, 297.6 million in 2 s, far inside the 2 147 483 647 that a 32-bit signed difference resolves; the margin is wide, 2^31 against under 3 × 10^8, so the width does not depend on the exact figure `[decision]`. Widening all of them does not fit: a row with all nine slice and packet counters wide would take 43 bytes, and the report then exceeds the 1 252-byte bound adopted above `[decision]`. The six counters that the slice rate alone does not bound, or that carry the ring-span term, are therefore 32 bits — received, late, missing and the three packet counters — and the five others stay 16 bits: the two event counters are unambiguous under every admitted regime, and marked gap, incomplete reassemblies and demoted rounds are unambiguous up to 16 383 slices per second per member, eight times the default rate, which Open item 2 hands to the admission check that owns the slice rate `[decision]`.
+
+**The C-108 reclassification.** The report carries the reclassification as it happens: the missing counter is the C-159 missing class, so it is not monotonic — it decreases by one on every reclassification while the late counter increases by one — and the signed difference keeps the pair unambiguous: between two reports missing changes by the slices newly missing less the slices reclassified, and late by the slices reclassified, so a producer sees a negative change of missing exactly when reclassifications outnumber new misses `[decision]`. Every other counter only grows, and its change reads non-negative `[decision]`.
+
+**Interrupted, demoted, dead.** The interrupted counter counts interrupted events, not slices: one per entry into Interrupted after 8 consecutive missed slices (C-38), where only missing or late slices count as misses and a marked gap or a slice on another timeline epoch resets the count (C-102) `[decision]`. Demoted is carried by the demoted-rounds counter (C-109, C-159), in the report as in the regime stamp: a third party tells a demoted input from a gapped one by that counter, which grows only while the input is Demoted, whereas a gapped input grows marked gap or missing `[decision]`. The dead counter counts entries into Dead, events like the interrupted counter `[decision]`.
+
+### Report number
+
+The report number of a connection's first report after admission is 0, and the consumer increments it by one for every later report of that connection, modulo 2^16; a re-admission starts a new connection, whose first report is 0 again `[decision]`. A producer compares report numbers in serial order over half the 16-bit range: a number r is newer than the last used number u exactly when (r − u) modulo 2^16 lies in 1 to 32 767, and within 2 s at most 20 reports pass (C-40), far inside that range `[decision]`. Admission and re-admission reset the producer's baseline, and the first report it uses on a connection must be numbered 0 to 19: a consumer sends one report per bundle every 100 ms (C-40), and a producer that has used no report for 2 s after admission has timed out (C-41), so a live consumer's first usable report is one of the 2 s / 100 ms = 20 reports it can have sent by then, numbered 0 to 19 `[decision]`. A report numbered 20 or above that arrives before any report has been used on the connection, such as a delayed report of the previous connection, is ignored like an older report: it neither sets the baseline nor refreshes the timeout, and it is not a rejection `[decision]`. From the first used report on, the serial rule above decides; the window 0 to 19 lies inside its half range, so the two rules never disagree `[decision]`.
+
+Only a report newer than the last one used is a further receiver report in the sense of C-41 ("2 s without receiver reports"): it refreshes the producer's timeout and updates its counters and its A `[decision]`. A report that is not newer — reordered or duplicated — repeats information the producer already holds: it neither refreshes the timeout nor updates the counters or the A; it is a valid message, never a rejection `[decision]`. This is the field's meaning on the wire, not a state machine, which epics 005 and 006 own; it makes the width rule's premise true by construction, because two reports a producer uses are at most 2 s apart or the producer has already timed out `[decision]`.
+
+### Bundle identity and member rows
+
+A report names its bundle by the module id of the bundle's source (C-11) and its members by stream number `[decision]`. No bundle identifier has landed: the manifest's bundle group id (01-architecture.md § 7) has no wire width yet (004-26), and the module id with any row's stream number names exactly one bundle, because a source numbers its streams once (C-09, C-10; streams are identified by source and stream number, rule 7) and a stream belongs to one bundle `[decision]`. Falsifier: a stream that belongs to two bundles of one source, or a landed bundle identifier that a producer needs to tell two of its bundles apart; either reopens this field `[decision]`.
+
+The report names its sender by the reporter identity, the consumer's module id (C-11), never by its source address: two consumer modules on one host (01-architecture.md § 2.6) share an address and can be admitted to the same bundle, and their counters, their A and their C-41 liveness must stay apart `[decision]`. The bundle identity cannot key a connection, because it is the producer's own module id and a source may have several bundles (at most 256 streams, C-09, against at most 32 members per bundle, C-08); a producer keys a report to a connection by the reporter identity together with the bundle that the first row's stream number names, the bundle whose member list was admitted for that reporter `[decision]`.
+
+The rows follow the order of the member list in the consumer's admission handshake (004-18): one row per member admitted to this consumer, which for a narrow sink is a subset of the bundle (01-architecture.md § 7), each row starting with that member's stream number, so a producer matches rows by position and checks each by its number `[decision]`. A report whose member count is not the number of members admitted to the reporting consumer is dropped and counted under BadLength: for one admitted connection the report has exactly one size, 38 + 37 × n bytes for its n admitted members, and a report of another size does not fill it `[decision]`. Once the connection is found, a row whose stream number is not the member admitted at that row is dropped and counted under UnknownStream, whose meaning names this case on the measurement layer (Rejection reasons) `[decision]`.
+
+A report whose bundle identity is not the receiving producer's own module id, or whose first row's stream number names no bundle of this producer admitted for the module its reporter identity names — rows that name the members of no bundle admitted for that reporter — reports on no connection of this producer: it is dropped and counted under UnadmittedSource; the BadLength and UnknownStream rules above apply only to a report whose connection is found `[decision]`. UnadmittedSource is the closest member of the closed enumeration — a source with no admitted connection at the receiver — read in the reverse direction; its Layers cell now names the measurement layer and its meaning names this case, which adds no reason to the enumeration (Rejection reasons, Closed enumeration) `[decision]`.
+
+### Current A
+
+The current A field carries the consumer's current A (C-198): its own presentation group's A (C-55), the A it inherited from the downstream group it feeds (C-142), or the explicit budget it is configured with when it feeds no group (C-142); it is the A the consumer was given, never a clamped value (C-216) `[decision]`. The unit is nanoseconds, a duration on network time: A is added to a position's network time in the emission formula emit(p) = T(p) + A (01-architecture.md § 9.1; C-226), and timeline.md counts network time in nanoseconds `[decision]`. The width is 32 bits unsigned, 0 to 4 294 967 295 ns, about 4.29 s: A is the mouth-to-ear latency of its group (01-architecture.md § 9.1), and no constant states a bound on it, so the width is a decision whose falsifier is a commissioned A above that value (Open items) `[decision]`. The value 0 means no A known to the reporter: it has no group's A, no inherited A and no configured budget to report; a producer that takes the largest A of the groups it feeds (C-142) counts 0 as no value `[decision]`. Whether a module that aligns nothing relays the A of its downstream group upstream in its own reports is not settled by C-142 or C-198, and this section does not decide it (Open item 4) `[decision]`. Every 32-bit value is therefore valid, and no value of this field is a malformed case `[decision]`.
+
+The field has the same width and unit as the downstream A field of 004-18 (C-142), and this section binds 004-18 to them: 32 bits of nanoseconds, with 0 for no A known (Open items) `[decision]`. A change of A propagates upstream one hop per report, on the data plane, and each fan-in that inherited the old value re-aligns (C-198, C-186); this field is the only carrier of a changed A after admission `[decision]`.
+
+### Maximum size
+
+A report with n members is 38 + 37 × n bytes: the fixed part and one row per member `[decision]`. With the maximum of 32 members (C-08) a report is 38 + 32 × 37 = 1 222 bytes `[decision]`. That fits the bound adopted above, at most 1 252 bytes of UDP payload on the fallback path, with 30 bytes to spare `[decision]`.
+
+### Validity rules
+
+Every malformed measurement message is dropped — or ignored, for the unconfigured domain — and counted under one member of the closed Rejection reasons enumeration; nothing is dropped silently `[decision]`. A measurement message matches no admitted input (Rejection reasons, Counting model), so every rejection on this layer is counted per (socket, reason) on the receiving measurement socket `[decision]`.
+
+The rules below apply to both measurement messages, the report and the probe, in this order, and the first that applies decides the outcome `[decision]`: a datagram under 4 bytes; the magic; the version's major; a datagram of 4 to 7 bytes, too small for bytes 0 to 7 (the common header with the report's member-count byte or the probe's padding byte); the domain, 0 before foreign; the message type; the size its type fixes (for a report the member count first, then 38 + 37 × member count, which a report under the 38-byte fixed part never meets; for a probe 48 bytes); any padding or reserved bit; then the identity rules (for a report the bundle identity and reporter identity, the admitted member count and the rows' stream numbers; for a probe those of One-way probe, Validity rules). A message of the same major and another minor is accepted, as Versioning, Receiver behaviour fixes `[decision]`:
+
+| Invalid form | Required outcome |
+|---|---|
+| too short: a datagram under 4 bytes, too small for the two leading fields every message starts with | drop and count under TooShort: dropped before any field is read `[decision]` |
+| bad magic (the leading two bytes are not 0x4d4e) | drop and count under BadMagic |
+| version mismatch (the version's major, its high byte, is not 1: a different major) | drop and count under VersionMismatch, and raise the VersionMismatch event — never a silent drop (Versioning, Receiver behaviour) |
+| datagram size of 4 to 7 bytes, too small for bytes 0 to 7 (the common header and the member-count or padding byte) | drop and count under BadLength: the body does not fill the fixed size `[decision]` |
+| domain id 0, the unconfigured domain (C-11) | ignore and count under UnconfiguredDomain — never ForeignDomain (C-173) |
+| foreign domain (a non-zero domain other than the local domain, C-11) | drop and count under ForeignDomain |
+| message type not one the receiving module expects: any value outside 1 to 3, or 1 (a receiver report) at a module that sources no bundle with an admitted consumer | drop and count under BadLength `[decision]` — provisional, the message's declared kind disagrees with the receiving role, as the sync section rules; confirmed by 004-21 (Open items) |
+| member count of 0 or above 32 (C-08) | drop and count under BadLength: a count outside its fixed range `[decision]` |
+| datagram size inconsistent with the member count: not 38 + 37 × member count bytes | drop and count under BadLength: the body does not fill the size the count declares `[decision]` |
+| a padding or reserved bit non-zero: bit 1 of byte 36 of a member row, any padding byte of a probe request or reply, or bits 7..1 of the probe reply's clock state | drop and count under ReservedNonZero (Reserved fields, general rule) |
+| unknown bundle: the bundle identity is not the receiving producer's own module id, or the first row's stream number names no bundle of this producer admitted for the module the reporter identity names | drop and count under UnadmittedSource `[decision]` |
+| member count of the bundle's report not the number of members admitted to the reporting consumer | drop and count under BadLength: one admitted connection fixes one report size `[decision]` |
+| a row of the bundle whose stream number is not the member admitted to the reporting consumer at that row | drop and count under UnknownStream `[decision]` |
+| observed DSCP above 63 | cannot occur: the field is 6 bits and holds 0 to 63 only; a non-zero padding bit of its byte is dropped and counted under ReservedNonZero `[decision]` |
+| current A out of its valid range | cannot occur: every 32-bit value is valid, 0 meaning no A known (Current A); never a rejection `[decision]` |
+
+No value of the report number, a counter, a drop counter or the current A is a malformed case: each accepts every value its type holds, and only the rules above reject `[decision]`.
+
+### Open items
+
+**Open item 1 — the A field and the member order at admission.** The current A is laid out here, 32 bits of nanoseconds with 0 for no A known, ahead of 004-18's downstream A field (C-142), which must have the same width and unit; and the rows follow the member list of the consumer's admission handshake, which 004-18 lays out. Owner: ticket 004-18 (admission handshake messages). Falsifier: 004-18 lays out the downstream A field with a width or a unit other than 32 bits of nanoseconds, or with no value for no A known, or its handshake carries no ordered member list for the consumer's admitted members; or a commissioned A exceeds 4 294 967 295 ns; any of these reopens this layout `[decision]`.
+
+**Open item 2 — slice rate of the three 16-bit slice counters.** Marked gap, incomplete reassemblies and demoted rounds are 16 bits and stay unambiguous while a member's slice rate is at most 16 383 per second, slices of 6 frames or more; the slice header admits slices down to 1 frame (96 000 per second), and ADR 01 leaves shorter slices than the default to configuration. Whether a stream is admitted at a given slice rate is the receiver's SliceRate check at admission, which ticket 005-14 (admission handshake transition table) encodes, with the refusal reason SliceRate (C-185). Owner: ticket 005-14. Falsifier: 005-14's SliceRate check admits a member stream above 16 383 slices per second; then these three counters can wrap ambiguously within the producer's 2 s timeout (C-41), and the layout is reopened to widen them `[decision]`.
+
+**Open item 3 — message-type outcome.** An unexpected message type is counted under BadLength provisionally, as in the sync section. Owner: ticket 004-21, the validity-rules completeness audit. Falsifier: 004-21 finds a member of the closed enumeration that names an unexpected message type better than BadLength `[decision]`.
+
+**Open item 4 — A through a module that aligns nothing.** C-142 and C-198 do not say whether a module that aligns none of its inputs relays the A of its downstream group upstream in its own receiver reports, or reports 0 (no A known); the field carries either. Owner: ticket 005-28 (changed A propagation and fan-in re-alignment), with 005-27 (fan-in A inheritance and alignment opt-out). Falsifier: a fan-in upstream of a module that aligns nothing never receives the A, or a changed A, of the presentation group downstream of that module, although C-142 says it inherits it `[decision]`.
+
+**Open item 5 — a report of the previous connection after re-admission.** A delayed report of the previous connection between the same reporter and bundle, numbered 0 to 19, that reaches the producer before the new connection's first report is taken as the new connection's baseline; the new connection's reports up to that number then read as not newer for at most 2 s, so the producer may time out a live consumer once (C-41), and its stamp counters may absorb at most 2 s of the previous connection's counts. No field of this layout tells the two connections apart. Owner: ticket 005-15 (connection states and inputs: the producer's restart after re-admission), with ticket 004-18 (the reverse port, which a re-admission may renew so that no report of the previous connection reaches the new one). Falsifier: 005-15's producer restart and 004-18's handshake together still let a report sent on the previous connection be used on the new one, and a live consumer is timed out after re-admission `[decision]`.
 
 ## One-way probe
 
-To be filled by 004-20 (one-way probe layout).
+The one-way probe is a request and its reply between two modules that share an admitted connection, in either direction: either end, producer or consumer, sends a request on demand, and the other end answers each request with one reply `[decision]`. Four instants close the exchange: the requester's send time, the responder's receive and send times, and the requester's own receive time of the reply, which never travels, as in the sync exchange `[decision]`. It is not the path-MTU probe pair of the admission handshake (C-116), which is a control message that 004-18 lays out `[decision]`.
+
+### Exchange rules
+
+Probes travel by UDP unicast over IPv4 (C-100) at DSCP EF (46) (C-13), the media class, so they cross the network in the queue the media packets use and measure the media path `[decision]`. A consumer sends its requests to the reverse port its producer gave in the admission handshake (004-18); a producer sends its requests to the source address and port the consumer's reports come from; a reply goes to the source address and port of its request, which is all the addressing a stateless reply needs `[decision]`. The sender sets the IPv4 don't-fragment bit (ADR 01) `[decision]`. A probe is sent on demand: no field carries a rate, and any limit on how often a module probes or answers is behaviour, which this section does not fix `[decision]`.
+
+The responder is stateless: the reply echoes the request's requester identifier and send timestamp verbatim, so the responder answers each request from that request alone, and the requester pairs a reply with its request by the echoed values, as the sync exchange does (Sync request and reply, Exchange rules) `[decision]`. A stale or duplicate reply is therefore a valid exchange with an honestly large round trip, never an invalid form `[decision]`.
+
+**Matching fields.** A reply matches when its echoed requester identifier is the receiving module's own module id and its responder module id is the module id of a module that shares an admitted connection with the receiving module `[decision]`. A reply that does not match was meant for another module, or comes from a module that is no peer: it is dropped and counted under UnadmittedSource, as is a request whose requester identifier names a module that shares no admitted connection with the responder; UnadmittedSource's Layers cell names the measurement layer and its meaning names these cases (Rejection reasons) `[decision]`.
+
+### Request
+
+Little-endian (Byte order), packed with no padding for alignment (Alignment and padding); offsets are byte distances from the first byte of the UDP payload. The request carries the common header, the requester's identity and its send timestamp, then explicit padding to the reply's size `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
+| 6 | 1 | u8 | Message type: 2 = one-way probe request (Receiver report, Message type codes) | 2 only |
+| 7 | 1 | pad | Padding: senders write zero (Reserved fields, general rule) | 0 only |
+| 8 | 8 | u64 | Requester identifier: the requester's module id (C-11), echoed by the reply | any 64-bit value; a responder answers only a module that shares an admitted connection with it |
+| 16 | 8 | i64 | Send timestamp: the requester's network time in nanoseconds when it sends the request (What the probe measures) | any 64-bit value |
+| 24 | 24 | pad | Padding: brings the request to the reply's size, the room the reply's responder module id and its two timestamps take; senders write zero (Reserved fields, general rule) | 0 only |
+
+### Reply
+
+Same conventions as the request; bytes 0 to 6 are the common header and byte 7, padding in the request, carries the responder's clock state; the echoed fields sit at the request's offsets, so a responder may build the reply over the request's own bytes, and the padding's room carries the responder's values `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Magic 0x4d4e, the ASCII letters M and N, fixed by 004-04 | 0x4d4e only |
+| 2 | 2 | u16 | Protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04) | major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100 |
+| 4 | 2 | u16 | Domain id (C-11); 0 is the unconfigured domain | 1 to 65535; 0 = unconfigured |
+| 6 | 1 | u8 | Message type: 3 = one-way probe reply (Receiver report, Message type codes) | 3 only |
+| 7 | 1 bit | uint | Usable time: bit 0 of byte 7, the responder's clock state when it stamped the reply; 1 = its time was usable, Locked or in holdover with its alignment claim not lapsed (C-213, C-65), 0 = acquiring, or Unlocked with time unusable (C-162) (Clock state) | 0 or 1 |
+| 7 | 7 bits | pad | Reserved, bits 7..1 of byte 7: senders write zero (Reserved fields, general rule) | 0 only |
+| 8 | 8 | u64 | Echoed requester identifier: the request's requester identifier, echoed verbatim | any 64-bit value; it matches only the receiving module's own module id (Matching fields) |
+| 16 | 8 | i64 | Echoed send timestamp: the request's send timestamp, echoed verbatim; the requester's reading, never the responder's | any 64-bit value |
+| 24 | 8 | u64 | Responder module id (C-11): the module id of the module that answers | any 64-bit value; it matches only a module that shares an admitted connection with the requester (Matching fields) |
+| 32 | 8 | i64 | Receive timestamp: the responder's network time in nanoseconds when the request was received | any 64-bit value |
+| 40 | 8 | i64 | Send timestamp: the responder's network time in nanoseconds when the reply is sent | any 64-bit value |
+
+Request and reply are both 48 bytes long: the request's fields sum to 2 + 2 + 2 + 1 + 1 + 8 + 8 + 24 = 48 bytes and the reply's to 2 + 2 + 2 + 1 + 1 + 8 + 8 + 8 + 8 + 8 = 48 bytes, byte 7 holding the clock state, each tiling its message from byte 0 with no gap and no overlap `[decision]`. Equal sizes give both directions the same serialisation time, so the forward and reverse one-way delays differ only by the path and its queues, never by the message's size, and a receiver judges a probe's size before it reads which of the two it is `[decision]`. Both fit the 1 252-byte bound adopted for the measurement layer (Receiver report, Size bound of the measurement layer) `[decision]`.
+
+### What the probe measures
+
+All three timestamps on the wire are readings of network time — the holder's monotonic clock (01-architecture.md § 2.3), as each end's servo publishes it, the holder reading its own clock — in signed 64-bit nanoseconds, the representation timeline.md fixes for network time; with t1 the request's send timestamp, t2 and t3 the reply's receive and send timestamps, and t4 the requester's network time at the receipt of the reply, the exchange yields both the round-trip delay and a one-way delay in each direction `[decision]`:
+- Round trip = (t4 − t1) − (t3 − t2), free of clock agreement: t1 and t4 are readings of the requester's network time and t2 and t3 of the responder's, so each end's offset from the holder cancels. It is exact up to the difference of the two ends' published rates over the exchange: each end stays within 10 ppm of the holder's rate while locked (C-60), so the two differ by at most 20 ppm, 20 ns per millisecond of exchange; an exchange across a phase step at either end (acquisition is exempt from the slew limits, 01-architecture.md § 2.4) is spoiled `[decision]`.
+- One-way delay forward = t2 − t1 and reverse = t4 − t3, each only as good as the two ends' agreement on network time: its error is the sum of the two ends' offset errors, which each end's published error bound states (01-architecture.md § 2.4, lock is a number), and no in-band method observes the path asymmetry hidden inside that error (§ 2.4, asymmetry). A one-way figure is therefore usable only when both ends' time was usable as they stamped: the requester knows its own clock state, and the reply's usable-time bit states the responder's (Clock state below); it carries both ends' bounds (01-architecture.md § 11.1: one-way figures are blank until lock and carry the bound thereafter) `[decision]`.
+
+Falsifier: a measurement consumer needs a one-way delay the probe's timestamps cannot yield — one with an error below the sum of the two ends' published bounds, or one between modules whose time is not both usable — in which case this decision is wrong and epic 004 reopens the probe's contents `[decision]`.
+
+The timestamps have the same width, 64 bits, and the same unit, one tick 1 ns, as the slice-header send timestamp (Slice header, Send timestamp) and the sync timestamps (Sync request and reply, Timestamps), but a different clock: those read the sender's local monotonic clock, opaque to the receiver, while the probe's read network time, because a one-way delay needs both ends on one clock; the type is therefore i64, as timeline.md fixes network time, where the slice header and the sync messages use u64 `[decision]`. A module whose servo publishes no network time yet sends no probe and answers none; the holder always has network time, its own clock `[decision]`.
+
+**Clock state.** The reply's byte 7 carries the responder's clock state in the landed vocabulary of the servo: time is usable when the clock is Locked or in holdover with its alignment claim not lapsed (C-213, C-65), and unusable after the claim lapses, when one-way figures stop (C-162); the servo core publishes that state (C-187) `[decision]`. Holdover before the lapse counts as usable because C-162 stops one-way figures only at the lapse; the bound itself does not travel, and the requester reads it from the responder's regime stamp, Clock group (01-architecture.md § 11.1) `[decision]`. With the bit clear, the requester may still use the round trip, which needs no clock agreement, but it uses neither one-way figure of that exchange `[decision]`. The request's byte 7 stays padding, because the responder needs no state of the requester's, and both messages stay 48 bytes `[decision]`. With the 2^63 ns span of an i64, about 292 years, no exchange sees a wrapped timestamp `[decision]`.
+
+### Validity rules
+
+The probe follows the rule order of Receiver report, Validity rules, whose header, padding and reserved-bit rows apply to it as well, and every rejection is counted per (socket, reason) on the receiving measurement socket; its own forms and their required outcomes `[decision]`:
+
+| Invalid form | Required outcome |
+|---|---|
+| probe datagram size not 48 bytes, at 8 bytes or more | drop and count under BadLength: the body does not fill the fixed size `[decision]` |
+| a request whose requester identifier matches no module that shares an admitted connection with the responder | drop and count under UnadmittedSource `[decision]` |
+| reply without matching fields: the echoed requester identifier is not the receiving module's own module id, or the responder module id names no module that shares an admitted connection with the receiving module | drop and count under UnadmittedSource `[decision]` |
+| stale or duplicate reply with matching fields (its echoed send timestamp is old) | none — a valid exchange with an honestly large round trip; never a rejection `[decision]` |
+
+No value of a timestamp or a module id field is a malformed case beyond the matching rules above: each accepts every value its type holds `[decision]`.
 
 ## Validity rules
 
