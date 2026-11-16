@@ -532,8 +532,12 @@ if best is not None:
                 fail("AC1", f"'n/a' without a reason (three words or more): row '{rlabel}', column '{colname}'")
                 continue
             if kind == "invalid":
-                fail("AC1", f"cell names neither a reason of the enumeration, a named event nor n/a with a reason: "
-                     f"row '{rlabel}', column '{colname}': {text[:70]!r}")
+                unknown = [c for c in CAMEL.findall(text) if c not in ENUM_NAMES]
+                if unknown:
+                    fail("AC2", f"reason(s) {unknown} in row '{rlabel}', column '{colname}' are not in the closed enumeration")
+                else:
+                    fail("AC1", f"cell names neither a reason of the enumeration, a named event nor n/a with a reason: "
+                         f"row '{rlabel}', column '{colname}': {text[:70]!r}")
                 continue
             if kind in ("reason", "event"):
                 bad = [c for c in CAMEL.findall(text) if c not in ENUM_NAMES]
