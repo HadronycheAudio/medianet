@@ -609,16 +609,7 @@ fn denial_wire_md_missing() {
 fn red_phase_tree_fails_every_criterion() {
     let commit = "38e890034cfa6d210853a3fc71db4e74459fec71";
     let repo = hadronyche_tools::doccheck::docs::repo_root();
-    let present = std::process::Command::new("git")
-        .args([
-            "--no-optional-locks",
-            "cat-file",
-            "-e",
-            &format!("{commit}^{{commit}}"),
-        ])
-        .current_dir(&repo)
-        .status()
-        .is_ok_and(|s| s.success());
+    let present = hadronyche_tools::doccheck::docs::commit_exists(&repo, commit);
     if !present {
         eprintln!("skipped: {commit} is not in this clone");
         return;

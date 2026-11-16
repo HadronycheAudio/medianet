@@ -143,6 +143,24 @@ pub fn delete_section(text: &str, pattern: &str) -> String {
     drop_lines(text, span.lo, span.hi - 1)
 }
 
+/// Applies `edit` to the section of the first heading matching `pattern`
+/// only (heading line included), so a fixture cannot hit the same words in
+/// an earlier section.
+pub fn within_section(text: &str, pattern: &str, edit: impl FnOnce(&str) -> String) -> String {
+    let md = Markdown::parse(text);
+    let h = md
+        .find(pattern)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("within_section: no heading matches {pattern:?}"));
+    let span = md.section(h);
+    let lines = split_nl(text);
+    let mut out: Vec<String> = lines[..span.lo].iter().map(|l| l.to_string()).collect();
+    out.push(edit(&lines[span.lo..span.hi].join("\n")));
+    out.extend(lines[span.hi..].iter().map(|l| l.to_string()));
+    out.join("\n")
+}
+
 /// Renames the first heading matching `pattern` to `to` (level kept).
 pub fn rename_heading(text: &str, pattern: &str, to: &str) -> String {
     let md = Markdown::parse(text);
@@ -223,6 +241,8 @@ mod tests {
         assert!(replace_in_line(T, r"\| r2", "8", "9").contains("| r2 | 9 |"));
         assert!(negate(T, "^is", "it").contains("is not it"));
         assert_eq!(replace_all("a1a1", "1", "2"), "a2a2");
+        let w = within_section(T, "^B$", |s| s.replace("is", "was"));
+        assert!(w.contains("was it") && w.starts_with("## A"));
     }
 
     #[test]

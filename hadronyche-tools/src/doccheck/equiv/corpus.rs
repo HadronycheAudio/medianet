@@ -3,8 +3,9 @@
 //! For each target section the generator lists every mutation of seven
 //! kinds — delete a table row, delete a unit (paragraph or list item),
 //! delete a subsection, strip a tag, negate a keyword, alter a number,
-//! rename a heading — then shuffles each kind with the seed and takes them
-//! round-robin, so a limited corpus still covers every kind.
+//! rename a heading — then shuffles each with the seed, interleaves the
+//! targets of a kind, and takes the kinds round-robin, so a limited corpus
+//! still covers every kind and every target.
 
 use super::super::Docs;
 use super::super::checks::Target;
@@ -200,8 +201,23 @@ fn line_mutations(
     }
 }
 
-/// The corpus: every target's candidates, each kind shuffled by `seed`,
-/// taken round-robin across kinds up to `limit`.
+fn interleave(groups: Vec<Vec<Mutation>>) -> Vec<Mutation> {
+    let mut iters: Vec<_> = groups.into_iter().map(Vec::into_iter).collect();
+    let mut out = Vec::new();
+    loop {
+        let before = out.len();
+        for it in &mut iters {
+            out.extend(it.next());
+        }
+        if out.len() == before {
+            return out;
+        }
+    }
+}
+
+/// The corpus: every target's candidates, each (kind, target) group
+/// shuffled by `seed`, the targets of a kind interleaved, then taken
+/// round-robin across kinds up to `limit`.
 pub fn corpus(
     docs: &Docs,
     targets: &[Target],
@@ -209,15 +225,18 @@ pub fn corpus(
     seed: u64,
     limit: usize,
 ) -> Vec<Mutation> {
-    let mut kinds: Vec<Vec<Mutation>> = vec![Vec::new(); 7];
+    let mut rng = Rng(seed.max(1));
+    let mut per_target: Vec<Vec<Vec<Mutation>>> = vec![Vec::new(); 7];
     for t in targets {
-        for (k, group) in candidates(docs, t, keywords).into_iter().enumerate() {
-            kinds[k].extend(group);
+        for (k, mut group) in candidates(docs, t, keywords).into_iter().enumerate() {
+            rng.shuffle(&mut group);
+            per_target[k].push(group);
         }
     }
-    let mut rng = Rng(seed.max(1));
+    // within a kind, the targets take turns, so a large file (wire.toml's
+    // thousands of numbers) cannot crowd out a small section
+    let mut kinds: Vec<Vec<Mutation>> = per_target.into_iter().map(interleave).collect();
     for group in &mut kinds {
-        rng.shuffle(group);
         group.reverse();
     }
     let mut out = Vec::new();

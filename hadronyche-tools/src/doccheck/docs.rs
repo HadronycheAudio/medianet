@@ -270,6 +270,22 @@ pub fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// True when `commit` is in the git repository at `repo` (false in a
+/// shallow clone that lacks it): tests that read a red-phase tree skip
+/// without it.
+pub fn commit_exists(repo: &Path, commit: &str) -> bool {
+    Command::new("git")
+        .args([
+            "--no-optional-locks",
+            "cat-file",
+            "-e",
+            &format!("{commit}^{{commit}}"),
+        ])
+        .current_dir(repo)
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
 /// Normalises a repository-relative path: `/` separators, no `.` or `..`.
 pub fn norm(path: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
@@ -414,5 +430,10 @@ mod tests {
         assert!(docs.is_file("Cargo.toml"));
         assert!(docs.read("Cargo.toml").unwrap().contains("[workspace]"));
         assert!(docs.read("no/such/file").is_none());
+        assert!(commit_exists(&repo_root(), "HEAD"));
+        assert!(!commit_exists(
+            &repo_root(),
+            "0000000000000000000000000000000000000000"
+        ));
     }
 }
