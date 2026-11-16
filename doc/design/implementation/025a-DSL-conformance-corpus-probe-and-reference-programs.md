@@ -107,7 +107,7 @@ pub fn probe<M: Module>(marker: Marker, slices: usize) -> Vec<ProbeResult>;
 - [ ] The cost-bound calibration (operations to time, per target) is recorded
 - [ ] Probe and replay tools have user documentation with one worked example each
 
-**Not applicable in this part (C-125):** "Regime stamp fields touched are complete and documented" — this part touches no stamp field (the fingerprint and calibration fields are part 025b). "The listed-target set is published…" and "The cost-bound calibration … is recorded" — both are part 025b deliverables; this part runs on the host only. "Probe and replay tools have user documentation…" applies to the probe here; the replay half is part 025b. Every other line has a subject: code and the `dsl-conformance` job; the expect-file parser; the POC echo, read as a reference and never modified.
+**Not applicable in this part (C-125):** "Regime stamp fields touched are complete and documented" — this part touches no stamp field (the fingerprint and calibration fields are part 025b). "The listed-target set is published…" and "The cost-bound calibration … is recorded" — both are part 025b deliverables; this part runs on the host only. "Probe and replay tools have user documentation…" applies to the probe here; the replay half is part 025b. Every other line has a subject: code and the `dsl-conformance` job; the expect-file parser; the POC echo, read as a reference and never modified by this part (the frozen POC is written only by task 003, C-130).
 
 ## Open sub-questions
 
