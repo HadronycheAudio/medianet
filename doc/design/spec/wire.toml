@@ -539,7 +539,7 @@ offset = 16
 width = 16
 type = "u16"
 meaning = "protocol version, major in bits 15..8, minor in bits 7..0; v1 packs 1.0 as 0x0100 (004-04)"
-valid = "0x0100 in v1"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
 
 [[message.field]]
 name = "domain"

@@ -193,8 +193,9 @@ Rules the layout must satisfy (exact field offsets are spec drafting, task 004):
 - The **session number is assigned by the source**, one per stream, and bumped on restart and on timeline epoch change (C-19). Every consumer of a stream sees the same value.
 - The **copy index** (C-07) is reserved for duplication. Dedup rule: by stream, position and packet index; the first valid copy wins.
 - A **gap slice** is header-only and marks positions the sender knows it did not produce or receive. The **degraded flag** marks a slice computed from a gapped input.
-- Timing measurements are in the optional extension, not in the stream header. Production streams may omit it.
+- Accumulated timing measurements (hop count, residence, declared delay) are in the optional extension, not in the packet header; the slice header carries only the per-packet send timestamp ([wire.md](spec/wire.md), Slice header, Send timestamp). Production streams may omit the extension.
 - A version mismatch is a named event, not a silent drop.
+- The **slice checksum** is carried once per slice, in the last packet of the slice; in the default regime a slice is one packet, so every default packet carries it ([wire.md](spec/wire.md), Checksum, Placement and the header cap).
 
 ### 3.3 Path MTU
 
@@ -212,7 +213,7 @@ Rules the layout must satisfy (exact field offsets are spec drafting, task 004):
 
 ### 3.5 DSCP
 
-Three classes (C-13). Sync rides its own class above media because the servo wants the least and most symmetric delay; the media path is measured separately by slice stamps. Marking is **verified by the receiving peer**, which reads the received byte and reports it in the receiver report. No platform is trusted to self-report.
+Three classes (C-13). Sync rides its own class above media because the servo wants the least and most symmetric delay; the media path is measured separately by slice stamps. Marking is **verified by the receiving peer**, which reads the received byte and reports it: the media marking in the receiver report, and the marking of hellos and of sync requests in the regime stamp, observed by every module and by the holder (C-152; [wire.md](spec/wire.md), Regime stamp, Observed DSCP of peers section). No platform is trusted to self-report.
 
 ### 3.6 Measurement path
 
@@ -220,7 +221,7 @@ The admission handshake carries a reverse unicast port. The v1 message set is ex
 
 | Message | Sender | Rate | Content |
 |---|---|---|---|
-| Receiver report | consumer's data thread | one per bundle per 100 ms (C-40) | per-member received, late, lost, interrupted counts; socket and interface drop counters; observed DSCP |
+| Receiver report | consumer's data thread | one per bundle per 100 ms (C-40) | per-member counters of C-159 (received, late, missing, marked gap, other-epoch, too-early, duplicates, incomplete reassemblies, demoted rounds, interrupted events, dead); socket and interface drop counters; observed DSCP; the consumer's current A (C-198) ([wire.md](spec/wire.md), Receiver report) |
 | One-way probe request / reply | either end | on demand | timestamps closing a round trip |
 
 Receiver reports are also the producer's only evidence that its consumer is alive (C-41).
@@ -578,13 +579,13 @@ The stamp is a **wire object defined in core**, because a device cannot write fi
 | Group | Fields |
 |---|---|
 | Identity | protocol version, build identity, full configuration, domain, profile (linux-std, macos-std, windows-std, embedded) |
-| Capability bits (present / absent / unverified / not requested) | receive timestamp source, real-time scheduling granted, memory locked, drop accounting, DSCP marking, fault injection, holder-eligible, control isolation (housekeeping cannot delay the data path) |
+| Capability bits (present / absent / unverified / not requested) | receive timestamp source, and the nine capability ids of [wire.md](spec/wire.md), Regime stamp, Capability states section: real-time scheduling granted, memory locked, CPU idle states restricted (best-effort), control isolation (housekeeping cannot delay the data path), drop accounting, DSCP marking, fault injection, holder-eligible, bounded real-time |
 | Network | interface, interface MTU, path MTU per connection, packets per slice, pacing mode, DSCP classes and peer-observed values, coalescing state |
 | Clock | discipline mode, lock state and bound at each one-way figure, timeline epoch |
 | Alignment | offset, the lateness percentiles, A, required E |
 | Platform | OS build, audio device, driver |
 | Drops | per-socket overflow, interface drop counters, measurement-buffer overflow |
-| Connections | per-connection summary counters (received, late, lost, interrupted), published by both producer and consumer so that a monitor or commissioning tool can observe stream health without seeing receiver reports (C-47) |
+| Connections | per-connection summary counters, the eleven of C-159 (received, late, missing, marked gap, other-epoch, too-early, duplicates, incomplete reassemblies, demoted rounds, interrupted events, dead), published by both producer and consumer so that a monitor or commissioning tool can observe stream health without seeing receiver reports (C-47) |
 | Injection | any active injection, always stamped |
 
 Rules:
