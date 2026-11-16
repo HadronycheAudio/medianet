@@ -62,7 +62,9 @@ if ! python3 scripts/function-length.py; then
 fi
 
 # document checks (one executable per ticket under checks/, until the
-# hadronyche-tools crate owns them; see swarm/README.md)
+# hadronyche-tools crate owns them; see swarm/README.md and
+# hadronyche-tools/PORTING.md: a ported script is deleted, its test runs in
+# the cargo test above)
 if [ -d checks ]; then
   for c in checks/*.sh checks/*.py; do
     [ -e "$c" ] || continue
@@ -73,6 +75,16 @@ if [ -d checks ]; then
       fail=1
     fi
   done
+fi
+
+# repository-state assertions of the ported checks: the tool runs and
+# repository facts that checks/*.sh scripts asserted and that cannot live in
+# `cargo test` (their document assertions are hadronyche-tools/tests/doc_*.rs,
+# run by the cargo test above); see hadronyche-tools/PORTING.md
+echo "== repository-state checks =="
+if ! bash scripts/repo-state-checks.sh; then
+  echo "FAIL: scripts/repo-state-checks.sh"
+  fail=1
 fi
 
 # conflict-marker guard: no merge resolution may leave markers behind
