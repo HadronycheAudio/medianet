@@ -85,11 +85,10 @@ fn width_numbers(text: &str) -> Vec<&'static str> {
         let run: String = chars[i..j].iter().collect();
         let prev_ok = i == 0 || chars[i - 1] != '.';
         let next_ok = j >= chars.len() || chars[j] != '.';
-        if prev_ok && next_ok {
-            if let Some(w) = ["1", "2", "4", "8", "16"].iter().find(|w| **w == run) {
+        if prev_ok && next_ok
+            && let Some(w) = ["1", "2", "4", "8", "16"].iter().find(|w| **w == run) {
                 out.push(*w);
             }
-        }
         i = j;
     }
     out
