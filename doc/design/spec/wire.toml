@@ -704,7 +704,10 @@ valid = "any 32-bit value; 4 294 967 295 is the saturated value"
 # The announcement entry (ticket 004-09): one entry of the media packet's
 # announcement container, declared as a section of the media packet message;
 # wire.md's per-type tables in the Announcements section are the
-# human-readable authority.
+# human-readable authority. Its rejection reasons are its row of wire.md's
+# Validity rules matrix (004-21): a truncated announcement is the
+# length-overrun row, BadLength, never TooShort; a non-zero payload in type
+# code 0, 1 or 3 is ReservedNonZero.
 
 [[message]]
 name = "announcement"
@@ -712,7 +715,7 @@ layer = "media"
 dscp = 46
 max_size = 12
 section_of = "media packet"
-rejection_reasons = ["TooShort", "BadLength"]
+rejection_reasons = ["BadLength", "ReservedNonZero"]
 
 [[message.field]]
 name = "type"
