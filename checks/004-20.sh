@@ -773,10 +773,13 @@ class Sec:
         return out
 
     def form_rows(self):
+        """Rows of every invalid-form table of this section: a table whose
+        first header cell names the form (Invalid form, Further rule, ...) and
+        whose second names the outcome. One table or several, the rows count."""
         rows_out = []
         for _, header, rows in parse_tables(self.text):
             heads = [norm(h) for h in header]
-            if any("form" in h or "invalid" in h for h in heads) and any("outcome" in h for h in heads):
+            if len(heads) >= 2 and any(k in heads[0] for k in FORM_KEYS) and any("outcome" in h for h in heads):
                 rows_out.extend(r for r in rows if len(r) >= 2 and r[0].strip())
         return rows_out
 
@@ -1218,6 +1221,7 @@ if not PRB_PLACE and PRB_REQ is not None and PRB_REP is not None:
 # AC 5 — invalid forms with outcomes
 # ---------------------------------------------------------------------------
 SHORT_FORM = re.compile(r"too\s+short|shorter\s+than|fewer\s+than|less\s+than|under\s+\d+\s+(?:bytes?|octets?)", re.I)
+FORM_KEYS = ("form", "invalid", "rule", "case", "condition")
 NON_REJECTION = re.compile(
     r"not\s+a\s+rejection|never\s+a\s+rejection|cannot\s+occur|ignored|is\s+not\s+counted|not\s+counted",
     re.I,
@@ -1261,8 +1265,14 @@ if not REP_PLACE or not PRB_PLACE:
         outcome = " | ".join(r[1:])
         cat = category(form)
         if cat is None:
-            fail(5, f"the invalid form '{form[:60]}' is not one of the ticket's forms")
-            ac5 = False
+            # a row outside the ticket's nine: accepted when its outcome names a
+            # member of the closed enumeration or argues a non-rejection; an
+            # invented reason fails in the scan below, wherever the row sits
+            if not (any(n in MEMBER_SET and re.search(r"\b" + n + r"\b", outcome) for n in MEMBERS)
+                    or NON_REJECTION.search(outcome)):
+                fail(5, f"the invalid-form row '{form[:60]}' is outside the ticket's list and its outcome "
+                     f"names no member of the closed enumeration nor argues a non-rejection: {outcome[:90]}")
+                ac5 = False
             continue
         seen.setdefault(cat, []).append(outcome)
         if cat in EXACT and not re.search(r"\b" + EXACT[cat] + r"\b", outcome):
@@ -1323,7 +1333,11 @@ msgs = toml.get("message", []) if isinstance(toml, dict) else []
 if not isinstance(msgs, list):
     msgs = []
 MEAS = [m for m in msgs if isinstance(m, dict) and m.get("layer") == "measurement"]
-T_REP = next((m for m in msgs if isinstance(m, dict) and re.search(r"receiver[\s_-]*report", str(m.get("name", "")), re.I)), None)
+REP_T = [m for m in msgs if isinstance(m, dict) and re.search(r"receiver[\s_-]*report", str(m.get("name", "")), re.I)]
+# the report is the table that owns the counted member field; a separate
+# member-row message (the sparse entry precedent) is not the report itself
+T_REP = next((m for m in REP_T if any(isinstance(f, dict) and "count" in f for f in (m.get("field") or []))),
+             REP_T[0] if REP_T else None)
 PROBE_T = [m for m in msgs if isinstance(m, dict) and re.search(r"probe", str(m.get("name", "")), re.I)]
 if T_REP is None:
     fail(1, "wire.toml declares no [[message]] named 'receiver report'")
