@@ -1,0 +1,46 @@
+//! Document checks: the library the ticket checks of `checks/*.sh` are
+//! ported onto (see `hadronyche-tools/PORTING.md`).
+//!
+//! A check is a function from [`Docs`] (the documents, passed as a value) to
+//! a [`Report`] (every failed assertion with its criterion, file and line).
+//! The modules give it the vocabulary the scripts each re-implemented:
+//!
+//! * [`docs`] — the documents: the working tree, a commit, or either with
+//!   in-memory replacements (fixtures without files);
+//! * [`text`] — Python-compatible text helpers and a regex cache;
+//! * [`policy`] — the named variants of rules the scripts implement
+//!   differently (fences, heading match, section end, row split);
+//! * [`markdown`] — headings with GitHub anchors, sections, spans;
+//! * [`tables`] — tables as rows with header lookup;
+//! * [`units`] — paragraphs, list items, table rows and prose blocks with
+//!   line numbers;
+//! * [`links`] — links and anchor resolution across files;
+//! * [`evidence`] — the six evidence tags and the named variants of the
+//!   untagged-claim rule;
+//! * [`items`] — open items (owner, falsifier), status sentences, labelled
+//!   paragraphs (reported contradictions, hand-ons);
+//! * [`claims`] — positive statements with clause-level negation guards,
+//!   exactly-one-of verdicts, designation patterns;
+//! * [`ticket`] — tickets (acceptance criteria, constants lists, depends-on)
+//!   and the constants table;
+//! * [`wire_toml`] — `wire.toml` through the crate's TOML parser;
+//! * [`mutate`] — mutation helpers for denial fixtures;
+//! * [`report`] — the result type and the test assertions.
+
+pub mod claims;
+pub mod docs;
+pub mod evidence;
+pub mod items;
+pub mod links;
+pub mod markdown;
+pub mod mutate;
+pub mod policy;
+pub mod report;
+pub mod tables;
+pub mod text;
+pub mod ticket;
+pub mod units;
+pub mod wire_toml;
+
+pub use docs::Docs;
+pub use report::{Report, assert_clean, assert_criterion, assert_fails};

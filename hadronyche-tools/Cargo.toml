@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+# Document checks (src/doccheck): the scripts being ported are written in
+# Python regular expressions; the standard regex crate keeps each pattern
+# readable and reviewable one for one, instead of hand-written matchers.
+regex = "1"
 # Ticket 004-02: the standard TOML library (the ticket's default), so the
 # checker's file parser is not hand-written and needs no fuzzing under C-95.
 toml = "0.9"
