@@ -196,6 +196,9 @@ A reserved field is wire space of a fixed width that this specification fixes at
 | Manifest join element bits 7..1 of byte 4 | manifest join element (Manifest, Join element) | 7 bits | 0 | a non-zero bit: drop the manifest and count as ReservedNonZero (general rule) [decision] |
 | Content-type codes 4 to 255 of the manifest port element | manifest port element (Manifest, Port element) | 8 bits | unused — v1 senders write 0 to 3 | v1 receivers ignore the code and keep the port, as for the hello [decision]; never a rejection |
 | Section type codes not assigned in v1 | regime stamp section (Regime stamp, Section type codes) | 16 bits | unused — v1 senders write an assigned code | v1 receivers skip the section's body by its section length and keep the section for the completeness test [decision]; never a rejection |
+| Health entry bits 7..1 of byte 14 | regime stamp per-connection health section (Regime stamp, Per-connection health section) | 7 bits | 0 | a non-zero bit: drop the section and count as ReservedNonZero (general rule) [decision] |
+| Health entry bits 7..6 of byte 60 | regime stamp per-connection health section (Regime stamp, Per-connection health section) | 2 bits | 0 | a non-zero bit: drop the section and count as ReservedNonZero (general rule) [decision] |
+| Capability ids 5 to 255 | regime stamp capability states section (Regime stamp, Capability states section) | 8 bits | unused — v1 senders write the ids 1 to 4 | v1 receivers check the entry's state and order and otherwise ignore the entry [decision]; never a rejection |
 
 ### Copy index (C-07)
 
@@ -238,6 +241,10 @@ The manifest adds four rows. The reserved bits of the port, stream and join elem
 ### Fields of the regime stamp (004-24)
 
 The regime stamp adds one row. The section type codes not assigned in v1 are an accept-any field, recorded as the hello's are: adding a section type is a minor change, so a v1 receiver skips a section of a type it does not know by its section length instead of dropping it, and the stamp stays complete (Versioning, Minor and major changes; Regime stamp, Section type codes) `[decision]`. Code 0 is not accept-any: it is never a section type, and a section of type 0 is dropped and counted under BadLength (Regime stamp, Validity rules) `[decision]`. The stamp section and the stamp request add no reserved zero field `[decision]`.
+
+### Fields of the regime stamp section types (004-25)
+
+The section types of 004-25 add three rows. The reserved bits of a health entry follow the general rule: a stamp declares what peers and tools read to interpret the sender, and a bit a v1 receiver cannot read would make it read the entry wrongly, so the section is dropped under ReservedNonZero, as a manifest bit is (Regime stamp, Per-connection health section) `[decision]`. The capability ids 5 to 255 are an accept-any field, recorded as the hello's are: they let a later ticket stamp a further capability as a minor change, and a v1 receiver that ignores an entry of an id it does not know loses nothing it could read; the entry's state stays in the closed enumeration of C-129 and is still checked (Regime stamp, Capability states section) `[decision]`. The other enumerations of these types — the capability states, the receive-timestamp sources and the injection kinds — are closed, not accept-any: a value outside them drops the section (Regime stamp, Validity rules of the section types) `[decision]`.
 
 ## Media packet header
 
@@ -1332,13 +1339,14 @@ No yield message is needed. A holder that steps down — under I/O pressure, or 
 
 **The winner's timeline epoch.** When the window concludes, the winner's timeline epoch is kept if the winner has usable time (C-213) — it takes over with frequency continuity and serves the epoch it was on — and bumped only when no candidate has usable time, the holder-eligible candidate with the lowest module id then winning (C-113); the holder announcement carries the result as its winner timeline epoch, with the winner's time state beside it — the time state the winner declared in its own candidacy for that election epoch, the value the election was decided on, not a later reading — so a receiver tells the kept case (time state 1 or 2) from the bumped case (time state 0) from the announcement alone `[decision]`. Announced means carried in the winner's holder announcement for that election epoch; how the bumped value is chosen is epic 006's (006-05), and the winner's hellos carry the same epoch afterwards as their timeline epoch `[decision]`.
 
-**Which carrier binds whom.** Five carry a timeline epoch: the hello, every media packet header, the sync reply, the holder announcement and the in-band timeline epoch switch. Three of them are carriers a party adopts or acts on, each binding a different party, and the other two bind no one's adoption, so none contradicts another `[decision]`:
+**Which carrier binds whom.** Seven carry a timeline epoch: the hello, every media packet header, the sync reply, the holder announcement, the in-band timeline epoch switch, and two section types of the regime stamp, the multi-packet regime section and the injections section (Regime stamp, Section types of the constants table). Three of them are carriers a party adopts or acts on, each binding a different party, and the other four bind no one's adoption, so none contradicts another `[decision]`:
 
 - **The holder announcement binds the election machines.** It says who holds the clock in that election epoch and whether the epoch was kept or bumped, which decides the election machine's events (005-10). It does not move a follower's line: the announcement carries no epoch origin, and no follower adopts an epoch from it `[decision]`.
 - **The sync reply binds each follower's clock thread.** A follower adopts the holder's epoch, with its origin, from the holder's sync replies, under cases 1 to 4 of Sync request and reply, Timeline epoch and holder identity. The reply is the authority: when it differs from the announcement's winner timeline epoch, the reply wins, because the holder may have bumped again since, for a stall (C-136) `[decision]`.
 - **The in-band timeline epoch switch binds the consumers of each stream.** When a module's clock thread learns a new epoch from sync, each of its sources announces in its slices the position at which it switches (Announcements, Timeline epoch switch; L-2; 01-architecture.md § 2.2). No election message names a position, and no stream switches on an election message `[decision]`.
 - **The hello's timeline epoch binds no one.** It states the epoch the sending module is on (Hello, Election and clock fields); gossip is discovery, admission bootstrap and election input only (L-3), and no module adopts an epoch from a hello `[decision]`.
 - **The media packet header's timeline epoch binds no one's adoption.** It names the epoch the packet's media-time positions are counted in (C-10; Media packet header, Field table); a consumer compares it with its own current epoch and counts a packet on another epoch under WrongEpoch, never a miss (C-102), and adopts no epoch from it `[decision]`.
+- **The regime stamp's timeline epochs bind no one's adoption.** The multi-packet regime section names the epoch a stream's stamped regime is counted in, and the injections section the epoch a test hook forced a stream onto (C-120); both state what the sender does, and no module adopts an epoch from a stamp `[decision]`.
 
 Both messages carry the C-12 authentication reservation in the common control header with the v1 values of C-115: scheme 0, tag 128 zero bits, and a live message counter that is the sender's liveness counter, shared with its hellos (Hello, Liveness counter); the receiver outcomes are those of Reserved fields, Authentication reservation (C-12) `[decision]`.
 
@@ -2006,7 +2014,7 @@ The regime stamp is a module's declaration of the configuration and health facts
 
 Behaviour the layouts serve, restated as fact: both messages are control messages, sent by UDP over IPv4 (C-100) at DSCP CS5 (40) (C-13), and both start with the common control header and its C-12 authentication reservation at the v1 values of C-115 — scheme 0, tag 128 zero bits, and a live message counter that is the sender's liveness counter, one counter per module instance shared by every control message it sends, stamp sections and stamp requests included (Hello, Liveness counter) `[decision]`. Sections travel multicast to the control group with TTL 1, and unicast in answer to a request; the request travels by unicast only `[decision]`. The hosted backend sends the stamp (epic 015, C-144) on the schedule of 013-24, and a device sends it through epic 026 (013-24); this section fixes the bytes and the rules any sender and receiver follow, not the sending code `[decision]`. Third parties read stream health only from the stamps, since receiver reports are not multicast and there is no query message (C-47): the stamp request fetches a module's whole stamp, never a part of it and never a health query `[decision]`.
 
-The retired POC has no regime stamp message: the only stamp its gossip carries is the transport reference's claim stamp, a u64 on the `transport` line of the text hello (module.rs:153, `pub stamp: u64` in `struct Info`, and module.rs:273, the `transport` line of `Info::hello`) `[code]`. No field of the container carries a timeline epoch, so the container adds no carrier to Election messages, Which carrier binds whom `[decision]`. 006-19 asks for a 16-bit timeline epoch per record set in the stamp and leaves the section that carries it to epic 013 (006-19, Work 3; C-196); neither 004-25 nor 004-28 lays out such a field, so adding that carrier to Which carrier binds whom is owned by epic 013, which places the field, together with the epic-004 ticket that lays out its section type in this section `[decision]`.
+The retired POC has no regime stamp message: the only stamp its gossip carries is the transport reference's claim stamp, a u64 on the `transport` line of the text hello (module.rs:153, `pub stamp: u64` in `struct Info`, and module.rs:273, the `transport` line of `Info::hello`) `[code]`. No field of the container carries a timeline epoch, so the container adds no carrier to Election messages, Which carrier binds whom `[decision]`. Two section types of 004-25 do carry one, per stream: the multi-packet regime section the epoch 004-08 hands over, and the injections section the epoch a stream is forced onto (Section types of the constants table); 004-25 adds both to Which carrier binds whom as binding no one's adoption `[decision]`. 006-19 asks for a 16-bit timeline epoch per record set in the stamp, the epoch of the line in force when the records were taken, and leaves the section that carries it to epic 013 (006-19, Work 3; C-196); neither 004-25 nor 004-28 lays out that per-record-set field, so adding its carrier to Which carrier binds whom is owned by epic 013, which places the field, together with the epic-004 ticket that lays out its section type in this section `[decision]`.
 
 ### Stamp section
 
@@ -2096,7 +2104,7 @@ The rules bind every module that sends a stamp, whoever sends it — the hosted 
 
 ### Receiver rules
 
-A receiver keeps, per peer module id, at most two stamps — the last complete stamp it holds and at most one stamp being reassembled — and matches a section to a stamp by its sender module id, instance nonce and stamp version `[decision]`. A section that passes the validity rules is handled by the first rule below that applies `[decision]`:
+A receiver keeps, per peer module id, at most two stamps — the last complete stamp it holds and at most one stamp being reassembled — and matches a section to a stamp by its sender module id, instance nonce and stamp version `[decision]`. A section that passes the validity rules is handled by the first of rules 1 to 7 below that applies; rules 8 to 10 are not alternatives to them and apply alongside, rule 8 to every section whatever rule 1 to 7 handles it, rules 9 and 10 to the stamps a receiver holds `[decision]`:
 
 1. **Whose stamp.** A section whose sender module id has no entry in the receiver's discovery map, whose module id the discovery map holds in quarantine after a collision (C-46; 005-06: third parties "ignore both"), or whose instance nonce is not the nonce of that peer's latest hello, is ignored: not a rejection, because the pair is judged against the discovery map's per-peer state, which no packet rule holds, and the hello's staleness rule keys a copy by that nonce (Hello, Regime stamp version number; 005-06, 005-07) `[decision]`. A restarted module's first stamp may therefore be ignored until its first hello, and the receiver then fetches it (rule 9) `[decision]`.
 2. **A new instance.** A section whose instance nonce, the nonce of the peer's latest hello by rule 1, differs from the nonce of the held stamp or of the stamp being reassembled discards both, the old instance's complete and partial stamp alike, and starts reassembling the section's version; versions of different instance nonces are never compared, because the Hello orders versions only within one nonce and a new instance may start its count at any value (Hello, Regime stamp version number) `[decision]`.
@@ -2145,6 +2153,262 @@ Not a rejection either: a section of an unknown section type, skipped by its len
 
 wire.toml declares the stamp section as `regime stamp section`, with `section_of = "regime stamp"`, the 004-02 attribute, and the stamp request as `regime stamp request`, without it `[decision]`. The parent `regime stamp` is named, not declared as a message: the stamp is not a datagram but the set of sections that share one sender module id, instance nonce, stamp version and section count, up to 80 128 bytes, and the schema can declare no control message above 1 252 bytes and has no notion of a payload joined from several messages — the tooling gap the Manifest section records, owned by ticket 004-23, to which this case is added `[decision]`. Codes 38 to 47, the rest of the block the Hello section reserves for 004-24, are unused in v1 `[decision]`.
 
+### Section types of the constants table
+
+This part lays out the seven section types the constants table names, codes 1 to 7 of the block 1 to 15 that Section type codes gives 004-25, in the order of the ticket: multi-packet regime (1; C-05), per-connection health (2; C-47, C-159), calibration factor (3; C-106, C-176), commissioning window (4; C-107, C-153), injections (5; C-120, C-145), capability states (6; C-127, C-128, C-129, C-147, C-161) and receive-timestamp source (7; C-131) `[decision]`. Codes 8 to 15 stay unassigned in v1, so a v1 receiver skips a section of one of them by its length (Section type codes), and the block 16 to 31 of 004-28 is untouched `[decision]`.
+
+Every table below is body-relative: its offsets are byte distances from the section's first body byte, byte 58 of the section (Stamp section), little-endian (Byte order) and packed with no padding (Alignment and padding), as the manifest's tables count from the manifest's first byte (Manifest) `[decision]`. A section whose body is b bytes is 58 + b bytes and states b as its section length; sub-byte fields are written bits [hi:lo] of a named byte, as Bit-field numbering fixes `[decision]`.
+
+A list type's body is a one-byte entry count followed by that many entries of the type's fixed entry size `[decision]`. A list type whose entries do not fit one section is split over several sections of the same type code, each a complete body with its own entry count; read in section index order, the entries of all the type's sections are in the type's key order with each key once, so a section's first entry follows the last entry of the type's section with the next lower index `[decision]`. Sorting makes the bytes of an unchanged state identical from one send to the next, which sender rule 3 needs to repeat a version, and lets a receiver find a repeated key by comparing neighbours (Validity rules of the section types) `[decision]`.
+
+Which of these types a stamp carries `[decision]`:
+
+- **Multi-packet regime:** only while at least one stream of the sender is in the multi-packet regime; a stream the section does not list uses the default regime, one packet per slice (Slice header, Multi-packet regime) `[decision]`.
+- **Per-connection health:** while the sender has at least one admitted connection, as producer or as consumer `[decision]`.
+- **Commissioning window:** exactly while a window is open, and never otherwise: C-153 has modules stamp it "while open", so the absence of the section is the closed state and there is no closed marker `[decision]`.
+- **Calibration factor, injections, capability states, receive-timestamp source:** in every stamp, one section each; the injections section is sent with an entry count of 0 when no injection is active, as 013-09 asks (Work 3: an empty list means "none active" and is still written) `[decision]`.
+
+Every counter these types carry — the eleven health counters of each connection and the use counts of the injection hooks — changes its section's bytes when it moves, so under sender rule 3 (Sender rules) a refresh with moved counters is sent under a new stamp version, as is a change of any other field of these types `[decision]`. Readers detect a regime change by the StampId of epic 013 (013-05), a function of the regime fields only, never by the stamp version; which fields of these types are regime fields and which are counters is epic 013's to say (013-05, 013-23), and this layout neither decides it nor carries it `[decision]`.
+
+Two of these types carry a timeline epoch at the C-10 width of 16 bits: the multi-packet regime section the epoch a stream's regime is stamped for, which 004-08 hands over (Slice header, Multi-packet regime), and the injections section the epoch a stream is forced onto (C-120) `[decision]`. Both state what the sender does, no module adopts an epoch from a stamp, and both are carriers that bind no one's adoption in Election messages, Which carrier binds whom `[decision]`.
+
+wire.toml declares each type as a message of its own with `section_of = "regime stamp"`: the section header of Stamp section with the type's code as its only section type, followed by the type's body from bit 464; each list entry is a counted field of type `uint` whose own layout is a message without `section_of`, as the receiver report member is declared (Receiver report, Per-member part) `[decision]`.
+
+### Multi-packet regime section
+
+Section type code 1 `[decision]`. The section declares, per stream of the sender in the multi-packet regime (C-05), the values 004-08 hands over: the stream number, the packets per slice, the frames per slice and the timeline epoch the stamped positions are counted in (Slice header, Multi-packet regime) `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Entry count: how many stream entries follow in this section | 1 to 149 |
+| 1 | 8 × max 149 | byte blob of stream entries | Stream entry: one stream of the sender in the multi-packet regime, laid out as the entry table below; entries in ascending stream number | entry count entries, at most 149 (1 192 bytes) |
+
+The stream entry is 8 bytes; offsets are byte distances from the entry's first byte `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 2 | u16 | Stream number (C-10) of the stream at this source, the sender; the key, each stream at most once in the stamp | 0 to 255 (C-09) |
+| 2 | 2 | u16 | Packets per slice: the packet count every packet of the stream's slices carries in its slice header (Slice header) | 2 to 65 535 |
+| 4 | 2 | u16 | Frames per slice: the stream's slice length, the frames field of its slices, which steps its position grid (Slice header) | 1 to 65 535 |
+| 6 | 2 | u16 | Timeline epoch (C-10): the epoch the stream's packet headers carry while this regime is stamped, the epoch its positions are counted in (Slice header, Multi-packet regime) | any 16-bit value |
+
+Sizes `[decision]`: 149 × 8 = 1 192 bytes of entries, a body of 1 + 1 192 = 1 193 bytes, and the maximum section size is 58 + 1 193 = 1 251 bytes, within the control bound of 1 252 bytes (C-17). At most 149 entries per section, because ⌊1 193 / 8⌋ = 149 and the count is one byte `[decision]`. A source has at most 256 streams (C-09), so at its maxima the type needs ⌈256 / 149⌉ = 2 sections `[decision]`.
+
+The packet count is 2 or more because a stream with one packet per slice is in the default regime and is not listed (C-05); the widths are the slice header's, so each value is the one its packets carry (Slice header, Field table) `[decision]`. The frames per slice is also in the stream's manifest element, and the two must agree, which no packet rule checks; which wins if they differ is Manifest, Open item 9, with its owner and falsifier `[decision]`.
+
+The timeline epoch is the fourth value 004-08's merged text hands over ("the timeline epoch the stamped positions are counted in"), one more than its ticket's Work 3 lists, and this section carries it: a consumer reads which epoch a stamped regime was declared for, while the packet header's epoch says which epoch a packet is on (Media packet header) `[decision]`. On an epoch change the source's session changes too (C-19), and the entry changes with it `[decision]`.
+
+### Per-connection health section
+
+Section type code 2 `[decision]`. Producer and consumer each publish here, per connection, the eleven counters of C-159 in its order and the observed DSCP of C-47: third parties read stream health only from the stamps, since receiver reports are not multicast and there is no query message (C-47) `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Entry count: how many connection entries follow in this section | 1 to 19 |
+| 1 | 61 × max 19 | byte blob of connection entries | Connection entry: one connection of the sender, as producer or consumer, laid out as the entry table below; entries in key order | entry count entries, at most 19 (1 159 bytes) |
+
+The connection entry is 61 bytes: 15 that name the connection, eleven 32-bit counters and 2 bytes of observed DSCP; offsets are byte distances from the entry's first byte `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 8 | u64 | Peer module id (C-11): the consumer's module id in a producer entry, the source's module id in a consumer entry | any 64-bit value |
+| 8 | 2 | u16 | Stream number (C-10) of the connection's stream at its source | 0 to 255 (C-09) |
+| 10 | 4 | u32 | Session (C-10) of the stream, as its source assigns it and every consumer sees it (C-19) | any 32-bit value |
+| 14 | 1 bit | uint | Role, bit [0:0] of byte 14: 0 = producer, the sender sends the stream; 1 = consumer, the sender consumes it | 0 or 1 |
+| 14 | 7 bits | uint | Reserved, bits [7:1] of byte 14 (Reserved fields, General rule for later tickets) | 0 only |
+| 15 | 4 | u32 | Received: slices accepted with content, neither late, missing nor a marked gap; cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 19 | 4 | u32 | Late: slices counted missing at their deadline that arrived later while their position was within the ring span, reclassified late and discarded (C-108); cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 23 | 4 | u32 | Missing: slices absent at their deadline and not reclassified late since; decreases by one on every reclassification (C-108); wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 27 | 4 | u32 | Marked gap: positions the producer marked with a gap slice (rule 10), counted in slices; cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 31 | 4 | u32 | Other-epoch: packets on another timeline epoch, never a miss, each restarting the dead clock (C-135, C-102, C-111); cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 35 | 4 | u32 | Too-early: packets that arrived too early for the consumer to place their slice and were discarded; cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 39 | 4 | u32 | Duplicates: packets discarded as duplicates by stream, position and packet index, the first valid copy winning (rule 9); cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 43 | 4 | u32 | Incomplete reassemblies: multi-packet slices not complete at their reassembly deadline (C-15, C-110), counted in slices; cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 47 | 4 | u32 | Demoted rounds: rounds of the consumer, one per slice period, in which the connection's input was Demoted and treated as gapped (C-109); cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 51 | 4 | u32 | Interrupted events: entries into Interrupted after 8 consecutive missed slices (C-38), only missing or late slices counting as misses (C-102); events, not slices; cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 55 | 4 | u32 | Dead: entries into Dead, 2 s without data counted from the last slice with content or a marked gap (C-39, C-111); events, not slices; cumulative, wraps modulo 2^32 | any 32-bit value (wrap rule below) |
+| 59 | 1 | u8 | Observed DSCP state: the C-129 capability state of the observed DSCP of this connection (Capability states section) | 1 to 4 |
+| 60 | 6 bits | uint | Observed DSCP (C-47), bits [5:0] of byte 60: the DSCP of the IPv4 header of the last packet of this connection's stream that reached the consumer; EF (46) is what the producer sends (C-13) | 0 to 63; 0 unless the state is present (1) |
+| 60 | 2 bits | uint | Reserved, bits [7:6] of byte 60 (Reserved fields, General rule for later tickets) | 0 only |
+
+Sizes `[decision]`: 19 × 61 = 1 159 bytes of entries, a body of 1 + 1 159 = 1 160 bytes, and the maximum section size is 58 + 1 160 = 1 218 bytes, within the control bound (C-17). At most 19 entries per section, because ⌊1 193 / 61⌋ = 19 `[decision]`. How many connections one module has, from the constants `[decision]`: as producer, each of its at most 256 streams (C-09) has at most one connection per consumer module, because a producer keys a connection by the consumer's module id and the bundle (Receiver report, Bundle identity and member rows) and a stream belongs to one bundle, and the consumers are among the module's at most 63 peers (C-217), so 256 × 63 = 16 128 producer connections; as consumer, by the same keys, at most 63 × 256 = 16 128 consumer connections. The type's total maximum is 16 128 + 16 128 = 32 256 connections, and at its maxima it needs ⌈32 256 / 19⌉ = 1 698 sections, beyond the bound of 64 sections (Section count at the maxima) `[decision]`.
+
+An entry names its connection by its peer module id, its stream number and its role: the stream's source is the sender in a producer entry and the peer in a consumer entry, so with the section's sender module id the entry names the source's module id, the stream number and the consumer's module id, the keys of a receiver report's connection (Receiver report, Bundle identity and member rows) `[decision]`. The session tells a stream restarted, or moved to another timeline epoch, from its earlier self (C-19) `[decision]`. The key order is role, then peer module id, then stream number, each ascending; a key appears once in the stamp `[decision]`.
+
+**Wrap rule.** Every counter is 32 bits, starts at 0 when the connection is admitted, is cumulative, and wraps modulo 2^32, as every counter of the receiver report wraps; none saturates `[decision]`. A reader takes the change between two stamps as the difference modulo 2^32, read as a signed value from −2^31 to 2^31 − 1, the receiver report's rule (Receiver report, Counters): that keeps the C-108 reclassification readable, missing falling by one when late grows by one, and keeps a wrapped counter readable, while a saturated counter would stop telling changes and could not show a decrease of missing `[decision]`. A producer entry carries the counters its consumer reports, built from the changes between reports (Receiver report, Counters); a consumer entry carries the consumer's own counts `[decision]`.
+
+The width is 32 bits for all eleven, not the report's 16 for five of them, because a stamp is read once per refresh of 10 s (C-18), not every 100 ms (C-40): in 10 s a slice counter changes by at most 96 000 × 10 = 960 000 slices, at 96 000 slices per second (Receiver report, Counters), and a packet counter by less than 1 488 000 000 packets at 100 Gbit/s, five times the report's 297.6 million in 2 s, whose frame size is a figure the report recalls from IEEE Std 802.3 `[memory]`. Both stay inside the 2 147 483 647 that a 32-bit signed difference resolves, so a reader that takes two consecutive refreshes reads every change unambiguously; one that misses refreshes for more than about 14 s may misread a packet counter at that line rate, and a slice counter only after more than 2 147 483 647 / 96 000 s, about 22 369 s `[decision]`. 013-23's sketch of about 98 bytes per summary uses eight u64 counters, and the merged text leaves the wire widths to 004-25 (Maximum stamp size, the computed example); an entry is 98 − 61 = 37 bytes smaller than that sketch, and with eleven 64-bit counters it would be 105 bytes, ⌊1 193 / 105⌋ = 11 entries per section against 19 `[decision]`.
+
+**Dead and demoted.** Dead is a count of entries into Dead, events like interrupted events, not a flag: C-159 names it among the per-connection counters, and the receiver report counts entries into Dead (Receiver report, Interrupted, demoted, dead) `[decision]`. A reader that needs to know whether an input is dead now reads the Dead alarm of the sender's hello (Hello, Alarm field; C-173), which says that one of its inputs is, and the entry whose dead count grew says which; 013-23 sketches dead as a flag, and that difference is Open item 14, with its owner and falsifier `[decision]`. The demoted-rounds counter makes the Demoted state of C-109 visible to third parties: it grows only while the input is Demoted, whereas a gapped input grows marked gap or missing (Receiver report, Interrupted, demoted, dead) `[decision]`.
+
+**Observed DSCP.** The observed DSCP is stamped with one of the four capability states of C-129, as the receiver report hands over ("C-129's absent or unverified state, as 004-25 stamps it") and 026b-11 asks `[decision]`. Present (1): the DSCP holds a value read from a received packet, in a consumer entry the consumer's own reading and in a producer entry the value its consumer reported with the report's Observed bit at 1 `[decision]`. Absent (2): the consumer cannot read the DSCP of received packets, written in a consumer entry only `[decision]`. Unverified (3): no packet has been read yet, or, in a producer entry, the consumer reported the Observed bit at 0, which does not say which of absent or not yet `[decision]`. Not requested (4): a configuration that deliberately turns the observation off; no landed configuration does, so a v1 sender does not write it, and a receiver accepts it as a member of the closed enumeration `[decision]`. In every state but present the DSCP bits are 0 `[decision]`.
+
+### Calibration factor section
+
+Section type code 3 `[decision]`. The section carries the calibration factor of the sender's target (C-106): the time per counted abstract operation, measured once per listed target by the DSL conformance suite of epic 025 running a reference workload (C-176), with which admission converts the manifest's cost bound (Manifest, Manifest layout) `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 8 | u64 | Calibration factor (C-106, C-176): time per counted abstract operation on the sender's target, in femtoseconds per operation | 1 to 18 446 744 073 709 551 614 fs per operation; 0xffffffffffffffff = not calibrated, the target has no recorded factor; 0 is not valid |
+
+The maximum section size, which is also its fixed size, is 58 + 8 = 66 bytes `[decision]`. The factor is one value per target (C-176), and a module runs on one target, so the section carries one value and every stamp carries the section once `[decision]`.
+
+The unit agrees with the manifest's: the cost bound is a u64 of counted abstract operations per slice (C-106), so the cost bound times the factor is femtoseconds per slice, the time admission compares with what is left of its slice period, and the product of two u64 values fits 128 bits, so admission computes it exactly in integer arithmetic `[decision]`. Femtoseconds in a fixed-point integer, for three reasons `[decision]`: no constant bounds the time of one operation, and a target that runs one in under a nanosecond would have a factor of 0 in whole nanoseconds; 64 bits of femtoseconds reach about 18 446 s per operation, so no factor overflows; and an integer has one encoding per value, so an unchanged factor gives unchanged bytes, which sender rule 3 compares, where a float has two zeros and many NaN encodings `[decision]`. 012-03 holds the factor in nanoseconds per operation; that disagreement is Open item 12, with its owner and falsifier `[decision]`.
+
+A target with no recorded factor — an emulated-only target, whose measured time is meaningless (025b-10) — stamps the not-calibrated value, as 025b-12 and 013-25 ask, never a made-up value `[decision]`. The value is all ones, the manifest's convention for none (Manifest, Manifest layout), so a reader that overlooked it would compute a time beyond every slice period and refuse rather than accept; 022b-09 calls the same case absent (C-129), and this section encodes it once, as not calibrated `[decision]`.
+
+### Commissioning window section
+
+Section type code 4 `[decision]`. Every module stamps the declared commissioning window, with its expiry time, while the window is open (C-107, C-153); the commissioning tool's announcement and close messages, which open and close it, are laid out by 004-29 `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 8 | u64 | Window identifier: the open window's identifier as the tool's announcement declares it (004-29), the reference that commissioning results carry (C-178) | any 64-bit value, copied from the announcement |
+| 8 | 8 | u64 | Expiry time: the window's expiry time as the announcement carries it (C-153), copied verbatim; its unit and clock are those 004-29 states | any 64-bit value, copied from the announcement |
+
+The maximum section size, which is also its fixed size, is 58 + 16 = 74 bytes `[decision]`. One window at a time: a stamp carries at most one commissioning window section, because no landed text lets two windows be open at once; 004-29 decides how a module treats a second announcement while a window is open (004-29, Work 3), and Open item 11, with its owner and falsifier, records it `[decision]`.
+
+The expiry time's unit and clock are fixed by no landed text: C-153 gives only "an expiry time", and 004-29, which depends on this ticket, owns the announcement's field with its width, unit and clock (004-29, Work 1) `[decision]`. This section fixes the stamped width at 64 bits and copies the announced value, so 004-29 states the unit and the clock once for both, and the window identifier is carried the same way; Open item 11 holds both widths with its owner and falsifier `[decision]`. The module removes the section when the window closes, at expiry or on explicit close (C-153); when it reads the expiry is 004-29's receiver rule and epic 005's state machine (C-228) `[decision]`.
+
+### Injections section
+
+Section type code 5 `[decision]`. The section lists the sender's active injections, those of the public injection API and the test-only hooks alike, each stamped like any injection (C-120, C-145): a forced module id and nonce, a stream forced onto a given timeline epoch, a raw packet sent on a media or control socket, and a panic injected into a data, clock or housekeeping thread `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Entry count: how many injection entries follow; 0 = no injection active | 0 to 119 |
+| 1 | 10 × max 119 | byte blob of injection entries | Injection entry: one active injection, laid out as the entry table below; entries in key order | entry count entries, at most 119 (1 190 bytes) |
+
+The injection entry is 10 bytes; offsets are byte distances from the entry's first byte `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Kind: the injection kind, from the kind table below | 1 to 10 |
+| 1 | 1 | u8 | Target: for kind 9 the socket the raw packet was sent on, 1 = media, 2 = control; for kind 10 the thread the panic was injected into, 1 = data, 2 = clock, 3 = housekeeping; 0 for every other kind | 1 or 2 for kind 9; 1 to 3 for kind 10; 0 otherwise |
+| 2 | 2 | u16 | Stream number (C-10): for kind 8 the stream forced onto an epoch; for kinds 1 to 6 the stream the injection applies to, or 65 535 when it applies to the whole module; 65 535 for kinds 7, 9 and 10 | 0 to 255 (C-09) or 65 535, as the meaning states per kind |
+| 4 | 2 | u16 | Timeline epoch (C-10): for kind 8 the epoch the stream is forced onto; 0 for every other kind | any 16-bit value for kind 8; 0 otherwise |
+| 6 | 4 | u32 | Uses: for kinds 7 to 10, how many times the hook has been used since the instance started; cumulative, wraps modulo 2^32; 0 for kinds 1 to 6 | any 32-bit value for kinds 7 to 10; 0 otherwise |
+
+The ten kinds are a closed enumeration `[decision]`:
+
+| Kind | Injection | Source |
+|---|---|---|
+| 1 | clock offset | public injection API (01-architecture.md § 11.2) |
+| 2 | clock drift | public injection API (01-architecture.md § 11.2) |
+| 3 | packet loss | public injection API (01-architecture.md § 11.2) |
+| 4 | packet delay | public injection API (01-architecture.md § 11.2) |
+| 5 | reordering | public injection API (01-architecture.md § 11.2) |
+| 6 | per-hop delay | public injection API (01-architecture.md § 11.2) |
+| 7 | forced module id and nonce | test-only hook (C-120) |
+| 8 | stream forced onto a given timeline epoch | test-only hook (C-120) |
+| 9 | raw packet sent on a media or control socket | test-only hook (C-120) |
+| 10 | panic injected into a data, clock or housekeeping thread | test-only hook (C-145) |
+
+Sizes `[decision]`: 119 × 10 = 1 190 bytes of entries, a body of 1 + 1 190 = 1 191 bytes, and the maximum section size is 58 + 1 191 = 1 249 bytes, within the control bound (C-17). At most 119 entries per section, because ⌊1 193 / 10⌋ = 119 `[decision]`. No constant bounds the injections active at once, so the type's total maximum is chosen as one section's worth, 119, and at its maxima the type needs ⌈119 / 119⌉ = 1 section: a reader finds every active injection in the one section, and a hook used 1 000 times, as 017b-07 asks, is one entry whose uses are 1 000 `[decision]`. The bound's owner and falsifier are in Open item 15 `[decision]`.
+
+The kinds are the ten 013-09 names, the six of the public injection API (01-architecture.md § 11.2) and the four test-only hooks (C-120, C-145) `[decision]`. The enumeration is closed: a kind outside 1 to 10 drops the section (Validity rules of the section types), and an eleventh kind arrives only with a major version or as a new section type, which a v1 receiver skips by its length, because a receiver that ignored an entry it cannot read would miss an injection, and an injected run must never pass as a real one (013-09) `[decision]`. The key order is kind, then target, then stream number, each ascending, and a key appears once `[decision]`.
+
+The forced module id and nonce are not carried in the entry: a module whose identity the hook forced runs under it, so its stamp's sender module id and instance nonce (Stamp section) and its hellos carry the forced values, and the kind 7 entry records that they were forced `[decision]`. An entry of kinds 1 to 6 is present while the injection is active; an entry of kinds 7 to 10 is present from the hook's first use until the instance ends, because each use is stamped (015b-12, 015b-14) and nothing in the design ends the injected state of an instance that a hook has touched (013-09: an injected run can never pass as a real one) `[decision]`. The parameters of the public kinds — an offset, a drift rate, a loss pattern — have no landed encoding and are not carried, nor are the per-call details 017b-07 asks for; Open item 15, with its owner and falsifier, records both `[decision]`.
+
+### Capability states section
+
+Section type code 6 `[decision]`. The section reports each capability of the sender in one of the four states of C-129, the closed enumeration every capability entry, the receive-timestamp section and the health section's observed DSCP use `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Entry count: how many capability entries follow | 4 to 255 |
+| 1 | 2 × max 255 | byte blob of capability entries | Capability entry: one capability and its state, laid out as the entry table below; entries in ascending capability id | entry count entries, at most 255 (510 bytes) |
+
+The capability entry is 2 bytes; offsets are byte distances from the entry's first byte `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Capability id, from the capability table below; the key, each id at most once | 1 to 255; 1 to 4 in v1, 5 to 255 unused and accept-any (Reserved fields) |
+| 1 | 1 | u8 | State of the capability, from the state table below | 1 to 4 |
+
+The capability states, a closed enumeration of exactly the four values of C-129, at the byte values 013-01 gives them `[decision]`:
+
+| Value | State | Meaning |
+|---|---|---|
+| 1 | present | the capability is granted, or holds by construction |
+| 2 | absent | the capability was requested and is not available |
+| 3 | unverified | the capability may hold, and the module cannot confirm it |
+| 4 | not requested | a deliberate configuration choice, as distinct from a denial (C-129) |
+
+The capabilities of v1 `[decision]`:
+
+| Id | Capability | Constants |
+|---|---|---|
+| 1 | real-time scheduling granted on the data threads and the clock thread | C-127, C-147 |
+| 2 | memory locked | C-127, C-147 |
+| 3 | CPU idle states restricted, best-effort | C-127 |
+| 4 | control isolation: housekeeping cannot delay the data path | C-161 |
+
+Sizes `[decision]`: 255 × 2 = 510 bytes of entries, a body of 1 + 510 = 511 bytes, and the maximum section size is 58 + 511 = 569 bytes. The capability id is one byte and each id appears once, so the type's total maximum is 255 entries, and at its maxima it needs ⌈255 / 255⌉ = 1 section; a v1 sender writes exactly the four entries of ids 1 to 4, a body of 9 bytes `[decision]`.
+
+The list holds exactly the capabilities the constants name `[decision]`: strict mode requires real-time scheduling on the data and clock threads and locked memory, and restricting CPU idle states is best-effort and stamped (C-127); control isolation is C-161's. Real-time scheduling is one capability, as 013-01 and 01-architecture.md § 11.1 have it: present only when granted on every data thread and on the clock thread, absent when denied on any of them, otherwise unverified when one of them cannot be confirmed, and not requested when the configuration asks for it on none `[decision]`. The states are reported, never acted on here: strict mode refuses an unverified capability, treating it as absent (C-128), which is behaviour `[decision]`.
+
+What a sender writes is bound by the constants, not checked by a receiver `[decision]`: strict mode is hosted-only, and a device stamps real-time scheduling and memory lock as present by construction (C-147); control isolation is present on a hosted platform by construction of the thread model, and absent or unverified on a device unless the implementer shows a bound (C-161). A receiver accepts every state for every id, because the state is the sender's claim about itself `[decision]`.
+
+**Closed states, open ids.** The state enumeration is closed: 0 and 5 to 255 drop the section (Validity rules of the section types), and a fifth state would change what an existing field means to a v1 receiver, so it arrives only with a major version (Versioning, Minor and major changes), or as a new section type with its own layout, which a v1 receiver skips by its length (Section type codes) `[decision]`. The capability id is accept-any from 5 to 255: a later ticket stamps a further capability as a minor change by assigning it an id in this table, and a v1 receiver ignores an entry whose id it does not know (Reserved fields, Fields of the regime stamp section types) `[decision]`. 01-architecture.md § 11.1 and 013-01 also stamp drop accounting, DSCP marking, fault injection and holder-eligible, which no constant names; they are left to that minor change, Open item 13, with its owner and falsifier `[decision]`.
+
+### Receive-timestamp source section
+
+Section type code 7 `[decision]`. The section reports where the sender's receive timestamps come from, one of the four sources of C-131, with one of the four capability states of C-129 (Capability states section): a per-module capability the slice header leaves to the stamp (Slice header, Receive timestamps) `[decision]`:
+
+| Offset (bytes) | Width (bytes) | Type | Meaning | Valid range |
+|---|---|---|---|---|
+| 0 | 1 | u8 | Source: the receive-timestamp source, from the source table below | 1 to 4 |
+| 1 | 1 | u8 | State: the C-129 capability state of that source, from the state table of the capability states section | 1 to 4 |
+
+The receive-timestamp sources, a closed enumeration of exactly the four values of C-131 `[decision]`:
+
+| Value | Source | Meaning |
+|---|---|---|
+| 1 | kernel | hosted OS kernel stamp |
+| 2 | userspace | clock read after receive |
+| 3 | mac-hardware | Ethernet MAC timestamp register, embedded |
+| 4 | interrupt | stamped in the receive interrupt, embedded |
+
+The maximum section size, which is also its fixed size, is 58 + 2 = 60 bytes, and every stamp carries the section once `[decision]`. One source per module, the per-module capability of Slice header, Receive timestamps; which source each platform has and in which state is task 001's and epic 013's to state (013-01, 013-22), not a wire rule `[decision]`. The source enumeration is closed as the states are: 0 and 5 to 255 drop the section, and a fifth source arrives only with a major version or a new section type `[decision]`.
+
+### Section count at the maxima
+
+Each type at its maxima, from the tables above `[decision]`:
+
+| Type | Code | Maximum section size | Entries per section | Total maximum | Sections at the maxima |
+|---|---|---|---|---|---|
+| multi-packet regime | 1 | 1 251 bytes | 149 | 256 streams (C-09) | 2 |
+| per-connection health | 2 | 1 218 bytes | 19 | 32 256 connections (C-09, C-217) | 1 698 |
+| calibration factor | 3 | 66 bytes | fixed | one value | 1 |
+| commissioning window | 4 | 74 bytes | fixed | one window | 1 |
+| injections | 5 | 1 249 bytes | 119 | 119 injections, chosen | 1 |
+| capability states | 6 | 569 bytes | 255 | 255 capabilities | 1 |
+| receive-timestamp source | 7 | 60 bytes | fixed | one source | 1 |
+
+At their maxima the seven types need 2 + 1 698 + 1 + 1 + 1 + 1 + 1 = 1 705 sections `[decision]`.
+
+**Reported: the 64-section bound is exceeded at the maxima.** The seven types at their maxima need more than 64 sections, 1 705 against 64, an excess of 1 705 − 64 = 1 641 sections, which meets the falsifier of Open item 1 (the section types at their maxima need more than 64 sections); the bound of Open item 1 is falsified for a module at the maxima of C-09 and C-217, and this is reported to the design owner, with Open item 1's owner and falsifier as they stand `[decision]`. No choice of widths avoids it: an entry with no counter at all, only the 15 bytes that name a connection, gives ⌊1 193 / 15⌋ = 79 entries per section and still needs ⌈32 256 / 79⌉ = 409 sections for the health type alone `[decision]`.
+
+What fits `[decision]`: the six other types need 2 + 1 + 1 + 1 + 1 + 1 = 7 sections at their maxima, which leaves 64 − 7 = 57 sections for the health type and for the types of 004-28; at 19 connections per section, 57 × 19 = 1 083 connections fit if 004-28 needed no section, and each section 004-28 needs takes 19 connections from that figure. At 013-13's test size of 256 connections the health type needs ⌈256 / 19⌉ = 14 sections, so 64 − 7 − 14 = 43 remain for 004-28's types `[decision]`. Codes 8 to 15 remain for later types of this block and 16 to 31 for 004-28; the type codes leave 004-28 its block, and the section count leaves it at most 57 sections at the maxima of these types other than health `[decision]`.
+
+### Validity rules of the section types
+
+A section of one of these types that passes the stamp's validity rules (Validity rules above) is checked against its type's rules in the order of the table below, the first rule that applies deciding; a section dropped under them is counted once and leaves its stamp incomplete, as Validity rules above states, and the last row is decided when every section of the stamp version is held, before the stamp completes `[decision]`. Every outcome names a member of the closed Rejection reasons enumeration whose Layers cell lists the control layer, and the enumeration is unchanged `[decision]`. The BadLength outcomes for a value outside a closed enumeration or a fixed range are provisional, as for section type 0, and are confirmed by 004-21 (Open item 16, with its owner and falsifier) `[decision]`:
+
+| Invalid form | Required outcome |
+|---|---|
+| section length inconsistent with the type: under 1 for a list type, other than 1 + entry count × entry size for a list type (8 bytes per multi-packet entry, 61 per health entry, 10 per injection entry, 2 per capability entry), or other than the fixed body of a fixed type (8 bytes for the calibration factor, 16 for the commissioning window, 2 for the receive-timestamp source) | drop the section and count under BadLength: the body does not fill the size the type declares `[decision]` |
+| entry count above its maximum (149 multi-packet, 19 health, 119 injections, 255 capability states), or an entry count of 0 in a multi-packet or health section, or below 4 in a capability states section | drop the section and count under BadLength: a count outside its fixed range `[decision]` |
+| unknown enumeration value: a capability state, an observed-DSCP state or a receive-timestamp state of 0 or 5 to 255; a receive-timestamp source of 0 or 5 to 255; an injection kind of 0 or 11 to 255 | drop the section and count under BadLength `[decision]` — provisional: the closed enumerations of C-129, C-131 and 013-09 have no other value in v1 |
+| reserved bits non-zero: bits [7:1] of byte 14 or bits [7:6] of byte 60 of a health entry | drop the section and count under ReservedNonZero (Reserved fields, General rule for later tickets) |
+| value outside its fixed range: a stream number above 255 (65 535 allowed only where the injection entry states it), packets per slice below 2, frames per slice of 0, a calibration factor of 0, an observed DSCP other than 0 with a state other than present, or an injection entry's target, stream number, epoch or uses other than its kind allows | drop the section and count under BadLength `[decision]` — provisional, as above |
+| entries out of key order, or one key twice, within one section: multi-packet entries by stream number, health entries by role, peer module id and stream number, injection entries by kind, target and stream number, capability entries by capability id | drop the section and count under BadLength: the entries do not form the declared list `[decision]` |
+| a capability states section that lacks an entry for one of the capability ids 1 to 4 | drop the section and count under BadLength `[decision]` — provisional, as above |
+| a stamp version, all its sections held, whose sections of one type break the type's shape: entries out of key order or a key repeated across the type's sections read in section index order; none, or more than one, section of a type every stamp carries once (calibration factor, injections, capability states, receive-timestamp source); more than one commissioning window section | the version does not complete: drop every section held for that stamp version, keep the complete stamp held before it, and count once under BadLength: the sections do not form one declared shape `[decision]` |
+
+Not a rejection: an entry of a capability id from 5 to 255 is checked for its state and its order and otherwise ignored, because the id is accept-any (Reserved fields, Fields of the regime stamp section types); a section of type code 8 to 15 is a section of an unknown type, skipped by its length (receiver rule 8) `[decision]`. No other value of these types is a malformed case: a module id, a session, a window identifier, an expiry time, a timeline epoch outside an injection entry and every counter accept every value their types hold `[decision]`.
+
 ### Open items
 
 **Open item 1 — the maximum section count.** A stamp has at most 64 sections, so at most 80 128 bytes; the bound is chosen, not derived from a constant, because no constant bounds the connections a stamp reports and the section types are laid out after this ticket; a stamp that needs more sections cannot be sent. Owner: epic 004 (this ticket), with 004-25 and 004-28, which fix the maximum counts of their section types and show that each section fits, and 013-13 (stamp size budget and splitting rule), which computes the worst-case stamp. Falsifier: the section types at their maxima, or a module's real connection count, need more than 64 sections `[decision]`.
@@ -2166,6 +2430,18 @@ wire.toml declares the stamp section as `regime stamp section`, with `section_of
 **Open item 9 — provisional BadLength outcomes.** An unused or unexpected message type, a request naming another module and a section of type 0 are counted under BadLength provisionally, as in the Hello and Admission messages sections. Owner: ticket 004-21 (validity rules completeness audit). Falsifier: 004-21 finds a member of the closed enumeration that names one of these cases better, or rules that one of them is not a rejection `[decision]`.
 
 **Open item 10 — a device's immediate multicast on any field change.** 026a-11 has a device multicast its stamp "on every version change" (Work 3), and its AC 2 reads "changing any stamp field bumps the version number in the next hello and triggers an immediate multicast"; its Work 2 (a bump on any field change) and Work 4 (an answer "unicast to the requester") agree with this section, but once the device stamps per-connection counters (026b-11), AC 2 multicasts on every counter change, while sender rule 2 and 013-24 hold a counter change for the next 10 s refresh. Owner: epic 026, tickets 026a-11 (stamp publication over network) and 026b-11 (per-connection counters), with 013-24. Falsifier: a device must multicast a counter change before the next refresh, for example because a reader needs a counter fresher than 10 s `[decision]`.
+
+**Open item 11 — the commissioning window's identifier, expiry and count.** The commissioning window section carries the window identifier and the expiry time at 64 bits each, copied from the announcement, whose unit and clock 004-29 states, and at most one window at a time; no landed text fixes the expiry's unit or clock (C-153 gives only "an expiry time"), nor whether two windows may be open at once. Owner: ticket 004-29 (commissioning window announcement and close messages), with epic 005 for the window's state machine (C-228). Falsifier: 004-29 lays out a window identifier or an expiry time wider than 64 bits, or lets a second window be open at one module while the first is open `[decision]`.
+
+**Open item 12 — the calibration factor's unit.** The factor is a u64 of femtoseconds per operation, all ones meaning not calibrated; present disagreement: 012-03 holds it in nanoseconds per operation for its integer check `cost_bound_ops × ns_per_op`, which reads a factor under 1 ns per operation as 0. Owner: ticket 012-03 (receiver capacity checks), with 005-23 (regime stamp coupling) and 025b-10 (cost measurement and calibration). Falsifier: 012-03 keeps whole nanoseconds per operation and a factor recorded by 025b-10 lies below 1 ns per operation, or 025b-10 records a factor that needs a resolution finer than 1 fs per operation `[decision]`.
+
+**Open item 13 — capabilities no constant names.** The capability states section stamps the four capabilities the constants name (C-127, C-161); 01-architecture.md § 11.1 and 013-01 also stamp drop accounting, DSCP marking, fault injection and holder-eligible, which a later ticket adds as a minor change by assigning ids from 5 to 255 here. Owner: epic 013 (013-01 stamp core types, 013-22 stamp specification document), with the epic-004 ticket that assigns the ids. Falsifier: a reader of a v1 stamp, such as 013-19's labels or admission (005-23), needs the state of one of those four capabilities from a v1 sender `[decision]`.
+
+**Open item 14 — 013-23's summary sketch.** 013-23 sketches dead as a flag, eight counters as u64 and the producer side writing no observed DSCP; this layout counts entries into Dead as the receiver report does, carries all eleven counters at 32 bits with a wrap rule, and has the producer stamp the DSCP its consumer reports, as C-47 and the receiver report have it. Owner: ticket 013-23 (per-connection summary section). Falsifier: a reader must know from one stamp entry alone whether a connection is dead now, which neither the dead count nor the hello's Dead alarm tells, or a reader misses refreshes for long enough that a 32-bit counter wraps between the two stamps it compares `[decision]`.
+
+**Open item 15 — what the injections section leaves out.** At most 119 active injections, one section; the parameters of the six public kinds have no landed encoding and are not carried, and the per-call record 017b-07 asks for (destination, length and a hash of each raw packet) is reduced to a use count per kind and socket. Owner: ticket 013-09 (platform, drops and injection sections), with 017b-07 (raw packet test hook) and 015b-12 (test-only injection hooks). Falsifier: a scenario needs more than 119 distinct active injections in one module, or a reader must recover an injection's parameters, or a raw packet's destination, length or hash, from the stamp rather than from the test log `[decision]`.
+
+**Open item 16 — provisional BadLength outcomes of the section types.** A value outside a closed enumeration or a fixed range of the section types, and a capability states section missing one of the ids 1 to 4, are counted under BadLength provisionally, as section type 0 is (Open item 9). Owner: ticket 004-21 (validity rules completeness audit). Falsifier: 004-21 finds a member of the closed enumeration that names one of these cases better, or rules that one of them is not a rejection `[decision]`.
 
 ## Commissioning window messages
 
