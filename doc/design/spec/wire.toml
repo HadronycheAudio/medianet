@@ -3034,7 +3034,7 @@ offset = 40
 width = 16
 type = "u16"
 meaning = "channel count: how many channel-map entries the stream has, one per channel of its audio message"
-valid = "1 to 1 536 for an audio stream; 0 for a controller stream; else BadLength"
+valid = "1 to 1 536 for an audio stream, with frames per slice x channel count x 4 at most 65 535 (the audio message's length maximum); 0 for a controller stream; else BadLength"
 
 [[message.field]]
 name = "dense_controller_count"
