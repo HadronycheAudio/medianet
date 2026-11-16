@@ -81,7 +81,9 @@
 #         rejection; no reason is invented.
 #   AC 5  the common control header is defined once, sums to its stated size, the
 #         hello's own table starts with it (same offsets, widths and types), and its
-#         field order matches the sync section's header or the difference is stated.
+#         field order equals the landed sync header's order; a difference is excused only
+#         by a paragraph in its subsection that says 'differs from the sync header' and
+#         names the fields. The toml fields match the markdown rows by name as well.
 #   AC 6  wire.toml hello: layer control, dscp 40 (C-13), max_size equal to the
 #         markdown sum and at most C-17's bound, fields tile the layout one to one,
 #         nested maxima stated, rejection_reasons complete; when the paths are not
@@ -476,10 +478,23 @@ else:
     st = first_table(stext, is_field_table)
     if st is not None:
         SYNC_KEYS = [key_of(r[3]) for r in st[2][:7]]
+KEY_LABEL = {"magic": r"magic", "version": r"version", "domain": r"domain", "type": r"message\s+type",
+             "scheme": r"scheme", "counter": r"counter", "tag": r"\btag\b"}
 if SYNC_KEYS and HDR_KEYS and SYNC_KEYS != HDR_KEYS:
-    if not para_with(r"differ", r"sync"):
-        fail(5, f"the hello header order {HDR_KEYS} differs from the sync header order {SYNC_KEYS} "
-             "and the section does not state the difference")
+    differing = [k for i, k in enumerate(HDR_KEYS) if i >= len(SYNC_KEYS) or SYNC_KEYS[i] != k]
+    excuse = None
+    for kind, t in prose_blocks(HDR_SUB[0][1] if HDR_SUB else ""):
+        if kind == "p" and re.search(r"differs\s+from\s+the\s+sync\s+header", t, re.I):
+            excuse = t
+            break
+    if excuse is None:
+        fail(5, f"the hello header order {HDR_KEYS} differs from the sync header order {SYNC_KEYS}; "
+             "the only excuse is a paragraph in the Common control header subsection that says "
+             "'differs from the sync header' and names the fields")
+    else:
+        for k in differing:
+            if not re.search(KEY_LABEL[k], excuse, re.I):
+                fail(5, f"the 'differs from the sync header' paragraph does not name the differing field '{k}'")
 
 # The layout: starts with the common header, rows tile from byte 0.
 LAY_SUB = [(t, x) for t, x in find_sub(SUBS, r"layout")]
@@ -507,6 +522,15 @@ for f in LAY:
         fail(5, f"hello layout: '{f['meaning'][:40]}' is not a whole number of bytes")
     cur = f["off"] + size_bits(f) // 8
 H_BYTES = cur
+
+
+def md_name(meaning):
+    m = re.match(r"\s*([A-Za-z][A-Za-z ]*[A-Za-z]|[A-Za-z])", meaning)
+    return m.group(1) if m else meaning
+
+
+def norm_name(text):
+    return re.sub(r"[\s_]+", " ", text.replace("-", " ").lower()).strip()
 
 
 def row_for(pattern, counted=None):
@@ -614,7 +638,14 @@ E_PORT = sum(size_bits(f) for f in PORT_FIELDS) // 8 if PORT_FIELDS else 0
 P_MAX = PORT_ROW["maxc"] if PORT_ROW is not None else None
 
 # AC 2: the sizes, the verdict and the stated arithmetic
-# bundles per hello (B): the bundle row's max when the layout carries bundles, else the stated maximum
+#   Bundles per hello (B) is stated whenever bundles are carried, and it agrees with the Bundle
+#   row's max and the toml max_count. The absolute maximum (all bundles at B, every name and port
+#   maximum) is the layout's sum; it must be stated and must fit for a "fits" verdict. The
+#   one-bundle figure (one 32-member bundle, C-08) is stated as a sentence with "one" or "single",
+#   "32" and "bundle", and must be correct; it is not read from the all-bundles sentence.
+bundle_fallback_B = None
+B_TEXT_M = re.search(r"at\s+most\s+(\d+)\s+bundles", HELLO_PLAIN, re.I)
+B_TEXT = int(B_TEXT_M.group(1)) if B_TEXT_M else None
 if HAS_BUNDLES:
     if BUN_ROW is None or BUN_ROW["maxc"] is None:
         fail(2, "the hello layout's bundle row is not a counted row 'E × max B'")
@@ -625,16 +656,32 @@ if HAS_BUNDLES:
             fail(2, f"the bundle row is {BUN_ROW['bits']} bits per bundle; the bundle element sums to {E_BYTES * 8}")
     if BUN_COUNT is None or BUN_COUNT["bits"] != 8:
         fail(2, "the hello layout has no one-byte bundle count row before the bundles")
+    if B_TEXT is None:
+        fail(2, "bundles are carried but the Hello section states no bundles-per-hello maximum "
+             "('at most N bundles')")
+    elif B_MAX is not None and B_TEXT != B_MAX:
+        fail(2, f"the stated bundles-per-hello maximum is {B_TEXT}; the bundle row says max {B_MAX}")
+    if B_MAX is not None:
+        more_p = [t for t in PARAS if re.search(
+            r"(more|above|beyond|exceed\w*)\s+(than\s+)?(\d+|this|that)\s+bundles|bundles\s+(than|above|beyond)\b"
+            r"|source\s+with\s+more\s+bundles", t, re.I)]
+        ok_rule = any(
+            re.search(r"\brule\b", t, re.I)
+            or (clean_start(t).lower().startswith("open item") and re.search(r"owner", t, re.I)
+                and re.search(r"falsifier", t, re.I))
+            for t in more_p)
+        if not ok_rule:
+            fail(2, "no rule or 'Open item' (owner and falsifier) says what a source with more bundles "
+                 "than the stated maximum does")
 else:
-    m = re.search(r"at\s+most\s+(\d+)\s+bundles", HELLO_PLAIN, re.I)
-    B_MAX = int(m.group(1)) if m else None
-    if B_MAX is None:
-        fail(2, "the Hello section states no maximum number of bundles per hello ('at most N bundles')")
+    B_MAX = B_TEXT
 
 NON_BUNDLE_BYTES = sum(size_bits(f) for f in LAY if not re.match(r"\s*bundle", f["meaning"], re.I)) // 8
-FULL_BYTES = None
+ABS_ALL = None
+ONE = None
 if B_MAX is not None and E_BYTES:
-    FULL_BYTES = NON_BUNDLE_BYTES + 1 + B_MAX * E_BYTES
+    ABS_ALL = NON_BUNDLE_BYTES + 1 + B_MAX * E_BYTES
+    ONE = NON_BUNDLE_BYTES + 1 + E_BYTES
 
 if B_MAX is not None and K["streams_max"] and K["members_max"]:
     needed = -(-K["streams_max"] // K["members_max"])
@@ -642,55 +689,92 @@ if B_MAX is not None and K["streams_max"] and K["members_max"]:
         fail(2, f"at most {B_MAX} bundles per hello cannot carry C-09's {K['streams_max']} streams "
              f"({needed} bundles of {K['members_max']}); no rule or open item says what a source with more does")
 
+ONE_STATED = None
+ONE_RX = re.compile(r"\b(?:one|single)\s+(?:32-member\s+bundle|bundle\s+of\s+32\s+members?|32-member\s+|bundle)\b", re.I)
+for sent in re.split(r"(?<=[.;])\s+", HELLO_PLAIN.replace("\n", " ")):
+    if not ONE_RX.search(sent):
+        continue
+    eq = re.search(r"=\s*(" + NUM + r")\s*bytes", sent)
+    m1 = eq or re.search(r"(" + NUM + r")\s*bytes", sent)
+    if m1:
+        ONE_STATED = to_int(m1.group(1))
+        break
+if ONE is not None:
+    if ONE_STATED is None:
+        fail(2, "the one-bundle figure is not stated: a sentence with 'one' or 'single', '32' and 'bundle' "
+             "and the size in bytes (C-08, the case C-17's falsifier names)")
+    elif ONE_STATED != ONE:
+        fail(2, f"the one-bundle figure is stated as {ONE_STATED} bytes; the tables compute {ONE}")
+
+m_max = re.search(r"maximum\s+hello\s+size[^\n]*?(" + NUM + r")\s*bytes", HELLO_PLAIN, re.I)
+STATED_MAX = to_int(m_max.group(1)) if m_max else None
+if STATED_MAX is None:
+    fail(2, "the maximum hello size is not stated in bytes ('maximum hello size ... N bytes')")
+
 VERDICT_P = None
 for t in PARAS:
     if re.match(r"\s*\*{0,2}\s*verdict\b", clean_start(t), re.I):
         VERDICT_P = t
         break
-verdict = None
-if VERDICT_P:
-    if re.search(r"falsif|does\s+not\s+fit|do\s+not\s+fit", VERDICT_P, re.I):
-        verdict = "falsified"
-    elif re.search(r"\bfits\b", VERDICT_P, re.I):
-        verdict = "fits"
-if verdict is None:
-    fail(2, "no 'Verdict' paragraph says that the hello fits the control bound (C-17) or that the constant is falsified")
-m_max = re.search(r"maximum\s+hello\s+size[^\n]*?(" + NUM + r")\s*bytes", HELLO_PLAIN, re.I)
-STATED_MAX = to_int(m_max.group(1)) if m_max else None
-if STATED_MAX is None:
-    fail(2, "the maximum hello size is not stated in bytes ('maximum hello size ... N bytes')")
-m_full = re.search(r"32-member[^\n]*?(" + NUM + r")\s*bytes", HELLO_PLAIN, re.I)
-STATED_FULL = to_int(m_full.group(1)) if m_full else None
-if STATED_FULL is None:
-    fail(2, "the size with a 32-member bundle is not stated in bytes ('32-member ... N bytes')")
 
-if FULL_BYTES is not None and K["bound"]:
-    if verdict == "fits":
-        if FULL_BYTES > K["bound"]:
-            fail(2, f"the computed maximum with a 32-member bundle is {FULL_BYTES} bytes, above {K['bound']}, "
-                 "but the verdict says it fits")
-        if not HAS_BUNDLES:
-            fail(2, "the verdict says it fits but the hello layout omits the bundle rows")
-        if STATED_MAX is not None and STATED_MAX != H_BYTES:
-            fail(2, f"the maximum hello size is stated as {STATED_MAX} bytes; the table sums to {H_BYTES}")
-        if STATED_FULL is not None and STATED_FULL != FULL_BYTES:
-            fail(2, f"the 32-member size is stated as {STATED_FULL} bytes; the tables compute {FULL_BYTES}")
-    elif verdict == "falsified":
-        if HAS_BUNDLES:
-            fail(2, "the verdict says falsified but the layout still carries the bundle rows: the table must be the fallback")
-        if FULL_BYTES <= K["bound"]:
-            fail(2, f"the verdict says falsified but the computed maximum with a 32-member bundle is "
-                 f"{FULL_BYTES}, not above {K['bound']}")
-        if H_BYTES > K["bound"]:
-            fail(2, f"the fallback hello is {H_BYTES} bytes, above {K['bound']}: the remaining message must fit")
-        if STATED_MAX is not None and STATED_MAX != H_BYTES:
-            fail(2, f"the maximum hello size is stated as {STATED_MAX} bytes; the fallback table sums to {H_BYTES}")
-        if STATED_FULL is not None and STATED_FULL != FULL_BYTES:
-            fail(2, f"the 32-member size is stated as {STATED_FULL} bytes; the tables compute {FULL_BYTES}")
-        if not re.search(r"split|handshake", VERDICT_P + " " + HELLO_PLAIN, re.I):
-            fail(3, "the falsified verdict does not name the fallback (split hello or handshake)")
-if FULL_BYTES is None and verdict is not None:
-    fail(2, "the 32-member size cannot be computed: the bundle element or the bundle count is unreadable")
+VERDICT_BODY = re.sub(r"(?:(?<=\s)|^)'[^']*'(?=\s|[.,;:)]|$)|\"[^\"]*\"|“[^”]*”|`[^`]*`", " ", VERDICT_P or "")
+
+
+def classify(body):
+    """'fits', 'falsified', 'ambiguous' or None, by the verdict's own statement (quoted text excluded)."""
+    fits_n = len(re.findall(r"(?<!not )\bfits\b", body, re.I))
+    fits_n += len(re.findall(r"\bC-17\s+(?:holds|stands)\b|\bdoes\s+not\s+hold\b|\bnot\s+falsified\b",
+                             body, re.I))
+    fals_n = len(re.findall(r"(?<!not )\bfalsified\b", body, re.I))
+    fals_n += len(re.findall(r"\bdoes\s+not\s+fit\b|\bfalsifier\s+holds\b", body, re.I))
+    if fits_n and fals_n:
+        return "ambiguous"
+    if fits_n:
+        return "fits"
+    if fals_n:
+        return "falsified"
+    return None
+
+
+verdict = classify(VERDICT_BODY) if VERDICT_P else None
+if VERDICT_P is None:
+    fail(2, "no 'Verdict' paragraph says whether the hello fits the control bound or is falsified")
+elif verdict is None:
+    fail(2, "the verdict paragraph states neither 'fits' nor 'falsified' in its own words")
+elif verdict == "ambiguous":
+    fail(2, "the verdict paragraph says both 'fits' and 'falsified': state one verdict")
+if VERDICT_P is not None and ONE is not None and ONE <= K["bound"] and \
+        re.search(r"C-17[^.;]*?(falsified|falsifier\s+holds|holds\s+for)", VERDICT_BODY, re.I):
+    fail(2, f"the verdict says C-17's falsifier holds, but that falsifier is about one 32-member bundle, "
+         f"which computes {ONE} bytes (within {K['bound']}): C-17 is not falsified")
+
+if verdict == "fits":
+    if not HAS_BUNDLES:
+        fail(2, "the verdict says it fits but the hello layout carries no bundle rows")
+    if H_BYTES > K["bound"]:
+        fail(2, f"the absolute maximum hello, with every stated maximum, is {H_BYTES} bytes, above "
+             f"{K['bound']} (C-17), but the verdict says it fits")
+    if STATED_MAX is not None and STATED_MAX != H_BYTES:
+        fail(2, f"the maximum hello size is stated as {STATED_MAX} bytes; the table sums to {H_BYTES}")
+elif verdict == "falsified":
+    if HAS_BUNDLES:
+        fail(2, "the verdict says falsified but the layout still carries the bundle rows: the table must be the fallback")
+    if ABS_ALL is None:
+        fail(2, "the all-bundles maximum cannot be computed: the bundle element or the bundles-per-hello maximum is missing")
+    elif ABS_ALL <= K["bound"]:
+        fail(2, f"the verdict says falsified but the all-bundles maximum is {ABS_ALL} bytes, not above {K['bound']}")
+    if H_BYTES > K["bound"]:
+        fail(2, f"the fallback hello is {H_BYTES} bytes, above {K['bound']}: the remaining message must fit")
+    if STATED_MAX is not None and STATED_MAX != H_BYTES:
+        fail(2, f"the maximum hello size is stated as {STATED_MAX} bytes; the fallback table sums to {H_BYTES}")
+    if ABS_ALL is not None and ABS_ALL not in {to_int(x) for x in re.findall(r"(" + NUM + r")\s*bytes", HELLO_PLAIN)}:
+        fail(2, f"the all-bundles size {ABS_ALL} bytes is not stated in bytes in the Hello section")
+    claims_c17 = bool(re.search(r"C-17", VERDICT_BODY))
+    if claims_c17 and (ONE is None or ONE <= K["bound"]):
+        fail(2, f"the verdict says C-17 is falsified, but C-17's falsifier is about one 32-member bundle, "
+             f"which computes {ONE} bytes (within {K['bound']}): C-17 holds")
+    if not re.search(r"split|handshake", VERDICT_P + " " + HELLO_PLAIN, re.I):
+        fail(3, "the falsified verdict does not name the fallback (split hello or handshake)")
 
 # A small TOML reader (copied from checks/004-20.sh: offline, Python 3.10, no tomllib).
 class TomlError(Exception):
@@ -1278,6 +1362,9 @@ else:
     for i, (mf, tfl) in enumerate(zip(LAY, tf)):
         if not isinstance(tfl, dict):
             continue
+        if norm_name(md_name(mf["meaning"])) != norm_name(str(tfl.get("name", ""))):
+            fail(6, f"toml hello field '{tfl.get('name')}' is not named after the markdown row "
+                 f"'{md_name(mf['meaning'])}' (names are compared lower case, spaces and underscores equivalent)")
         if tfl.get("offset") != mf["off"] * 8:
             fail(6, f"toml hello field {tfl.get('name')}: offset {tfl.get('offset')} bits, "
                  f"markdown byte {mf['off']} (= {mf['off'] * 8} bits)")
