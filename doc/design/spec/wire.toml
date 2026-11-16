@@ -262,7 +262,7 @@ message = "control messages (C-12, placed by 004-16 to 004-18) and sync messages
 width = 64
 value = "live"
 live = true
-meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message and is not a reserved zero field; in sync messages (004-19) it counts the sender's sync messages and is live without being the liveness counter"
+meaning = "live in v1 because it is the liveness counter (C-115): it increments with every control message while the sender's data plane makes progress (004-16, Hello, Liveness counter) and is not a reserved zero field; in sync messages (004-19) it counts the sender's sync messages and is live without being the liveness counter"
 outcome = "any value is conforming in v1; the counter is not a reserved zero field and never produces ReservedNonZero"
 
 [[reserved]]
@@ -272,6 +272,54 @@ width = 128
 value = "zero"
 meaning = "128 zero bits in v1 (C-115)"
 outcome = "a non-zero tag is dropped and counted as ReservedNonZero"
+
+[[reserved]]
+name = "capability_bits_1_to_31"
+message = "hello (004-16)"
+width = 31
+value = 0
+meaning = "unassigned capability bits: v1 senders write 0, and v1 receivers accept any value and ignore the bits [decision]"
+outcome = "no value is non-conforming in v1; never ReservedNonZero"
+
+[[reserved]]
+name = "alarm_bits_7_6"
+message = "hello (004-16)"
+width = 2
+value = 0
+meaning = "unassigned alarm bits: v1 senders write 0, and v1 receivers accept any value and ignore the bits [decision]"
+outcome = "no value is non-conforming in v1; never ReservedNonZero"
+
+[[reserved]]
+name = "port_element_bits_7_1"
+message = "hello port element (004-16)"
+width = 7
+value = 0
+meaning = "unassigned bits 7..1 of byte 1: v1 senders write 0, and v1 receivers accept any value and ignore the bits [decision]"
+outcome = "no value is non-conforming in v1; never ReservedNonZero"
+
+[[reserved]]
+name = "transport_role_values_3_to_255"
+message = "hello (004-16)"
+width = 8
+value = "unused"
+meaning = "v1 senders write 0 to 2; values 3 to 255 are unused in v1 [decision]"
+outcome = "a v1 receiver reads the value as none; never a rejection"
+
+[[reserved]]
+name = "time_state_values_3_to_255"
+message = "hello (004-16)"
+width = 8
+value = "unused"
+meaning = "v1 senders write 0 to 2; values 3 to 255 are unused in v1 [decision]"
+outcome = "a v1 receiver reads the value as 0, time unusable; never a rejection"
+
+[[reserved]]
+name = "content_type_codes_4_to_255"
+message = "hello port element (004-16)"
+width = 8
+value = "unused"
+meaning = "v1 senders write content-message kind codes 0 to 3; codes 4 to 255 are unused in v1 [decision]"
+outcome = "a v1 receiver ignores the code and keeps the port; never a rejection"
 # The protocol version fields (ticket 004-04): see the [versioning] schema
 # documentation above. wire.md's "Versioning" section is the authority.
 
@@ -1547,27 +1595,28 @@ type = "i64"
 meaning = "send timestamp: the responder's network time in nanoseconds when the reply is sent"
 valid = "any 64-bit value"
 
+
 # Hello (ticket 004-16): wire.md's "Hello" section is the human-readable
 # authority. The first seven fields are the 32-byte common control header
 # that every control message starts with (004-17, 004-18, 004-24, 004-27 and
 # 004-29 reuse it); the message type is scoped to the control layer, and the
-# hello is code 1. The size verdict of that section is "falsified": the
-# bundle descriptions do not fit C-17 at the constants' worst case, so they
-# move to the admission handshake (004-18) and the hello carries no bundle
-# field. The fixed part is 75 bytes; the name is one byte counted by
-# name_length, max_count = 64, and the port elements are one 56-bit element
-# counted by port_count, max_count = 64, declared "uint" because the schema
-# has no struct or blob type (the receiver report member's precedent), with
-# the element's own layout in the [[message]] "hello port element" below.
-# max_size = 75 + 64 + 64 x 7 = 587 bytes, within the 1 252-byte control
-# bound. The [[message]] "bundle element" is the description that moved to
-# the handshake: 2 + 4 x member count bytes, at most 130.
+# hello is code 1. Field names follow the markdown Meaning labels. The fixed
+# part is 76 bytes (three counts included); the name is one byte counted by
+# name_length, max_count = 32; the port elements are one 56-bit element
+# counted by port_count, max_count = 51; the bundle elements are one 784-bit
+# element counted by bundle_count, max_count = 8. The schema has no struct or
+# blob type, so the elements are declared "uint" (the receiver report
+# member's precedent), with their own layouts in the [[message]] tables
+# "hello port element" and "hello bundle element" below. max_size =
+# 76 + 32 + 51 x 7 + 8 x 98 = 1 249 bytes, within the 1 252-byte control
+# bound; a source with one 32-member bundle is 563 bytes at the name and
+# port maxima.
 
 [[message]]
 name = "hello"
 layer = "control"
 dscp = 40
-max_size = 587
+max_size = 1249
 rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
 
 [[message.field]]
@@ -1579,7 +1628,7 @@ meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
 valid = "0x4d4e only"
 
 [[message.field]]
-name = "version"
+name = "protocol_version"
 offset = 16
 width = 16
 type = "u16"
@@ -1587,7 +1636,7 @@ meaning = "protocol version, major in bits 15..8, minor in bits 7..0; v1 packs 1
 valid = "major 1, any minor; senders write 0x0100"
 
 [[message.field]]
-name = "domain"
+name = "domain_id"
 offset = 32
 width = 16
 type = "u16"
@@ -1603,7 +1652,7 @@ meaning = "message type, scoped to the control layer: 1 = hello"
 valid = "1 only"
 
 [[message.field]]
-name = "auth_scheme"
+name = "authentication_scheme"
 offset = 56
 width = 8
 type = "u8"
@@ -1620,7 +1669,7 @@ meaning = "message counter (C-12): live (C-115), the sender's data-plane livenes
 valid = "any 64-bit value"
 
 [[message.field]]
-name = "auth_tag"
+name = "authentication_tag"
 offset = 128
 width = 128
 type = "u128"
@@ -1673,7 +1722,7 @@ name = "time_state"
 offset = 512
 width = 8
 type = "u8"
-meaning = "time state: 0 = time unusable (Unlocked, C-162), 1 = holdover with the alignment claim not lapsed, 2 = Locked (C-213, C-221)"
+meaning = "time state: 0 = time unusable (acquiring, or Unlocked, C-162), 1 = holdover with the alignment claim not lapsed, 2 = Locked (C-213, C-221)"
 valid = "0 to 2; a receiver reads a value above 2 as 0"
 
 [[message.field]]
@@ -1693,19 +1742,19 @@ meaning = "transport role, a proposal for epic 005: 0 = none, 1 = follower, 2 = 
 valid = "0 to 2; a receiver reads a value above 2 as none"
 
 [[message.field]]
-name = "alarm"
+name = "alarm_field"
 offset = 544
 width = 8
 type = "u8"
 meaning = "alarm field: bit 0 refusal, bit 1 interrupted, bit 2 dead, bit 3 demoted, bit 4 cannot-meet-A, bit 5 control-degraded (C-173, C-174, C-139); a bit is 1 while that alarm is raised"
-valid = "bits 7..6 zero; a non-zero reserved bit is ReservedNonZero"
+valid = "any value; senders write 0 in bits 7..6, and receivers ignore them"
 
 [[message.field]]
-name = "stamp_version"
+name = "regime_stamp_version_number"
 offset = 552
 width = 32
 type = "u32"
-meaning = "regime stamp version number (C-18): incremented modulo 2^32 on every change of the sender's stamp; a receiver's copy is stale when it differs"
+meaning = "regime stamp version number (C-18): incremented modulo 2^32 on every change of the sender's stamp; a copy is stale when the (instance nonce, version number) pair differs"
 valid = "any 32-bit value"
 
 [[message.field]]
@@ -1713,8 +1762,8 @@ name = "name_length"
 offset = 584
 width = 8
 type = "u8"
-meaning = "name length: how many bytes of name follow the port count"
-valid = "1 to 64; 0 or above 64 is BadLength"
+meaning = "name length: how many bytes of name follow the bundle count"
+valid = "1 to 32; 0 or above 32 is BadLength"
 
 [[message.field]]
 name = "port_count"
@@ -1722,34 +1771,52 @@ offset = 592
 width = 8
 type = "u8"
 meaning = "port count: how many port elements follow the name"
-valid = "0 to 64; above 64 is BadLength"
+valid = "0 to 51; above 51 is BadLength"
 
 [[message.field]]
-name = "name"
+name = "bundle_count"
 offset = 600
 width = 8
 type = "u8"
+meaning = "bundle count: how many bundle elements follow the port elements"
+valid = "0 to 8; above 8 is BadLength"
+
+[[message.field]]
+name = "name"
+offset = 608
+width = 8
+type = "u8"
 meaning = "name: the module's name, UTF-8 (RFC 3629), compared byte for byte"
-valid = "name_length bytes, at most 64; bytes that are not valid UTF-8 are BadLength"
+valid = "name_length bytes, at most 32; bytes that are not valid UTF-8 are BadLength"
 count = "name_length"
-max_count = 64
+max_count = 32
 
 [[message.field]]
 name = "port"
-offset = 1112
+offset = 864
 width = 56
 type = "uint"
-meaning = "one port element, laid out as the [[message]] hello port element below: port id 1 byte, direction bit and 7 reserved bits, content-type count 1 byte, then at most 4 content-type codes; 3 + content-type count bytes, at most 7; elements back to back with no separator"
-valid = "port_count elements, at most 64 (448 bytes); each with 1 to 4 content types; port ids distinct"
+meaning = "one port element, laid out as the [[message]] hello port element below: port id 1 byte, direction bit and 7 unassigned bits, content-type count 1 byte, then at most 4 content-type codes; 3 + content-type count bytes, at most 7; elements back to back with no separator"
+valid = "port_count elements, at most 51 (357 bytes); each with 1 to 4 content types; port ids distinct"
 count = "port_count"
-max_count = 64
+max_count = 51
+
+[[message.field]]
+name = "bundle"
+offset = 3720
+width = 784
+type = "uint"
+meaning = "one bundle element, laid out as the [[message]] hello bundle element below: group id 1 byte, member count 1 byte, member list of 1-byte stream numbers, then the channel map of 2-byte channel counts; 2 + 3 x member count bytes, at most 98; elements back to back with no separator"
+valid = "bundle_count elements, at most 8 (784 bytes); each with 1 to 32 members (C-08); group ids distinct"
+count = "bundle_count"
+max_count = 8
 
 [[message]]
 name = "hello port element"
 layer = "control"
 dscp = 40
 max_size = 7
-rejection_reasons = ["BadLength", "ReservedNonZero"]
+rejection_reasons = ["BadLength"]
 
 [[message.field]]
 name = "port_id"
@@ -1768,13 +1835,12 @@ meaning = "direction, bit 0 of byte 1: 0 = input, 1 = output"
 valid = "0 or 1"
 
 [[message.field]]
-name = "reserved"
+name = "unassigned"
 offset = 9
 width = 7
-type = "pad"
-meaning = "reserved, bits 7..1 of byte 1: senders write zero"
-valid = "0 only"
-reserved = "0"
+type = "uint"
+meaning = "unassigned, bits 7..1 of byte 1: senders write zero, and receivers ignore them"
+valid = "any value"
 
 [[message.field]]
 name = "content_type_count"
@@ -1795,18 +1861,18 @@ count = "content_type_count"
 max_count = 4
 
 [[message]]
-name = "bundle element"
+name = "hello bundle element"
 layer = "control"
 dscp = 40
-max_size = 130
-rejection_reasons = []
+max_size = 98
+rejection_reasons = ["BadLength"]
 
 [[message.field]]
 name = "group_id"
 offset = 0
 width = 8
 type = "u8"
-meaning = "group id: the bundle's identity within its source, as the manifest declares it (004-26)"
+meaning = "group id: the bundle's identity within its source, as the manifest declares it; this width is proposed by 004-16 and confirmed by 004-26"
 valid = "0 to 255; distinct among the source's bundles"
 
 [[message.field]]
@@ -1815,21 +1881,21 @@ offset = 8
 width = 8
 type = "u8"
 meaning = "member count: how many members the bundle has, the controller member included (C-08, C-209)"
-valid = "1 to 32"
+valid = "1 to 32; 0 or above 32 is BadLength"
 
 [[message.field]]
 name = "member"
 offset = 16
-width = 16
-type = "u16"
-meaning = "member list: the stream number (C-10) of each member at the source"
-valid = "member_count entries, at most 32; 0 to 255 (C-09), distinct"
+width = 8
+type = "u8"
+meaning = "member list: the stream number (C-10) of each member at the source, one byte because every valid stream number is 0 to 255 (C-09)"
+valid = "member_count entries, at most 32; 0 to 255, distinct"
 count = "member_count"
 max_count = 32
 
 [[message.field]]
 name = "channel_count"
-offset = 528
+offset = 272
 width = 16
 type = "u16"
 meaning = "channel map: the channel count of each member, in member-list order; 0 marks the controller member (C-205); it follows the member list directly on the wire"
