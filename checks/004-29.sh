@@ -771,6 +771,49 @@ CLO = msg_analysis(CLO_TXT, "close", "AC1") if CLO_TXT else None
 if ANN and CLO:
     check("AC1", ANN["code"] != CLO["code"], f"the announcement and the close have distinct type codes (found {ANN['code']} and {CLO['code']})")
 
+# ---------------------------------------------------------------------------
+# AC 2: the clock and the form of the expiry. Run-time term list from timeline.md (the clock terms it
+# uses); the expiry may be an absolute instant or a relative duration, one form only, and a relative
+# duration needs the instant it counts from, the late-or-repeated rule, and an updated merged section.
+# ---------------------------------------------------------------------------
+TL_TEXT = read_text("doc/design/spec/timeline.md") or ""
+TL_STOP = {"a", "an", "the", "every", "of", "on", "its", "this", "one", "whose", "with", "from", "to", "at", "as",
+           "is", "by", "each", "any", "and", "or", "in", "for", "no", "has", "keeps", "all", "such", "same", "that",
+           "when", "be", "it", "only", "their", "which", "if", "but", "not", "into", "over", "under", "during",
+           "after", "before", "does", "do", "must", "may", "can", "instant"}
+TL_EXCL = {"time", "clock", "origin time", "exact time", "usable time", "compile time", "published time", "representable time", "pre-origin time",
+           "same time", "such time", "no time", "this time", "wall time", "gap time"}
+
+
+def clock_terms(text):
+    t = text.lower().replace("`", "").replace("wall-clock", "wall clock")
+    out = set()
+    for m in re.finditer(r"\b((?:[a-z][a-z']*\s+){0,3}?(?:time|clock))\b", t):
+        words = m.group(1).split()
+        cut = [i for i, w in enumerate(words[:-1]) if w in TL_STOP]
+        words = words[cut[-1] + 1:] if cut else words
+        if len(words) > 3 or any(w == "s" or "'" in w for w in words):
+            continue
+        term = " ".join(words)
+        if term and term not in TL_EXCL:
+            out.add(term)
+    return sorted(out)
+
+
+TL_TERMS = clock_terms(TL_TEXT)
+TL_SHARED = [t for t in TL_TERMS if "network time" in t]
+EXTRA_CLOCKS = ["wall clock", "utc", "tool's clock"]
+print(f"NOTE clock terms extracted from timeline.md: {TL_TERMS}; shared (evaluable by every module): {TL_SHARED}")
+EVAL_RE = re.compile(r"evaluat|convert|does not share|do not share|without the holder|on its own clock|maps? it", re.I)
+EVAL_PARAS = [x for k, x in prose_blocks(ANN_TXT) if k == "p" and has_evidence(x) and EVAL_RE.search(x)]
+
+REL_FORM = [False]
+
+
+def sentences_of(text):
+    return [x for x in re.split(r"(?<=[.;])\s+|\n\s*\n", text) if x.strip()]
+
+
 if ANN:
     fl = ANN["fl"]
     wid = [f for f in fl if re.match(r"window identifier", f["meaning"], re.I)]
@@ -788,12 +831,35 @@ if ANN:
     check("AC2", len(exp) == 1 and E_STAMP is not None and exp[0]["bits"] == E_STAMP,
           f"the announcement's expiry is as wide as the merged stamp's expiry, {E_STAMP} bits, so the stamp can copy it "
           f"(read {[f['bits'] for f in exp]})")
+    # the clock: a term timeline.md uses, named in the expiry row or in a tagged sentence of the announcement
+    clock_src = " ".join([f["meaning"] + " " + f["valid"] for f in fl] + [x for k, x in prose_blocks(ANN_TXT)
+                                                                       if k == "p" and has_evidence(x)])
+    named = [t for t in TL_TERMS if re.search(r"\b" + re.escape(t) + r"\b", clock_src.lower())]
+    named_extra = [t for t in EXTRA_CLOCKS if re.search(r"\b" + re.escape(t) + r"\b", clock_src.lower())]
+    named_shared = [t for t in named if t in TL_SHARED]
+    named_local = [t for t in named if t not in TL_SHARED]
+    check("AC2", bool(named_shared) or ((named_local or named_extra) and bool(EVAL_PARAS)),
+          "the announcement names its clock: a clock timeline.md defines (network time), or a holder-local or other "
+          "clock with a tagged sentence on how a module that does not share it evaluates the expiry (Work 1, C-153) "
+          f"(named {named + named_extra})")
     if len(exp) == 1:
-        ev = exp[0]["meaning"] + " " + exp[0]["valid"]
+        em = exp[0]["meaning"]
+        ev = em + " " + exp[0]["valid"]
         check("AC2", bool(UNIT_RE.search(ev)), "the expiry row states its unit (Work 1; C-153)")
-        check("AC2", bool(CLOCK_RE.search(ev)), "the expiry row states its clock as network time (Work 1; timeline.md)")
-        check("AC2", not re.search(r"relative|duration|remaining", exp[0]["meaning"], re.I),
-              "the expiry is an absolute instant, not a duration relative to the announcement (Open item 11 of the regime stamp)")
+        rel = bool(re.search(r"relative|duration", em, re.I))
+        absf = bool(re.search(r"absolute|instant", em, re.I))
+        check("AC2", rel != absf, "the expiry row states one form: an absolute instant or a relative duration (Open item 11)")
+        if rel:
+            check("AC2", bool(re.search(r"counted from|counts from|from the issue time|from the instant", ev + " " + ANN_TXT, re.I)),
+                  "the relative expiry states the instant it counts from (Open item 11, branch b)")
+            check("AC2", bool(re.search(r"\blate\b|twice", ANN_TXT, re.I)) and bool(re.search(r"same expiry|derives? the same", ANN_TXT, re.I)),
+                  "the relative expiry states how a late or repeated announcement derives the same expiry (Open item 11, branch b)")
+            cw_exp_row = [f for f in CW if re.match(r"expiry time", f["meaning"], re.I)]
+            merged_ok = bool(cw_exp_row) and "copied from the announcement" not in cw_exp_row[0]["valid"] \
+                and bool(re.search(r"deriv", cw_exp_row[0]["meaning"] + " " + cw_exp_row[0]["valid"], re.I))
+            check("AC2", merged_ok, "the merged commissioning window section no longer says the stamped expiry is copied "
+                                    "from the announcement: it says the stamped value is derived (Open item 11, branch b)")
+            REL_FORM[0] = True
 
 if CLO:
     cwid = [f for f in CLO["fl"] if re.match(r"window identifier", f["meaning"], re.I)]
@@ -889,6 +955,9 @@ check("DoD", bool(OI11) and (oi11_status or oi11_open),
       "Open item 11 of the regime stamp is no longer open where this text decides it: a status sentence names this "
       "section (a), or the item is unchanged and a new open item here names it (b)")
 
+if REL_FORM[0]:
+    check("DoD", oi11_status, "Open item 11 of the regime stamp carries a status sentence for the relative form (branch b)")
+
 # ---------------------------------------------------------------------------
 # AC 5: wire.toml declares the two messages, row for row with the tables
 # ---------------------------------------------------------------------------
@@ -901,6 +970,16 @@ except Exception as error:
     TOML_OK = False
 msgs = TOML.get("message", []) if TOML_OK else []
 msgs = msgs if isinstance(msgs, list) else []
+# DoD (tightened): a new regime stamp section type restates the cap threshold, 18 entries per section
+NEW_SECTION_TYPE = re.search(r"section type (?:code )?(?:[1-9]|[12]\d|3[01])\b", NEW, re.I)
+NEW_STAMP_MSG = [m for m in msgs if "section_of" in m and re.search(r"commission", str(m.get("name", "")), re.I)
+                 and re.search(r"announc|close", str(m.get("name", "")), re.I)] \
+    if TOML_OK else []
+if NEW_SECTION_TYPE or NEW_STAMP_MSG:
+    check("DoD", any(re.search(r"18 entries", x) for x in sentences_of(NEW)),
+          "a regime stamp section type added here restates the connection-cap threshold: a sentence with 18 entries "
+          "per section (Open item 1, connection cap; hand-off from status.md)")
+
 for label, md, pat in [("announcement", ANN, r"announc"), ("close", CLO, r"close")]:
     cand = [m for m in msgs if re.search(r"commission", str(m.get("name", "")), re.I)
             and re.search(pat, str(m.get("name", "")), re.I) and "section_of" not in m]
