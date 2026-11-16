@@ -2897,7 +2897,7 @@ offset = 416
 width = 16
 type = "u16"
 meaning = "echoed intended packet size: the probe's intended packet size, echoed verbatim, at the request's width; it names which probe of the handshake this reply acknowledges"
-valid = "54 to 65 507; a value no outstanding probe carries matches none (Matching a reply to its probe)"
+valid = "any 16-bit value as far as parsing goes; a value no outstanding probe carries matches none (Matching a reply to its probe)"
 
 
 # The refusal reasons (ticket 004-18, C-185): the closed set of 18, values
