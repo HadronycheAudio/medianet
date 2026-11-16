@@ -5218,6 +5218,173 @@ type = "i64"
 meaning = "reclaimable latency (C-157): offset - (the input's maximum over the rolling 60 s window + the C-52 headroom of that maximum) when positive, in nanoseconds; 0 = not positive"
 valid = "0 = none; a positive value is at most the offset, which is at most A (C-53, C-96); a negative value drops the section"
 
+# Commissioning window messages (ticket 004-29): the machine-readable copy
+# of wire.md's "Commissioning window messages" field tables, which are the
+# authority. Codes 48 (announcement) and 49 (close) of the block 48 to 51 the
+# hello reserves for 004-29; 50 and 51 are not assigned. Both are control
+# messages multicast to the control group with TTL 1 (C-100) at CS5 (C-13),
+# fixed size: announcement 32 + 8 + 8 + 8 = 56 bytes, close 32 + 8 = 40
+# bytes [decision]. The stamped form of the open window is the regime stamp
+# commissioning window section (004-25); no section type is added here.
+
+[[message]]
+name = "commissioning window announcement"
+layer = "control"
+dscp = 40
+max_size = 56
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 48 = commissioning window announcement (Control message type codes)"
+valid = "48 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "window_identifier"
+offset = 256
+width = 64
+type = "u64"
+meaning = "window identifier: drawn by the tool for this window and written unchanged in every announcement and close of it; the reference commissioning results carry (C-178) and the value the commissioning window section stamps (Regime stamp)"
+valid = "1 to 18 446 744 073 709 551 615 (2^64 − 1); 0 is not a window identifier"
+
+[[message.field]]
+name = "tool_identity"
+offset = 320
+width = 64
+type = "u64"
+meaning = "tool identity: the identity of the commissioning tool that announces the window, the same in every announcement of the window"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "expiry_time"
+offset = 384
+width = 64
+type = "u64"
+meaning = "expiry time: the absolute instant at which the window closes, in nanoseconds of network time (timeline.md, Domain line and position map), one instant for every module"
+valid = "0 to 9 223 372 036 854 775 807 (2^63 − 1) ns; 2^63 and above is out of range"
+
+[[message]]
+name = "commissioning window close"
+layer = "control"
+dscp = 40
+max_size = 40
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 49 = commissioning window close (Control message type codes)"
+valid = "49 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "window_identifier"
+offset = 256
+width = 64
+type = "u64"
+meaning = "window identifier: the identifier of the window this close ends, as its announcement carries it"
+valid = "1 to 18 446 744 073 709 551 615 (2^64 − 1); 0 is not a window identifier"
+
 # The refusal reasons (ticket 004-18, C-185): the closed set of 18, values
 # 0 to 17 in C-185's order (the RefuseReason discriminants of 012-01),
 # numbered independently of the [[reject]] enumeration; the machine-readable
