@@ -34,11 +34,11 @@ This is part a of epic 015, split under C-143. Part b (015b) verifies this runti
 
 - `src/module.rs:1518`: the clock thread takes `inner.target.lock()` — a mutex shared with the non-real-time housekeeping thread (`:1484`) — on every iteration. Violates L-8.
 - `src/module.rs:1669`: the data thread drains every input socket completely (`while let Some(..) = net::recv_now(..)`) before it looks at its own deadline. One flooding input starves the ticker.
-- `src/module.rs:1126`: clock requests are paced by a 5 ms receive timeout. Measured result: 36.1 completed exchanges/s at `--sync-hz 50` and 71.4/s at `--sync-hz 1000` `[measured]`, on a kernel with `CONFIG_HZ=250` `[measured]` (P-02, P-03). Timeouts are not deadlines.
+- `src/module.rs:1126` at `poc-untouched`: clock requests are paced by a 5 ms receive timeout (`poc-baseline` waits for the next request deadline, P-07). Measured result: 36.1 completed exchanges/s at `--sync-hz 50` and 71.4/s at `--sync-hz 1000` `[measured]`, on a kernel with `CONFIG_HZ=250` `[measured]` (P-02, P-03). Timeouts are not deadlines.
 - `src/module.rs:1557` and `:1671`: receive time is derived as `real_ns() − kernel_stamp`. `SO_TIMESTAMPNS` delivers `CLOCK_REALTIME` stamps `[kernel-doc]`, so a wall-clock step between stamp and read corrupts the sample, and `.max(0)` hides it as zero delay.
 - `src/module.rs:1630`: the ticker epoch is `mono_ns()`, so the media clock follows the local crystal.
 - `src/module.rs:1639`: `routes = r.clone()` allocates on the data thread.
-- `src/module.rs:1354`: each module calls `File::create` on the same metrics path; in loopback four handles overwrite each other and the file is corrupt `[measured]`.
+- `src/module.rs:1354` at `poc-untouched`: each module calls `File::create` on the same metrics path; in loopback four handles overwrite each other and the file is corrupt `[measured]`.
 
 **Receive path rules `[decision]`.**
 
