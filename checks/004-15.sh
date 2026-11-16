@@ -196,6 +196,7 @@ if not C22:
     print("FAIL setup: C-22 does not parse as 'NN ch: N streams, N Mbit/s, N packets/s'")
     sys.exit(1)
 CAP = int(re.search(r"at most (\d+) bytes", CELL["C-137"]).group(1))   # header cap (C-137): 100
+C21_CH = float(re.search(r"([\d.]+) Mbit/s per channel", CELL["C-21"]).group(1))   # 3.5
 IP_UDP = 20 + 8        # IPv4 header (C-100) + UDP header
 ETH_PARTS = (("header", 14), ("FCS", 4), ("preamble and start-of-frame delimiter", 8), ("inter-frame gap", 12))
 ETH = sum(v for _, v in ETH_PARTS)  # 38
@@ -332,6 +333,7 @@ PCT_R = DIFF_R / C21 * 100
 EXCEEDS = max(abs(PCT_B), abs(PCT_R)) > 5
 HDR_ALLOWED = {PKT + SLICE + ANN_COUNT + CW + CKSUM,           # 46 mandatory headers and checksum
                PKT + SLICE + ANN_COUNT + ENTRY + EXT + CKSUM,  # 64: a controller member's headers (no audio)
+               PKT + SLICE + ANN_COUNT + ENTRY + CKSUM,        # 55: the same, a stream that cannot measure
                ANN_MAX_PAY - AUDIO,                            # 103 maximum occupancy
                CAP}                                            # the C-137 header cap
 HDR_ALLOWED |= {PKT + SLICE + ANN_COUNT + ENTRY * k + EXT * e + CW + CKSUM
@@ -591,7 +593,7 @@ if not eth_total:
 
 # Evidence of the Ethernet framing units (C-132, DoD).
 FRAMING = re.compile(r"\bFCS\b|frame check|check sequence|preamble|inter-?frame|"
-                     r"Ethernet framing|Ethernet[^.;|]{0,12}header", re.I)
+                     r"Ethernet framing|Ethernet[^.;|]{0,12}header|\bEthernet\b", re.I)
 CHECKER_RE = re.compile(r"\b\d{3}[a-z]?-\d{2}\b")
 CHECK_WORD = re.compile(r"\b(checks?|checker|pins?|pinned|verifies|verify|checked by)\b", re.I)
 CLAUSE_RE = re.compile(r"\b[Cc]lause\s+\d+(?:\.\d+)+")
@@ -608,12 +610,18 @@ for u in UNITS:
         if not (CHECKER_RE.search(own) and CHECK_WORD.search(own)):
             fail("DoD", "an Ethernet framing figure tagged [memory] names no checking task "
                     "(a ticket id with checks/pins/verifies/checker): " + own[:80])
-    if "[standard]" in tags:
-        for s in re.split(r"(?<=[.;])\s+", u["text"]):
-            if "[standard]" in s.lower() and not CLAUSE_RE.search(s):
-                if not (u["kind"] == "row" and CLAUSE_RE.search(u["text"])):
-                    fail("DoD", "an Ethernet framing figure tagged [standard] has no clause with a dotted "
-                                "number in its sentence: " + s[:80])
+    if "[standard]" in own.lower():
+        if u["kind"] == "row":
+            label_is_ethernet = re.match(r"\s*Ethernet", u["cells"][0], re.I) is not None
+            if label_is_ethernet and not CLAUSE_RE.search(own):
+                fail("DoD", "an Ethernet framing row tagged [standard] has no clause with a dotted number: " + own[:80])
+        else:
+            for sent in re.split(r"(?<=[.;])\s+", own):
+                if "[standard]" in sent.lower() and re.search(r"Ethernet|FCS|preamble|inter-?frame", sent, re.I) \
+                        and not CLAUSE_RE.search(sent):
+                    fail("DoD", "an Ethernet framing sentence tagged [standard] has no clause with a dotted "
+                                "number: " + sent[:80])
+
 
 # ---------------------------------------------------------------------------
 # AC 1 and AC 2: bit rates per stream, per channel, per source (C-22).
@@ -643,8 +651,20 @@ for ch, streams, c22_rate, pps in C22:
                      f"beside C-22's {c22_rate} Mbit/s (streams = channels / {CH}, rate = streams x per-stream rate)")
 
 # AC 2: the difference from C-20 (bytes) and C-21 (rate), absolute and percent.
-DIFF_UNITS = [x for u in UNITS for x in ([u["text"]] if u["kind"] == "row"
-                                          else re.split(r"(?<=[.;])\s+", u["text"]))]
+def own_of(u):
+    return u.get("own", u["text"])
+
+
+def sentences_of(u):
+    return [own_of(u)] if u["kind"] == "row" else re.split(r"(?<=[.;])\s+", u["text"])
+
+
+def mbit_list(t):
+    return [(float(m.group(1) + ("." + m.group(2) if m.group(2) else "")), len(m.group(2) or ""))
+            for m in MBIT_RE.finditer(t)]
+
+
+DIFF_UNITS = [x for u in UNITS for x in sentences_of(u)]
 ok_bytes = False
 for x in DIFF_UNITS:
     if C20 in ints(x) and abs(DIFF_B) in ints(x):
@@ -665,6 +685,108 @@ if not ok_rate:
     fail("AC 2", f"no unit gives the rate difference {DIFF_R:+.2f} Mbit/s against {C21:g} (C-21) and "
                  f"{PCT_R:+.1f} % in one sentence or row")
 
+# AC 2 (T2): every stated difference and percent against C-22 is evaluated. A difference is
+# stated signed ("−3.10 Mbit/s"); it must equal streams x per-stream rate − C-22. A percent is
+# stated signed ("−3.7 %"); over C-22's rounded figure, or over C-21 x streams when the sentence
+# or row names that unrounded base, it must equal the difference's share.
+SIGNED_MBIT = re.compile(r"(?<![\w\-])[−-]\s*(\d+)(?:\.(\d+))?\s*Mbit/s")
+SIGNED_PCT = re.compile(r"(?<![\w\-])[−-]\s*(\d+)(?:\.(\d+))?\s*%")
+
+
+def signed_num(m):
+    return float(m.group(1) + ("." + m.group(2) if m.group(2) else "")), len(m.group(2) or "")
+
+
+for ch, streams, c22_rate, pps in C22:
+    exp_diff = streams * RATE_STREAM - c22_rate
+    base2 = streams * C21
+    for u in UNITS:
+        for t in sentences_of(u):
+            n = ints(t)
+            if ch not in n or c22_rate not in n:
+                continue
+            for m in SIGNED_MBIT.finditer(t):
+                v, d = signed_num(m)
+                if not close(-v, exp_diff, tol_of(d)):
+                    fail("AC 2", f"the {ch}-channel difference from C-22 is stated as -{v:g} Mbit/s, but the computed "
+                                 f"difference is {exp_diff:+.3f} Mbit/s ({streams} x {RATE_STREAM:.3f} - {c22_rate}): "
+                                 + t[:100])
+            unrounded = any(abs(v - base2) <= 0.05 for v, _ in floats(t))
+            bases = [base2] if unrounded else [c22_rate, base2]
+            for m in SIGNED_PCT.finditer(t):
+                p, d = signed_num(m)
+                if not any(abs(p - abs(exp_diff) / b * 100) <= max(0.1, tol_of(d)) for b in bases):
+                    fail("AC 2", f"the {ch}-channel share of the C-22 difference is stated as -{p:g} %, but "
+                                 f"{abs(exp_diff):.3f} over {' or '.join(f'{b:g}' for b in bases)} is "
+                                 f"{' or '.join(f'{abs(exp_diff) / b * 100:.2f} %' for b in bases)}: " + t[:100])
+
+# AC 2 (T2): a per-channel figure in a comparison sentence is the computed per-channel rate
+# (per stream / 6), C-21's per-channel figure, or their difference; a per-stream figure is
+# allowed only in a sentence that names the stream.
+for u in PROSE:
+    for t in re.split(r"(?<=[.;])\s+", u["text"]):
+        if "per channel" not in t.lower():
+            continue
+        allowed = [(RATE_CH, 2), (C21_CH, 1), (abs(RATE_CH - C21_CH), 2)]
+        if "stream" in t.lower():
+            allowed.append((RATE_STREAM, 2))
+        for v, d in mbit_list(t):
+            if not any(close(v, a, max(tol_of(d), tol_of(dd))) for a, dd in allowed):
+                fail("AC 2", f"a per-channel figure of {v:g} Mbit/s is neither the computed {RATE_CH:.3f} "
+                             f"(per stream / {CH}, C-04) nor C-21's {C21_CH:g} or their difference: " + t[:100])
+
+# AC 1 (T3): every row of the wire-size table (a table whose header names the payload and the wire).
+def col_of(header, word):
+    return next((i for i, h in enumerate(header) if word in h.lower()), None)
+
+
+for u in UNITS:
+    if u["kind"] != "row" or not any("payload" in h.lower() for h in u["header"]) \
+            or not any("wire" in h.lower() for h in u["header"]):
+        continue
+    cells, header = u["cells"], u["header"]
+    name = cells[0]
+    ip, iw, ist, ich = (col_of(header, w) for w in ("payload", "wire", "stream", "channel"))
+    if None in (ip, iw, ist, ich) or max(ip, iw, ist, ich) >= len(cells):
+        fail("AC 1", f"wire-size row {name!r} lacks a payload, wire, stream or channel cell")
+        continue
+    payload = ints(cells[ip])[0] if ints(cells[ip]) else None
+    eqw = equations(cells[iw])
+    if payload is None or not eqw:
+        fail("AC 1", f"wire-size row {name!r} states no payload or no on-the-wire arithmetic")
+        continue
+    wire_row = eqw[0]["rhs"]
+    low = name.lower()
+    if "default" in low:
+        expected, label = DEF_PAY, "the 004-14 default total"
+    elif "largest unshared" in low:
+        expected, label = V1_LARGEST_PAY, "the 004-14 fallback one-announcement-and-extension total"
+    elif "format maximum" in low:
+        expected, label = ANN_MAX_PAY, "the 004-14 format-maximum total"
+    else:
+        expected, label = None, None
+    if expected is not None and payload != expected:
+        fail("AC 1", f"wire-size row {name!r}: payload {payload} is not {label} ({expected})")
+    if wire_row != payload + OVH:
+        fail("AC 1", f"wire-size row {name!r}: on the wire {wire_row:g} is not payload {payload} + {OVH}")
+    rate_mbit = wire_row * 8 * SLICE_RATE / 1e6
+    rate_vals = mbit_list(cells[ist])
+    if not rate_vals:
+        fail("AC 1", f"wire-size row {name!r} states no Mbit/s rate")
+    for v, d in rate_vals:
+        if not close(v, rate_mbit, tol_of(d)):
+            fail("AC 1", f"wire-size row {name!r}: rate {v:g} Mbit/s is not {wire_row:g} x 8 x {SLICE_RATE} = "
+                         f"{rate_mbit:.3f} Mbit/s")
+    for e in equations(cells[ist]):
+        if not close(e["rhs"], wire_row * 8 * SLICE_RATE, max(e["tol"], 1e-9)):
+            fail("AC 1", f"wire-size row {name!r}: {e['raw']!r} does not give {wire_row * 8 * SLICE_RATE:,} bit/s")
+    fl = floats(cells[ich])
+    if not fl:
+        fail("AC 1", f"wire-size row {name!r} states no per-channel rate")
+    elif not close(fl[0][0], rate_mbit / CH, tol_of(fl[0][1])):
+        fail("AC 1", f"wire-size row {name!r}: per-channel {fl[0][0]:g} Mbit/s is not {rate_mbit:.3f} / {CH} "
+                     f"= {rate_mbit / CH:.3f} Mbit/s (C-04)")
+
 # ---------------------------------------------------------------------------
 # AC 3: the 5 % rule, against the computed difference.
 # ---------------------------------------------------------------------------
@@ -673,8 +795,8 @@ five = [s for s in sentences if re.search(r"(?<![\w.])5 ?%", s)]
 if not five:
     fail("AC 3", "no sentence states the 5 % rule (a sentence with '5 %' and exceed / within / below / above)")
 for s in five:
-    within = re.search(r"\bwithin\b|\bbelow\b|\bunder\b|not exceed|does not exceed|do not exceed|no more than",
-                       s, re.I)
+    within = re.search(r"\bwithin\b|\bbelow\s+(?:the\s+)?5|\bunder\s+(?:the\s+)?5|\bnot exceed|"
+                       r"\bdoes not exceed|\bdo not exceed|\bno more than", s, re.I)
     exceed = re.search(r"exceed|above", s, re.I) and not within
     if not (within or exceed):
         fail("AC 3", "a '5 %' sentence states no direction: " + s[:90])
@@ -682,19 +804,45 @@ for s in five:
     if bool(exceed) != EXCEEDS:
         fail("AC 3", f"the section says the difference {'exceeds' if exceed else 'is within'} 5 %, but the computed "
                      f"difference is {PCT_B:+.2f} % bytes and {PCT_R:+.2f} % rate: " + s[:90])
+STAND_RE = re.compile(r"no constant[^.;]{0,40}(?:recomput|changed|updated|re-?derived)|"
+                      r"\bconstants?\b[^.;]{0,60}\bstand\b|not recomputed|"
+                      r"constants? (?:are|is|remain|remains) unchanged", re.I)
 if EXCEEDS:
     for cid in ("C-20", "C-21", "C-22", "C-24", "C-25", "C-26", "C-90", "C-92", "C-118"):
         if cid not in SUB_TEXT:
             fail("AC 3", f"the difference exceeds 5 %, but the section does not name {cid} as marked for recompute")
-    if not re.search(r"constants table updated", SUB_TEXT, re.I) and not any(
-            re.match(r"^[\s*_]*open item", u["text"], re.I) and re.search(r"owner", u["text"], re.I)
-            and re.search(r"falsifier", u["text"], re.I) for u in PROSE):
-        fail("AC 3", "the difference exceeds 5 %, but no 'constants table updated' and no open item with owner and falsifier")
-elif not re.search(r"no constant[^.;]{0,40}(recomput|changed|updated|re-?derived)|"
-                   r"constants? (?:stand|are unchanged|is unchanged|remain)|not recomputed|constants stand",
-                   SUB_TEXT, re.I):
+    if STAND_RE.search(SUB_TEXT):
+        fail("AC 3", "the difference exceeds 5 %, but the section still says the constants stand or that no "
+                     "constant is recomputed")
+    updated = re.search(r"constants table updated", SUB_TEXT, re.I)
+    capacity_item = any(
+        re.match(r"^[\s*_]*open item", u["text"], re.I) and re.search(r"C-20\b|capacity constants", u["text"])
+        and re.search(r"owner", u["text"], re.I) and re.search(r"falsifier", u["text"], re.I)
+        for u in PROSE)
+    if not updated and not capacity_item:
+        fail("AC 3", "the difference exceeds 5 %, but neither 'constants table updated' nor an open item that "
+                     "itself names C-20 (or capacity constants) with owner and falsifier")
+elif not STAND_RE.search(SUB_TEXT):
     fail("AC 3", "the difference is within 5 %, but the section does not say that no constant is recomputed "
                  "(the constants stand)")
+
+# AC 5 (audio, declared rate): IF the section states an audio stream's declared rate, it is
+# cap + audio + 66 = 1 318 bytes and 21 088 000 bit/s (C-219's form). No open item is required.
+AUD_BYTES = CAP + AUDIO + OVH
+AUD_BITS = AUD_BYTES * 8 * SLICE_RATE
+for t in sentences:
+    if not (re.search(r"declared", t, re.I) and re.search(r"audio", t, re.I)):
+        continue
+    bits = [to_int(m.group(1)) for m in re.finditer(r"(\d[\d ]*\d|\d)\s*bit/s", t)]
+    mb = mbit_list(t)
+    if mb or bits:
+        if not (any(close(v, AUD_BITS / 1e6, tol_of(d)) for v, d in mb) or any(abs(b - AUD_BITS) <= 0.5 for b in bits)):
+            fail("AC 4", f"the audio declared rate is not {AUD_BYTES} bytes (cap {CAP} + audio {AUDIO} + {OVH}) "
+                         f"at {AUD_BITS:,} bit/s: " + t[:100])
+    big = [to_int(m.group(1)) for m in re.finditer(r"(\d[\d ]*\d|\d)\s*bytes", t)
+           if to_int(m.group(1)) >= 1000]
+    if big and AUD_BYTES not in big:
+        fail("AC 4", f"the audio declared rate's bytes are not {AUD_BYTES} (cap + audio + 66): " + t[:100])
 
 # ---------------------------------------------------------------------------
 # AC 4: the controller-stream wire cost of C-219.
@@ -707,8 +855,8 @@ else:
     btxt = " ".join(u["text"] for u in block)
     if not re.search(r"(?<![\d.])28 ?\+ ?38(?![\d])", btxt) or not re.search(r"(?<![\d.])66(?![\d.])", btxt):
         fail("AC 4", "the 66 bytes of Ethernet, IP and UDP overhead are not shown as 28 + 38 with 66")
-    if not re.search(r"=[^=.;]*(?<![\d.])28 ?\+ ?38(?![\d])", btxt):
-        fail("AC 4", "no formula gives bytes per packet with 28 + 38 on the right of an '='")
+    if not re.search(r"=\s*(?:H|c|B)\b[^=.;]*(?<![\d.])28 ?\+ ?38(?![\d])", btxt):
+        fail("AC 4", "no symbolic formula (H, c or B on the left, 28 + 38 on the right of an '=') gives the bytes")
     if not re.search(r"2 ?000", btxt) or not re.search(r"packets?/s|packets? per second|per second", btxt):
         fail("AC 4", "the controller stream is not stated at 2 000 packets/s")
     if not re.search(r"8 ?[×x*] ?2 ?000", btxt):
@@ -723,19 +871,24 @@ else:
             rest.remove(28)
             rest.remove(38)
             if len(rest) == 2 and any(r in HDR_ALLOWED for r in rest):
-                examples.append(e["rhs"])
+                h = next(r for r in rest if r in HDR_ALLOWED)
+                c = rest[1 - rest.index(h)]
+                examples.append((e["rhs"], c))
             else:
                 fail("AC 4", f"worked example {e['raw']!r}: the header term is not a figure of the budget "
                              f"(the cap 100 or a 004-14 table figure) and two terms remain: {rest}")
     if not examples:
         fail("AC 4", "no worked example 'H + c + 28 + 38 = N' of the C-219 formula (verified by evaluation)")
+    controller_totals = {tot for tot, c in examples if c != AUDIO}
+    if not controller_totals:
+        fail("AC 4", "the C-219 section has no controller example (every worked example carries the audio "
+                     f"{AUDIO} bytes as c); a transport state or sparse message example is required")
     bit_ex = [e for e in cblock if e["ok"] and len(e["terms"]) == 3 and 8 in e["terms"] and 2000 in e["terms"]]
     if not bit_ex:
         fail("AC 4", "no worked bit-rate example 'N x 8 x 2 000 = R' of the controller stream")
     else:
-        byte_vals = set(examples) | ALLOWED_BYTES
-        if not any(next(t for t in e["terms"] if t not in (8, 2000)) in byte_vals for e in bit_ex):
-            fail("AC 4", "the bit-rate example's byte count is neither a worked C-219 total nor the default wire size")
+        if not any(next(t for t in e["terms"] if t not in (8, 2000)) in controller_totals for e in bit_ex):
+            fail("AC 4", "the bit-rate example does not use a controller example's byte count (c not the audio 1 152)")
 
 # ---------------------------------------------------------------------------
 # AC 5 (optional toml keys): any integer key naming a wire size, rate or overhead.
