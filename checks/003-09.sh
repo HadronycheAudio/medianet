@@ -54,9 +54,13 @@
 #       239.72.68.44:<port>` occurrences with three distinct ports; exactly
 #       three synth-order lines (`voices on synth1 ... also synth2`, or the
 #       swap); both transport tests named with ok/passed; the word
-#       "unprivileged"; `CONFIG_HZ=250`; a host and a kernel named; no word of
-#       a repeated, retried or re-run attempt (the statement "no run was
-#       repeated" is allowed).
+#       "unprivileged"; `CONFIG_HZ=250`; a host and a kernel named; each PASS
+#       line anchored at the line start with N/N windows exact and N > 0; the
+#       cargo result line "0 failed" (the only failed word allowed); and no
+#       word of a failed, replaced, repeated, retried, again, fourth or
+#       attempt run (the statement "no run was repeated" is allowed).
+#       VALUES: the form is checked here; the values were verified once, by
+#       review of PR #28 against the run logs in /tmp/opencode/003-09/.
 #   AC3 tags: poc-untouched and poc-baseline are listed; both are annotated
 #       (cat-file -t prints tag); poc-baseline^{commit} is the record commit;
 #       the poc-baseline message is non-empty and names 003-09.
@@ -67,8 +71,13 @@
 #   AC5 consistency: BASELINE.md exists at the tag; tools/smoke.sh at the tag
 #       is mode 100755; BASELINE.md at the tag names poc-untouched and
 #       poc-baseline.
-#   AC6 freeze: HEAD equals poc-baseline^{commit}; the working tree is clean
-#       (loud SKIP of this one assertion while swarm/poc-write-in-flight exists).
+#   AC6 freeze, PERMANENT: HEAD equals poc-baseline^{commit} (a detached HEAD at
+#       the tag passes); no commit reachable from ANY ref (branches, tags,
+#       remotes, stash, notes) lies outside the tag's history; every local
+#       branch points at the tag's commit; the working tree is clean (loud SKIP
+#       of this one assertion while swarm/poc-write-in-flight exists).  Every
+#       git command runs with --no-optional-locks so the frozen .git/index is
+#       never rewritten.
 #
 # Exit status: 0 when every assertion passes, 1 otherwise (one FAIL line per
 # failed assertion).
@@ -96,7 +105,8 @@ bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 skip() { printf 'SKIP  %s\n' "$*"; }
 note() { printf '      %s\n' "$*"; }
 
-gitpoc() { git -C "$POC" "$@"; }
+# --no-optional-locks: no git command may refresh and rewrite the frozen POC's .git/index (T3).
+gitpoc() { git --no-optional-locks -C "$POC" "$@"; }
 # Anchored ticket-id rule (same as 003-01..003-08).
 ID_ANY='^[0-9a-f]+ (003-[0-9][0-9]([: ]|$)|[a-z]+\(003-[0-9][0-9]\)!?: )'
 
@@ -217,16 +227,16 @@ def bad(msg):
 
 # Three smoke runs: the exact line tools/smoke.sh prints at HEAD (its last line).
 SMOKE_RE = re.compile(
-    r"PASS smoke: exit 0, metrics well formed, (\d+)/(\d+) windows exact, 0 lost, "
-    r"clock reached LOCKED, synth1 and synth2 verified`?\s*$")
+    r"^PASS smoke: exit 0, metrics well formed, (\d+)/(\d+) windows exact, 0 lost, "
+    r"clock reached LOCKED, synth1 and synth2 verified\s*$")
 pass_lines = [l for l in lines if "PASS smoke:" in l]
 good = []
 for l in pass_lines:
-    m = SMOKE_RE.search(l)
-    if m and m.group(1) == m.group(2):
+    m = SMOKE_RE.match(l)
+    if m and m.group(1) == m.group(2) and int(m.group(1)) > 0:
         good.append(l)
 if len(pass_lines) == 3 and len(good) == 3:
-    ok("AC2 three 'PASS smoke:' lines, each the smoke script's line ending 'synth1 and synth2 verified'")
+    ok("AC2 three 'PASS smoke:' lines, each anchored at the line start, N/N windows exact with N > 0, ending 'synth1 and synth2 verified'")
 else:
     bad("AC2 expected exactly three 'PASS smoke:' lines ending 'synth1 and synth2 verified'; found %d 'PASS smoke:' line(s), %d well formed"
         % (len(pass_lines), len(good)))
@@ -274,15 +284,24 @@ if re.search(r"\bhost\b", text, re.I) and re.search(r"\bkernel\b", text, re.I):
 else:
     bad("AC2 the body does not name the host and the kernel of the measuring machine")
 
-# No repeated or retried run.  The statement that no run was repeated is allowed.
+# No repeated, failed, replaced or extra run.  Two exemptions only: the sentence
+# "no run was repeated", and the cargo result line with exactly "0 failed"
+# (asserted to be 0 and to be present for the two transport tests).
+cargo_zero = re.findall(r"test result: ok\. \d+ passed; 0 failed\b", text)
+if cargo_zero:
+    ok("AC2 cargo test result line reports 0 failed")
+else:
+    bad("AC2 no cargo test result line 'test result: ok. <n> passed; 0 failed'")
+stripped = re.sub(r"test result: ok\. \d+ passed; 0 failed\b", "", text)
 stripped = re.sub(r"\bno run (?:was |has been )?(?:repeated|retried|re-?run)\b|\bnone (?:repeated|retried)\b",
-                  "", text, flags=re.I)
-hits = re.findall(r"repeat\w*|retr\w*|re-?run\w*|second attempt", stripped, re.I)
+                  "", stripped, flags=re.I)
+WORDS = r"fail\w*|replac\w*|again\b|fourth|attempt\w*|repeat\w*|retr\w*|re-?run\w*|re-?ran\b"
+hits = re.findall(WORDS, stripped, re.I)
 if hits:
-    bad("AC2 the body mentions a repeated or retried run (%s); the three runs must be the first three, stated as such"
+    bad("AC2 the body mentions a failed, replaced, repeated, retried or extra run (%s); the three runs must be the first three and pass"
         % ", ".join(sorted(set(h.lower() for h in hits))))
 else:
-    ok("AC2 no repeated, retried or re-run attempt is mentioned")
+    ok("AC2 no failed, replaced, repeated, retried or extra run is mentioned")
 
 for status, msg in results:
     print("%s  %s" % (status, msg))
@@ -413,9 +432,28 @@ if [ "$HAVE_TAG" -eq 1 ]; then
   head_commit="$(gitpoc rev-parse HEAD 2>/dev/null)"
   tag_commit="$(gitpoc rev-parse -q --verify "$BASELINE_TAG^{commit}" 2>/dev/null || true)"
   if [ -n "$tag_commit" ] && [ "$head_commit" = "$tag_commit" ]; then
-    pass "AC6 HEAD equals $BASELINE_TAG: nothing is committed to the POC after the tag"
+    pass "AC6 HEAD equals $BASELINE_TAG (a detached HEAD at the tag is allowed)"
   else
     bad "AC6 HEAD is ${head_commit:0:12}, $BASELINE_TAG is ${tag_commit:0:12}: the POC has moved after the tag"
+  fi
+  # No commit reachable from ANY ref lies outside the tag's history.  --all covers
+  # refs/heads, refs/tags, refs/remotes, refs/stash and notes: a commit after the
+  # tag on a side branch, a branch moved past the tag, or a stash entry all fail.
+  outside="$(gitpoc rev-list --all --not "$BASELINE_TAG" 2>/dev/null | head -n 5)"
+  if [ -z "$outside" ]; then
+    pass "AC6 no commit reachable from any ref lies outside $BASELINE_TAG's history (refs, stash and notes included)"
+  else
+    bad "AC6 commits reachable from a ref (branch, tag, remote, stash or note) lie outside $BASELINE_TAG's history:"
+    printf '%s\n' "$outside" | while IFS= read -r c; do note "$(gitpoc log -1 --format='%h %D %s' "$c" 2>/dev/null)"; done
+  fi
+  # Every local branch points at the tag's commit.
+  moved="$(gitpoc for-each-ref --format='%(refname) %(objectname)' refs/heads 2>/dev/null \
+    | awk -v t="$tag_commit" '$2 != t { print $1 " at " substr($2, 1, 12) }')"
+  if [ -z "$moved" ]; then
+    pass "AC6 every local branch points at $BASELINE_TAG"
+  else
+    bad "AC6 local branches not at $BASELINE_TAG (a branch moved past the tag):"
+    printf '%s\n' "$moved" | while IFS= read -r l; do note "$l"; done
   fi
 else
   skip "AC6 HEAD-equals-tag not evaluated: the tag $BASELINE_TAG is absent"
