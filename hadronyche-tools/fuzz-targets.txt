@@ -1,0 +1,8 @@
+# Fuzz target list of the hadronyche-tools crate (C-133). One target per line:
+#   <name> <harness source> <corpus directory>
+# all relative to hadronyche-tools/. checks/007a-03.sh asserts that every
+# line names an existing harness and a tracked, non-empty corpus.
+# Proposal for ticket 007a-15: whether this file is the schedule's registry
+# (read by 007a-15 and 007b-21) is 007a-15's decision; nothing reads it yet.
+vector-reader src/bin/vector-reader-fuzz.rs fuzz-corpus/vector-reader
+metrics src/bin/metrics-fuzz.rs fuzz-corpus/metrics

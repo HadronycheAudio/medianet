@@ -5,6 +5,13 @@ edition.workspace = true
 
 [dependencies]
 
+[build-dependencies]
+# Ticket 007a-03: build.rs parses the vector files on the host with the
+# standard JSON parser (not hand-written, so it needs no fuzzing under C-95)
+# and generates constant tables. Build dependencies are not linked into the
+# crate: the no_std build stays dependency-free (`cargo tree -e normal`).
+serde_json = "1"
+
 [dev-dependencies]
 # Ticket 007a-02: the schemas are typed Rust definitions in the test support
 # module and the JSON parser is the standard library's, not hand-written, so
