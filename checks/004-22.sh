@@ -26,21 +26,28 @@
 #        markdown anchor in the section resolves. A backticked snake_case
 #        field name must be a field of wire.toml.
 #   AC2  Every constant of the ticket's "Constants traced:" list (ranges
-#        expanded, read from the ticket) is named by a row of the section
-#        whose mapping resolves. A constant the ticket marks wire-visible
-#        (the ids after "wire-visible rulings") needs a row that maps it to a
-#        backticked wire.toml field and states a unit (a unit word in the
-#        row, in the field's wire.toml text, or "unit: none (reason)").
-#        A row that says a constant is NOT wire-visible gives a reason of at
-#        least three words.
+#        expanded, read from the ticket) is named in the CONSTANT cell (the
+#        first cell) of a row of the constants table, grouped rows listing
+#        every id they cover; a mention in a rule row or in another row does
+#        not count, and the row's mapping must resolve. A constant the ticket
+#        marks wire-visible (the ids after "wire-visible rulings") needs such a
+#        row that states, IN THE ROW, each named backticked wire.toml field
+#        with its width and a unit, written as "`name` (N bits, unit)" or
+#        "`a`, `b` (N bits each, unit)" (N equal to the wire.toml width, bytes
+#        converted to bits), or the unit as "unit: none (reason)". Every
+#        backticked field of such a row needs a width. A row that says a
+#        constant is NOT wire-visible gives a reason of at least three words.
 #   AC3  A section headed "audit" lists every field of the media-layer
-#        messages of wire.toml (the media packet, its announcement and slice
-#        checksum sections, the content-message header, the four content
-#        messages and the sparse keyed entry), each with a verdict. A row with
-#        a destination-specific or per-receiver verdict STOPS the ticket: it
-#        fails with the stop message, and its field must also appear in the
-#        review record's discrepancies. The audit states that no
-#        destination-specific or per-receiver field exists.
+#        messages of wire.toml (the media packet with its announcement and
+#        slice checksum sections, the content-message header, the four content
+#        messages and the sparse keyed entry), each named (backticked) in the
+#        FIELD column (the column whose header is "field", else the first)
+#        of a row; a mention in another row's reason does not count. Each row
+#        has a verdict. A row with a destination-specific or per-receiver
+#        verdict STOPS the ticket: it fails with the stop message, and its
+#        field must also appear in the review record's discrepancies. The
+#        audit states that no destination-specific or per-receiver field
+#        exists.
 #   AC4  A review record (a wire.md section headed "Review record", or a file
 #        under REPORTS_DIR linked from the Traceability section) states the
 #        reviewer, a date, the protocol and packetisation heading of
@@ -48,7 +55,23 @@
 #        has a resolution (or an explicit "no discrepancy"), a resolution that
 #        changes another design document names 004-23 or an owner, and that the
 #        traceability table is attached (a link to the Traceability anchor or
-#        the table itself).
+#        the table itself). Work 3: every subsection 3.N of the architecture's
+#        protocol section is either named by a discrepancy row/item or stated
+#        to have no difference; the known contradictions (the copy-index
+#        "retransmitting" wording against § 3.7, the "verified by the receiving
+#        peer" marking of § 3.5 when the architecture says it, and the
+#        residence_time sentences that contradict each other) must each have a
+#        discrepancy row for the design owner. The record must not claim to hold
+#        every known difference, and must not say the ticket allows its
+#        placement.
+#
+# Declared limits (verified by review only, not by this check):
+#   - References RESOLVE: a reference names a real heading of wire.md and a
+#     real field of wire.toml. The check does not verify that the named
+#     section really implements the rule or constant; a row that points at a
+#     real but wrong section passes. Review of the rows is the only control.
+#   - The completeness of the review record (every difference of epic 004) is
+#     not verified; the record must claim only what it found.
 #   DoD  Every paragraph of 5+ words in the new sections carries an evidence
 #        tag; open items name an owner and a falsifier; no `main` ref; the
 #        record's links resolve. When not overridden: `cargo run --bin
@@ -384,56 +407,88 @@ if trace is not None:
             if re.fullmatch(r"[a-z][a-z0-9]*(_[a-z0-9]+)+", tok) and tok not in KNOWN:
                 fail("AC1", f"a Traceability row cites `{tok}`, which is not a field of wire.toml")
 
-# AC2 constants
-const_rows = {}
-if trace is not None:
-    for row in trace_rows:
-        if not row:
-            continue
-        ids = expand_ids(" | ".join(row))
-        for i in ids:
-            const_rows.setdefault(i, []).append(row)
-
-def row_mapping(row):
-    return " | ".join(row[1:]).strip()
-
-def row_fields(row):
-    names = []
-    for tok in re.findall(r"`([^`]+)`", " | ".join(row)):
-        if tok in KNOWN:
-            names.append(tok)
-    return names
-
-def row_unit_ok(row, fields):
-    text = " | ".join(row)
-    if UNIT_RE.search(text) or UNIT_NONE_RE.search(text):
-        return True
-    for f in fields:
-        if UNIT_RE.search(field_text(f)):
-            return True
-    return False
+# AC2 constants: only the CONSTANT cell of the constants table counts
+# A width is stated as "`name` (N bits, unit)" or, for a list, "`a`, `b` (N bits each, unit)",
+# or with a colon, "`a`, `b`: N bits each, unit". The unit must follow the width in the same
+# parentheses or clause; "bits" alone is the width, not a unit.
+NAMES_PAT = r"((?:`[a-z][a-z0-9_]*`)(?:\s*(?:,|and|or)\s*`[a-z][a-z0-9_]*`)*)"
+WIDTH_RES = [
+    re.compile(NAMES_PAT + r"\s*\(\s*(\d+)\s*(bits?|bytes?)\b([^)]*)\)"),
+    re.compile(NAMES_PAT + r"\s*:\s*(\d+)\s*(bits?|bytes?)\b([^;|]*)"),
+]
+UNIT_AFTER_RE = re.compile(
+    r"\b(bytes?|ns|fs|ps|µs|us|ms|samples?|frames?|packets?|slices?|Hz|counts?|codes?|ids?|identifiers?|"
+    r"flags?|none|epochs?|operations?)\b|\bper\s+\w+|bits?/s|unit:\s*none\s*\(")
 
 def cid(i):
     return f"C-{i:02d}" if i < 100 else f"C-{i}"
 
+CONST_TABLE = []
+if trace is not None:
+    for t in tables_in(W, trace_lo, trace_hi):
+        if t["header"] and "constant" in t["header"][0]:
+            CONST_TABLE.extend(r for r in t["rows"] if r)
+    if not CONST_TABLE:
+        fail("AC2", "the Traceability section has no constants table (a table whose first header cell is 'Constant')")
+const_cell = {}
+for row in CONST_TABLE:
+    for i in expand_ids(row[0]):
+        const_cell.setdefault(i, []).append(row)
+
+def row_mapping(row):
+    return " | ".join(row[1:]).strip()
+
+def width_problems(row):
+    """(number of fields stated with a width, problems) for one row, width and unit IN the row."""
+    text = " | ".join(row)
+    problems = []
+    covered = set()
+    stated = 0
+    matches = [gm for rx in WIDTH_RES for gm in rx.finditer(text)]
+    for gm in matches:
+        names = re.findall(r"`([^`]+)`", gm.group(1))
+        width = int(gm.group(2))
+        bits = width if gm.group(3).startswith("bit") else width * 8
+        for n in names:
+            covered.add(n)
+            stated += 1
+            if n not in KNOWN:
+                problems.append(f"`{n}` is not a wire.toml field")
+                continue
+            # a name can occur in several wire.toml messages; the stated width must be one of them
+            widths = [f.get("width") for f in FIELD_INFO[n]]
+            if bits not in widths:
+                problems.append(f"`{n}` is stated at {bits} bits but wire.toml gives {widths}")
+        if not UNIT_AFTER_RE.search(gm.group(4)):
+            problems.append(f"no unit in the row for {', '.join(names)} (write e.g. (N bits, ns) or unit: none (reason))")
+    for tok in re.findall(r"`([^`]+)`", text):
+        if tok in KNOWN and tok not in covered:
+            problems.append(f"`{tok}` is named in the row without its width")
+    return stated, problems
+
+for row in CONST_TABLE:
+    if expand_ids(row[0]) & VISIBLE_IDS:
+        for p in width_problems(row)[1]:
+            fail("AC2", f"wire-visible row '{row[0][:40]}': {p}")
+
 for i in sorted(LIST_IDS):
-    rows = const_rows.get(i, [])
+    rows = const_cell.get(i, [])
     if not rows:
-        fail("AC2", f"constant {cid(i)} of the ticket's list has no row in the Traceability section")
+        fail("AC2", f"constant {cid(i)} of the ticket's list is not named in the CONSTANT cell of any row of the constants table (a mention elsewhere does not count)")
         continue
     resolved_rows = [r for r in rows if reference_resolves(row_mapping(r), W)]
     if not resolved_rows:
-        fail("AC2", f"constant {cid(i)}: no row naming it has a mapping cell that resolves to a heading of wire.md")
+        fail("AC2", f"constant {cid(i)}: no row naming it in the constants table has a mapping cell that resolves to a heading of wire.md")
         continue
     if i in VISIBLE_IDS:
         ok = False
         for r in resolved_rows:
-            fields = row_fields(r)
-            if fields and row_unit_ok(r, fields):
+            stated, probs = width_problems(r)
+            if stated and not probs:
                 ok = True
                 break
         if not ok:
-            fail("AC2", f"wire-visible constant {cid(i)} has no row mapping it to a wire.toml field (backticked name) with a width and a unit")
+            fail("AC2", f"wire-visible constant {cid(i)} has no row stating its field with a width and a unit in the row (form: `name` (N bits, unit))")
 
 # explicit not-wire-visible reasons
 if trace is not None:
@@ -461,40 +516,54 @@ info(f"media-layer distinct field names: {len(EXPECTED)}")
 audit_heads = [h for h in W.heads if re.search(r"audit", h["text"], re.I)]
 audit_ranges = [W.section_range(h) for h in audit_heads]
 audit_text = "\n".join("\n".join(W.lines[lo:hi]) for lo, hi in audit_ranges)
-audit_rows = []
+audit_rows = []  # (media field names named in the FIELD cell, row)
+audit_tables = []
 if not audit_heads:
     fail("AC3", f"{wire_path} has no section headed 'audit' (the per-receiver field audit of Work 2)")
 else:
     for lo, hi in audit_ranges:
-        for t in tables_in(W, lo, hi):
-            audit_rows.extend(t["rows"])
+        audit_tables.extend(tables_in(W, lo, hi))
 
 def cell_plain(c):
     return re.sub(r"[`*]", "", c).strip().lower()
 
-bad_fields = []
-missing_fields = []
-for name in EXPECTED:
-    found = False
-    for row in audit_rows:
-        for c in row:
-            if re.search(r"`%s`" % re.escape(name), c) or cell_plain(c) == name:
-                found = True
-    if not found:
-        missing_fields.append(name)
-if audit_heads and missing_fields:
-    fail("AC3", f"the audit lists no row for media field(s): {', '.join(missing_fields)}")
+def field_col(t):
+    hdr = t["header"] or []
+    for k, h in enumerate(hdr):
+        if re.search(r"\bfield\b", h):
+            return k
+    return 0
 
-for row in audit_rows:
-    names = [n for n in EXPECTED if any(re.search(r"`%s`" % re.escape(n), c) or cell_plain(c) == n for c in row)]
-    if not names:
+def names_in_field_cell(cell):
+    toks = re.findall(r"`([^`]+)`", cell)
+    if toks:
+        return toks
+    return [p.strip() for p in re.split(r",|\band\b", cell_plain(cell)) if p.strip()]
+
+for t in audit_tables:
+    k = field_col(t)
+    for row in t["rows"]:
+        if len(row) > k:
+            audit_rows.append((names_in_field_cell(row[k]), row))
+
+covered_names = set()
+for names, row in audit_rows:
+    covered_names.update(names)
+missing_fields = [n for n in EXPECTED if n not in covered_names]
+if audit_heads and missing_fields:
+    fail("AC3", "the audit has no row whose FIELD cell names media field(s): " + ", ".join(missing_fields))
+
+bad_fields = []
+for names, row in audit_rows:
+    rown = [n for n in names if n in EXPECTED]
+    if not rown:
         continue
     cells_plain = [cell_plain(c) for c in row]
     if any(VERDICT_BAD.match(c) for c in cells_plain):
-        bad_fields.extend(names)
+        bad_fields.extend(rown)
         continue
     if not any(VERDICT_OK.match(c) for c in cells_plain):
-        fail("AC3", f"the audit row for {', '.join(names)} states no verdict (none / no destination-specific or per-receiver content)")
+        fail("AC3", f"the audit row for {', '.join(rown)} states no verdict (none / no destination-specific or per-receiver content)")
 
 if bad_fields:
     fail("AC3", "STOP: the audit finds a destination-specific or per-receiver media field "
@@ -667,6 +736,97 @@ if record_text:
         for name in sorted(set(bad_fields)):
             if name not in disc_body:
                 fail("AC3", f"destination-specific or per-receiver field {name} is not recorded as a discrepancy in the review record")
+
+# ---------------------------------------------------------------- review record: § 3 coverage, known contradictions, scope claims
+def flat(text):
+    return re.sub(r"\s+", " ", text)
+
+def toks_of(text):
+    return [re.sub(r"[^\w/.\-]", "", t).lower() for t in re.findall(r"\S+", text)]
+
+if record_text:
+    rec_lines = RT.split("\n")
+    s3_lines = []
+    in_s3 = False
+    for line in rec_lines:
+        if line.lstrip().startswith("#"):
+            in_s3 = re.search(r"§\s*3\b", line) is not None
+            continue
+        if in_s3:
+            s3_lines.append(line)
+
+    def is_item(line):
+        return line.strip().startswith("|") or re.match(r"^\s*([-*]|\d+\.)\s+", line) is not None
+
+    def no_diff(line):
+        return re.search(r"no\s+(discrepanc|difference)", line, re.I) is not None
+
+    def names_sec(line, num):
+        return re.search(r"(?<![\d.])3\.%s(?!\d)" % num, line) is not None
+
+    def discrepancy_line(line, num, must=None):
+        if not (is_item(line) and not no_diff(line) and names_sec(line, num)):
+            return False
+        return must is None or re.search(must, line, re.I) is not None
+
+    # Work 3: every subsection 3.N of the protocol section is accounted for
+    arch_doc = Doc(arch_path)
+    proto = [h for h in arch_doc.heads if "protocol" in norm(h["text"]) and "packetis" in norm(h["text"])]
+    if proto:
+        plo, phi = arch_doc.section_range(proto[0])
+        subs = []
+        for h in arch_doc.heads:
+            if plo < h["idx"] < phi:
+                m = re.match(r"^3\.(\d+)\b", h["text"])
+                if m:
+                    subs.append((m.group(1), h["text"]))
+        if not subs:
+            fail("AC4", f"{arch_path}: no subsection 3.N under the protocol section, so Work 3 cannot be checked")
+        for num, title in subs:
+            covered = any(discrepancy_line(l, num) for l in s3_lines) or any(
+                names_sec(l, num) and no_diff(l) for l in rec_lines)
+            if not covered:
+                fail("AC4", f"Work 3: the architecture subsection 3.{num} ('{title}') is neither named by a discrepancy row or item of the review record nor stated to have no difference (quote the 'no difference' statement for it)")
+
+    # the two rows the review found missing
+    ci = [h for h in W.heads if norm(h["text"]).startswith("copy index")]
+    if ci:
+        ci_lo, ci_hi = W.section_range(ci[0])
+        if "retransmi" in "\n".join(W.lines[ci_lo:ci_hi]).lower():
+            if not any(discrepancy_line(l, "7", "retransmi") for l in rec_lines):
+                fail("AC4", "the review record has no discrepancy row naming § 3.7 and 'retransmi' for the 'retransmitting' wording of wire.md's Copy index section")
+    sec5 = [h for h in arch_doc.heads if re.match(r"^3\.5\b", h["text"])]
+    if sec5:
+        s_lo, s_hi = arch_doc.section_range(sec5[0])
+        if re.search(r"verified by the receiving peer", flat("\n".join(arch_doc.lines[s_lo:s_hi])), re.I):
+            if not any(discrepancy_line(l, "5", r"verif") for l in rec_lines):
+                fail("AC4", "the review record has no discrepancy row naming § 3.5 and 'verified' for the 'verified by the receiving peer' marking the architecture states")
+
+    # the residence_time contradiction between two merged sentences
+    wflat = flat(W.text)
+    if re.search(r"send timestamp of the output packet", wflat, re.I) and re.search(r"same for every consumer", wflat, re.I):
+        if not any(is_item(l) and not no_diff(l) and re.search(r"residence", l, re.I)
+                   and re.search(r"contradic", l, re.I) and re.search(r"owner", l, re.I) for l in rec_lines):
+            fail("AC4", "wire.md says the residence term runs to 'the send timestamp of the output packet' and that the extension's values are 'the same for every consumer': the review record has no discrepancy row naming residence_time as a contradiction for the design owner")
+
+    # scope claims
+    trace_text = "\n".join(W.lines[trace_lo:trace_hi]) if trace is not None else ""
+    for label, text in (("review record", RT), ("Traceability section", trace_text)):
+        tk = toks_of(text)
+        for i in range(len(tk) - 1):
+            if tk[i] == "every" and tk[i + 1] == "known":
+                window = tk[max(0, i - 12): i + 14]
+                if any(t.startswith(("difference", "discrepanc", "item")) for t in window):
+                    fail("AC4", f"the {label} claims to hold every known difference ('every known ...'); the record may state only the items this review found and the earlier reports it names")
+                    break
+        for i, t in enumerate(tk):
+            if t.startswith("004-22"):
+                near = tk[max(0, i - 8): i + 9]
+                wider = tk[max(0, i - 16): i + 17]
+                if any(x in ("allows", "permits") for x in near) and any(
+                        x.startswith(("section", "placement", "here", "where", "file", "record", "kept")) for x in wider):
+                    fail("AC4", f"the {label} says ticket 004-22 allows or permits the record's placement; the ticket names no placement")
+                    break
 
 # ---------------------------------------------------------------- DoD scopes
 scopes = []  # (label, text)
