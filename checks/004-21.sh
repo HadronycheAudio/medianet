@@ -55,9 +55,17 @@
 #         cargo run --bin wire-check reports "checks clean" and
 #         cargo test -p hadronyche-tools --test wire_tables reports at least
 #         12 passed and 0 failed (today's count).
-#   WORK 2  Each (message, reason) pair of the matrix is stated in the
-#         message's own wire.md section (the ## sections mapped below) or in
-#         the shared sections Versioning and Reserved fields.
+#   WORK 2  The matrix and the validity tables agree in both directions:
+#         (a) each (message, reason) pair of the matrix is named in the outcome
+#         cell of a validity row of the message's sections (MAP_RULES, and a
+#         shared table only where the mapped section names it);
+#         (b) for a section whose validity rows serve one message, each reason
+#         in its outcome cells is named in that message's matrix row.
+#   C1      Slice header: the short-datagram row is among the first two rows;
+#         the 'packet count = 0' row precedes 'packet index ≥ packet count'.
+#   C2      Field-table value vs validity rows that accept other values: the
+#         announcement length and the media packet version need a tagged
+#         'Reported contradiction' paragraph naming the field and wire.toml.
 #   WORK 3  One tagged paragraph of the section states the uniform outcome:
 #         drop, count per (input, reason), no state change, and a named event
 #         for a version mismatch (VersionMismatch).
@@ -639,50 +647,214 @@ else:
             fail("WORK4", f"no C-164 bounded-parsing statement names '{n}'")
 
 # ---------------------------------------------------------------------------
-# WORK 2: each matrix (message, reason) pair is stated in the message's section
+# WORK 2: the matrix and the validity tables agree, in both directions.
+#
+# The message-to-section mapping (MAP_RULES) follows the merged text: each
+# in-scope message is laid out by the ## sections named here. A section may
+# also state that a shared validity table applies to a message ("follows the
+# rule order of Receiver report, Validity rules"); the shared table counts
+# only when the mapped section names it. The validity rows of a section are
+# its 2-column tables whose second header cell is "Outcome" or "Required
+# outcome" (the field tables' "Receiver outcome" does not count).
+#
+#   (a) every (message, reason) pair of the matrix is named in the outcome
+#       cell of a validity row of one of the message's sections (or of a
+#       shared table it names). A reason stated only in prose does not pass.
+#   (b) for a section whose validity rows serve exactly one message, every
+#       reason named in one of its outcome cells is named in that message's
+#       matrix row, so "not applicable" cannot hide an existing rule.
+#       Sections serving several messages are skipped and listed in INFO.
+#
+# Declared limits: a reason swapped between two class cells of the same row
+# passes (rows are not keyed to classes); a deleted row passes while another
+# row of the same message still names the reason.
 # ---------------------------------------------------------------------------
-SECTION_MAP = [
-    (r"^media packet$", ["Media packet header", "Slice header", "Announcements", "Measurement extension", "Checksum"]),
-    (r"^announcement$", ["Announcements"]),
-    (r"^slice checksum$", ["Checksum"]),
+# Message-to-section mapping. Reviewer finding T2 (PR #38): the manifest
+# section message is laid out in Admission messages ("### Manifest section"),
+# its content rules in Manifest; the one-way probe's shared rows live in
+# Receiver report, which the One-way probe section names ("follows the rule
+# order of Receiver report, Validity rules"). Quoted merged text:
+#   Admission messages: "Manifest section" (the manifest section's own rows);
+#   Manifest: "A manifest that breaks a rule below is dropped whole".
+MAP_RULES = [
+    (r"^media packet$", ["Media packet header", "Slice header", "Measurement extension", "Checksum"], []),
+    (r"^announcement$", ["Announcements"], []),
+    (r"^slice checksum$", ["Checksum"], []),
     (r"^(audio message|dense controller message|sparse keyed controller message|transport state message)$",
-     ["Content messages"]),
-    (r"^sync (request|reply)$", ["Sync request and reply"]),
-    (r"^receiver report", ["Receiver report"]),
-    (r"^one-way probe", ["One-way probe"]),
-    (r"^hello$", ["Hello"]),
-    (r"^(candidacy|holder announcement)$", ["Election messages"]),
-    (r"^admission ", ["Admission messages"]),
-    (r"^manifest section$", ["Manifest"]),
-    (r"^path-MTU probe ", ["Path-MTU probe pair"]),
-    (r"^regime stamp", ["Regime stamp"]),
-    (r"^commissioning window ", ["Commissioning window messages"]),
+     ["Content messages"], []),
+    (r"^sync (request|reply)$", ["Sync request and reply"], []),
+    (r"^receiver report", ["Receiver report"], []),
+    (r"^one-way probe", ["One-way probe"], ["Receiver report"]),
+    (r"^hello$", ["Hello"], []),
+    (r"^(candidacy|holder announcement)$", ["Election messages"], []),
+    (r"^admission ", ["Admission messages"], []),
+    (r"^manifest section$", ["Admission messages", "Manifest"], []),
+    (r"^path-MTU probe ", ["Path-MTU probe pair"], []),
+    (r"^regime stamp", ["Regime stamp"], []),
+    (r"^commissioning window ", ["Commissioning window messages"], []),
 ]
-SHARED = ["Versioning", "Reserved fields"]
-w2_unmapped = {}
+OUTCOME_HDR = re.compile(r"^(required outcome|outcome)$", re.I)
+
+
+def rule_for(name):
+    for rx, direct, shared in MAP_RULES:
+        if re.search(rx, name):
+            return direct, shared
+    return None, None
+
+
+def validity_rows(title):
+    """Rows (form, outcome) of the validity tables of one ## section, in order;
+    None when the section is missing."""
+    rg = sec_range(title)
+    if rg is None:
+        return None
+    rows = []
+    for t in tables(units(*rg)):
+        oi = [j for j, h in enumerate(t["header"]) if OUTCOME_HDR.match(h.strip())]
+        if not oi:
+            continue
+        oi = oi[0]
+        for r in t["rows"]:
+            form = r[0] if r else ""
+            outcome = r[oi] if oi < len(r) else ""
+            rows.append({"form": form, "outcome": outcome, "section": title})
+    return rows
+
+
+def mapped_rows(name):
+    # Shared table counts only when the mapped section names it; the One-way
+    # probe section states: "follows the rule order of Receiver report,
+    # Validity rules, whose header, padding and reserved-bit rows apply to it".
+    """Validity rows that apply to a message: its direct sections, plus each
+    shared section that a direct section names. Returns (rows, sections)."""
+    direct, shared = rule_for(name)
+    if direct is None:
+        return None, []
+    rows = []
+    used = []
+    for title in direct:
+        r = validity_rows(title)
+        if r is None:
+            fail("WORK2", f"wire.md has no '## {title}' section (mapped for '{name}')")
+            continue
+        rows += r
+        used.append(title)
+        text = "\n".join(lines[sec_range(title)[0]:sec_range(title)[1]])
+        for s in shared:
+            if phrase_re(norm(s)).search(norm(text)):
+                rows += validity_rows(s) or []
+                used.append(s)
+    return rows, used
+
+
+# direct consumers of each section, and the consumers that share it
+consumers = {}
+for m in in_scope:
+    n = m["kv"]["name"]
+    direct, shared = rule_for(n)
+    if direct is None:
+        fail("WORK2", f"no wire.md section mapping for in-scope message '{n}'")
+        continue
+    for title in direct:
+        consumers.setdefault(title, set()).add(n)
+    for title in shared:
+        consumers.setdefault(title, set()).add(n)
+
+W2_PAIRS = {}
 for names, reason, rlabel, colname in cell_pairs:
     for n in names:
-        target = None
-        for rx, secs in SECTION_MAP:
-            if re.search(rx, n):
-                target = secs
-                break
-        if target is None:
-            fail("WORK2", f"no wire.md section is mapped for message '{n}'")
-            continue
-        text = ""
-        for title in target + SHARED:
-            rg = sec_range(title)
-            if rg is None:
-                fail("WORK2", f"wire.md has no '## {title}' section (mapped for '{n}')")
-                continue
-            text += "\n".join(lines[rg[0]:rg[1]]) + "\n"
-        if not REASON_RE.get(reason, re.compile("$^")).search(text):
-            w2_unmapped.setdefault(n, []).append(reason)
-for n, rs in sorted(w2_unmapped.items()):
-    fail("WORK2", f"'{n}': the reasons {sorted(set(rs))} of the matrix are not stated in its wire.md section "
-         f"({', '.join(sorted({t for rx, s in SECTION_MAP if re.search(rx, n) for t in s}))}) "
-         "or in Versioning / Reserved fields")
+        W2_PAIRS.setdefault((n, reason), (rlabel, colname))
+w2_checked_rows = {}
+for (n, reason), (rlabel, colname) in sorted(W2_PAIRS.items()):
+    rows, used = mapped_rows(n)
+    if rows is None:
+        continue
+    w2_checked_rows[n] = used
+    if not any(REASON_RE[reason].search(r["outcome"]) for r in rows):
+        fail("WORK2", f"'{n}': reason {reason} of matrix row '{rlabel}' ({colname}) is named in no outcome cell "
+             f"of a validity row of {', '.join(used) or 'no section'}; a reason stated only in prose does not count")
+
+skipped_sections = []
+single_sections = []
+for title, cons in sorted(consumers.items()):
+    rows = validity_rows(title) or []
+    if len(cons) != 1:
+        skipped_sections.append(title)
+        continue
+    (only,) = cons
+    single_sections.append(f"{title} -> {only}")
+    row_reasons_for = set()
+    for _, names_, rs in row_reasons_by_row:
+        if only in names_:
+            row_reasons_for |= rs
+    for r in rows:
+        for reason in ENUM_NAMES:
+            if REASON_RE[reason].search(r["outcome"]) and reason not in row_reasons_for:
+                fail("WORK2", f"section '{title}' states {reason} in the outcome of its validity row "
+                     f"{r['form'][:60]!r}, but the matrix row for '{only}' names {reason} in no class cell "
+                     "(not applicable hides an existing rule)")
+
+# ---------------------------------------------------------------------------
+# C1: the media rule order that the slice header table can decide. Quoted
+# merged rows of the Slice header table: "too short for the slice header: a
+# datagram of 16 to 37 bytes, or a packet of a non-gap slice that ends before
+# its announcement count byte at offset 38" (must be among the first two rows,
+# before the rows that read bytes 24 to 29); "packet count = 0 (a slice cannot
+# consist of zero packets ...)" must precede "packet index ≥ packet count"
+# (with a count of 0 the index test always holds; reviewer C1).
+# (the coordinator's two decidable assertions; the global order is not checked)
+# ---------------------------------------------------------------------------
+sh = validity_rows("Slice header") or []
+forms = [r["form"] for r in sh]
+short_i = next((i for i, f in enumerate(forms)
+                if re.search(r"too short for the slice header", f, re.I) and re.search(r"16", f)), None)
+zero_i = next((i for i, f in enumerate(forms)
+               if re.search(r"packet count", f, re.I) and re.search(r"=\s*0\b|\bzero\b", f, re.I)), None)
+index_i = next((i for i, f in enumerate(forms)
+                if re.search(r"index", f, re.I) and re.search(r"count", f, re.I)
+                and re.search(r"≥|>=|outside|above", f, re.I)), None)
+if short_i is None:
+    fail("C1", "Slice header: no validity row for a datagram of 16 to 37 bytes (too short for the slice header)")
+elif short_i >= 2:
+    fail("C1", "Slice header: the row for a datagram too short for the slice header is at position "
+         f"{short_i + 1} of its table; it must be among the first two rows, before any row that reads "
+         "bytes the short datagram lacks (Rule order: the first rows of the media order)")
+if zero_i is None or index_i is None:
+    fail("C1", "Slice header: no row for 'packet count = 0' or none for 'packet index ≥ packet count'")
+elif zero_i > index_i:
+    fail("C1", "Slice header: the row 'packet count = 0' must precede the row 'packet index ≥ packet count', "
+         "because with a count of 0 the index test always holds")
+
+# ---------------------------------------------------------------------------
+# C2: field-table value vs validity rows that accept other values. Quoted
+# merged text: announcement row "length above 10 for a type code 0 to 3 | not a
+# rejection: the receiver reads the 10 bytes v1 knows and skips the rest"
+# against wire.toml announcement length valid "10 in v1: the 8-byte position
+# plus the 2-byte payload"; media row "version mismatch ... a packet of major 1
+# and another minor is accepted" against wire.toml media packet version valid
+# "0x0100 in v1" (reviewer C2, C3: the report must name wire.toml).
+# (announcement length, media packet version). A case applies only when a
+# validity row of the section accepts values outside the field's valid range;
+# then a tagged "Reported contradiction" paragraph of Validity rules must name
+# the field and wire.toml.
+# ---------------------------------------------------------------------------
+vr_prose = [u for u in vr_units if u["kind"] == "prose" and has_evidence(u["text"])]
+ann_rows = validity_rows("Announcements") or []
+if any(re.search(r"length above 10", r["form"], re.I) and re.search(r"skip", r["outcome"], re.I) for r in ann_rows):
+    if not any(re.search(r"Reported contradiction", u["text"]) and re.search(r"\blength\b", u["text"])
+               and "wire.toml" in u["text"] and re.search(r"announcement", u["text"], re.I) for u in vr_prose):
+        fail("C2", "the announcement's length: a validity row accepts lengths above the field's valid range "
+             "'10 in v1' (wire.toml announcement length), but no tagged 'Reported contradiction' paragraph of "
+             "'Validity rules' names the length field and wire.toml")
+med_rows = validity_rows("Media packet header") or []
+if any(re.search(r"version", r["form"], re.I) and re.search(r"major", r["form"], re.I)
+       and re.search(r"accepted", r["form"], re.I) for r in med_rows):
+    if not any(re.search(r"Reported contradiction", u["text"]) and re.search(r"\bversion\b", u["text"], re.I)
+               and "wire.toml" in u["text"] and re.search(r"media", u["text"], re.I) for u in vr_prose):
+        fail("C2", "the media packet's version: a validity row accepts a major-1 packet of another minor, outside the "
+             "field's valid range '0x0100 in v1' (wire.toml media packet version), but no tagged 'Reported "
+             "contradiction' paragraph of 'Validity rules' names the version field and wire.toml")
 
 # ---------------------------------------------------------------------------
 # AC 2: every enumeration value is used across the matrix and the toml lists
@@ -853,6 +1025,8 @@ else:
     print("NOTE AC5: document paths overridden; repository-level checks skipped")
 
 # ---------------------------------------------------------------------------
+print(f"INFO work2 pairs checked: {len(W2_PAIRS)}; single-message sections checked: {single_sections}; "
+      f"sections serving several messages (not attributed): {skipped_sections}")
 print(f"INFO in-scope messages: {len(in_scope)}; matrix rows: {len(row_reasons_by_row)}; "
       f"exempt from the control bound: {exempt_set}; C-17 bound: {C17}; "
       f"open-item candidates outside the section: {sum(counts.values())} "
