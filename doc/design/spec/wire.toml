@@ -2688,6 +2688,275 @@ valid = "manifest length bytes, at most 1 196"
 count = "manifest_length"
 max_count = 1196
 
+# Manifest (ticket 004-26): the machine-readable copy of wire.md's "Manifest"
+# element tables, which are the authority. The manifest is the payload the
+# manifest section carries (its manifest_bytes field above): the sections'
+# manifest bytes in index order. Its top-level table — a 31-byte fixed part
+# (L, cost bound, required E, declared E and seven counts) and seven lists —
+# is 18 977 bytes at its maximum counts (31 + 51 x 45 + 8 x 34 + 256 x 15 +
+# 255 x 5 + 1 536 x 2 + 1 024 x 4 + 1 024 x 4), above the 1 252-byte bound the
+# checker applies to every control-layer message, and it is not a datagram:
+# it travels split across manifest sections of at most 1 252 bytes each
+# (C-17), 16 at the least for a manifest at its maximum and at most 255, so it
+# is declared here through that envelope, not as a
+# [[message]] of its own. Its four element tables are declared below as
+# their own [[message]] tables, as the hello's elements are; offsets are bits
+# from the element's first byte. A manifest that breaks a rule is dropped
+# whole and counted once under the named reason. No field is a timer.
+
+[[message]]
+name = "manifest port element"
+layer = "control"
+dscp = 40
+max_size = 45
+rejection_reasons = ["BadLength", "ReservedNonZero"]
+
+[[message.field]]
+name = "direction"
+offset = 0
+width = 1
+type = "uint"
+meaning = "direction, bit 0 of byte 0: 0 = input, 1 = output, the hello's encoding"
+valid = "0 or 1"
+
+[[message.field]]
+name = "device_facing"
+offset = 1
+width = 1
+type = "uint"
+meaning = "device-facing, bit 1 of byte 0: 1 = the port faces a hardware device, an edge module's capture input or playback output (C-207); 0 = a network port"
+valid = "0 or 1"
+
+[[message.field]]
+name = "reserved"
+offset = 2
+width = 6
+type = "uint"
+meaning = "reserved, bits 7..2 of byte 0 (Reserved fields, General rule for later tickets)"
+valid = "0 only; a set bit is ReservedNonZero"
+reserved = "0"
+
+[[message.field]]
+name = "conversion_delay"
+offset = 8
+width = 32
+type = "u32"
+meaning = "conversion delay of a device-facing port (C-207): the delay of the edge's fixed-ratio resampler node (C-189, C-134), in whole samples at the domain rate, 96 000 Hz (C-01)"
+valid = "any 32-bit value on a device-facing port; 0 only on a port that is not device-facing, else BadLength"
+
+[[message.field]]
+name = "channel_count"
+offset = 40
+width = 16
+type = "u16"
+meaning = "channel count: how many audio channels the port carries, numbered 0 to count - 1; for an output that stream elements name, the number of channel-map entries its streams carry"
+valid = "0 to 1 536"
+
+[[message.field]]
+name = "content_type_count"
+offset = 56
+width = 8
+type = "u8"
+meaning = "content-type count: how many content types the port carries"
+valid = "1 to 4; 0 or above 4 is BadLength"
+
+[[message.field]]
+name = "name_length"
+offset = 64
+width = 8
+type = "u8"
+meaning = "name length: how many bytes of name follow the content types"
+valid = "1 to 32; 0 or above 32 is BadLength"
+
+[[message.field]]
+name = "content_type"
+offset = 72
+width = 8
+type = "u8"
+meaning = "content type: a content-message kind code (0 audio, 1 dense controllers, 2 sparse keyed controllers, 3 transport state), each at most once per port, the hello's codes"
+valid = "content_type_count codes, at most 4; a code above 3 is ignored; a code twice is BadLength"
+count = "content_type_count"
+max_count = 4
+
+[[message.field]]
+name = "name"
+offset = 104
+width = 8
+type = "u8"
+meaning = "name: the port's name, UTF-8 (RFC 3629) as the module name is (Hello, Name)"
+valid = "name_length bytes, 1 to 32; valid UTF-8, else BadLength (provisional)"
+count = "name_length"
+max_count = 32
+
+[[message]]
+name = "manifest bundle element"
+layer = "control"
+dscp = 40
+max_size = 34
+rejection_reasons = ["BadLength"]
+
+[[message.field]]
+name = "group_id"
+offset = 0
+width = 8
+type = "u8"
+meaning = "group id: the bundle's identity within its source, the hello's group id; 1 byte, confirming the width the hello proposes"
+valid = "0 to 255; distinct among the manifest's bundles, else BadLength"
+
+[[message.field]]
+name = "member_count"
+offset = 8
+width = 8
+type = "u8"
+meaning = "member count: how many members the bundle has, the controller member included (C-08, C-209)"
+valid = "1 to 32; 0 or above 32 is BadLength"
+
+[[message.field]]
+name = "member"
+offset = 16
+width = 8
+type = "u8"
+meaning = "member: the stream number (C-10) of a member, in the order of the hello's member list"
+valid = "member_count entries, at most 32; each the stream number of a stream element of the manifest, distinct, all naming one output port, else BadLength"
+count = "member_count"
+max_count = 32
+
+[[message]]
+name = "manifest stream element"
+layer = "control"
+dscp = 40
+max_size = 15
+rejection_reasons = ["BadLength", "ReservedNonZero"]
+
+[[message.field]]
+name = "stream_number"
+offset = 0
+width = 8
+type = "u8"
+meaning = "stream number (C-10) of the stream at this source, the 1-byte encoding of the hello's member list"
+valid = "0 to 255 (C-09); distinct among the stream elements, else BadLength"
+
+[[message.field]]
+name = "output_port_id"
+offset = 8
+width = 8
+type = "u8"
+meaning = "output port id: the port id of the output port this stream belongs to; the port-to-stream mapping"
+valid = "the id of a port of the manifest that is an output and not device-facing, else BadLength"
+
+[[message.field]]
+name = "role"
+offset = 16
+width = 1
+type = "uint"
+meaning = "role, bit 0 of byte 2: 0 = audio stream, 1 = controller stream (Content messages, Content region)"
+valid = "0 or 1"
+
+[[message.field]]
+name = "sample_format"
+offset = 17
+width = 1
+type = "uint"
+meaning = "sample format, bit 1 of byte 2: 0 = f32, 1 = Q1.31, for audio and every controller value of the stream (C-03)"
+valid = "0 or 1"
+
+[[message.field]]
+name = "transport_state"
+offset = 18
+width = 1
+type = "uint"
+meaning = "transport state, bit 2 of byte 2: 1 = the stream carries one transport state message in every non-gap slice"
+valid = "0 or 1"
+
+[[message.field]]
+name = "measured"
+offset = 19
+width = 1
+type = "uint"
+meaning = "measured, bit 3 of byte 2: 1 = this source measures the stream and emits the measurement extension on it"
+valid = "0 or 1"
+
+[[message.field]]
+name = "reserved"
+offset = 20
+width = 4
+type = "uint"
+meaning = "reserved, bits 7..4 of byte 2 (Reserved fields, General rule for later tickets)"
+valid = "0 only; a set bit is ReservedNonZero"
+reserved = "0"
+
+[[message.field]]
+name = "frames_per_slice"
+offset = 24
+width = 16
+type = "u16"
+meaning = "frames per slice: the stream's slice length at the domain rate, the frames field of its slices"
+valid = "1 to 65 535; 48 in the default regime (C-02); 0 is BadLength"
+
+[[message.field]]
+name = "channel_count"
+offset = 40
+width = 16
+type = "u16"
+meaning = "channel count: how many channel-map entries the stream has, one per channel of its audio message"
+valid = "1 to 1 536 for an audio stream; 0 for a controller stream; else BadLength"
+
+[[message.field]]
+name = "dense_controller_count"
+offset = 56
+width = 16
+type = "u16"
+meaning = "dense controller count: how many dense controllers the stream carries, in controller-map order"
+valid = "0 to 1 024"
+
+[[message.field]]
+name = "sparse_field_count"
+offset = 72
+width = 16
+type = "u16"
+meaning = "sparse field count: how many fields the stream's sparse field map declares"
+valid = "0 to 256; above 256 is BadLength"
+
+[[message.field]]
+name = "controller_bytes_per_slice"
+offset = 88
+width = 32
+type = "u32"
+meaning = "controller bytes per slice: the most bytes of controller messages, common headers included, the stream carries in one slice, the c of C-219"
+valid = "any 32-bit value; 0 for a stream that carries no controller message"
+
+[[message]]
+name = "manifest join element"
+layer = "control"
+dscp = 40
+max_size = 5
+rejection_reasons = ["BadLength", "ReservedNonZero"]
+
+[[message.field]]
+name = "inserted_join_delay"
+offset = 0
+width = 32
+type = "u32"
+meaning = "inserted join delay (C-104): the delay padded onto the shorter path at one join, in whole samples at the domain rate, 96 000 Hz (C-01, C-105)"
+valid = "1 to L samples; 0 or above L is BadLength"
+
+[[message.field]]
+name = "frequency_dependent"
+offset = 32
+width = 1
+type = "uint"
+meaning = "frequency-dependent flag of the join, bit 0 of byte 4: 1 = a path of this join has frequency-dependent delay and was padded on its structural part only (C-104, C-189)"
+valid = "0 or 1"
+
+[[message.field]]
+name = "reserved"
+offset = 33
+width = 7
+type = "uint"
+meaning = "reserved, bits 7..1 of byte 4 (Reserved fields, General rule for later tickets)"
+valid = "0 only; a set bit is ReservedNonZero"
+reserved = "0"
+
 # Path-MTU probe pair (ticket 004-27): the machine-readable copy of wire.md's
 # "Path-MTU probe pair" section, which is the authority. Codes 32 and 33 in the
 # block 32 to 35 the Hello reserves. The request is sent at the probe's intended
