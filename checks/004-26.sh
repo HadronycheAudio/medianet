@@ -890,11 +890,7 @@ if TOP_BYTES is not None:
     if TOP_BYTES <= BOUND:
         check("AC3", True, f"the maximum manifest size, {TOP_BYTES} bytes, fits the {BOUND}-byte control bound")
     else:
-        falsified = re.search(r"falsif", FLAT, re.I) is not None
-        split = re.search(r"\bsplit", FLAT, re.I) is not None
-        check("AC3", falsified and split,
-              f"the maximum manifest size, {TOP_BYTES} bytes, exceeds {BOUND}: the text reports the falsified "
-              "constant and proposes a split")
+        pass  # the falsification report is checked in T1 below
 
 # --- AC4: join-delay bound recorded as an open item with an owner and a falsifier ---
 PROSE = [b for b in prose_blocks(MAN_TEXT) if b[0] == "p"]
@@ -922,14 +918,62 @@ def cat(pred):
 
 check("AC5", cat(lambda f, o: re.search(r"count", f, re.I) and re.search(r"above|more than|exceed|maximum|greater", f, re.I)),
       "a count above its maximum is an invalid form")
-check("AC5", cat(lambda f, o: re.search(r"length|size", f, re.I) and "BadLength" in o),
+check("AC5", cat(lambda f, o: re.search(r"length", f, re.I) and re.search(r"inconsistent|does not fill|not fill", f, re.I) and "BadLength" in o),
       "a length inconsistent with the sections is an invalid form with outcome BadLength")
 check("AC5", cat(lambda f, o: re.search(r"channel[- ]map", f, re.I) and re.search(r"range|duplicat|distinct|twice", f, re.I)),
       "a channel-map entry out of range or duplicated is an invalid form")
 check("AC5", cat(lambda f, o: re.search(r"device", f, re.I) and re.search(r"conversion", f, re.I)),
       "a conversion delay on a port that is not device-facing is an invalid form")
-check("AC5", cat(lambda f, o: re.search(r"reserved|non-?zero", f, re.I)),
+check("AC5", cat(lambda f, o: re.search(r"reserved", f, re.I)),
       "a non-zero reserved field is an invalid form (Work item 3)")
+
+# --- T1: a falsified criterion is reported as falsified, never denied (review finding) ------------
+PARAS_FLAT = [re.sub(r"\s+", " ", strip_fences(b[1])) for b in prose_blocks(MAN_TEXT) if b[0] == "p"]
+DENIAL = re.compile(r"no\s+(constant|statement|criterion|design statement)[^.]*?falsif|not\s+falsif", re.I)
+AFFIRM = re.compile(r"\b(is|are)\s+falsified\b|\bfalsifies\b", re.I)
+AC3_NAME = re.compile(r"\bAC[- ]3\b")
+DENIAL_HITS = [p for p in PARAS_FLAT if DENIAL.search(p) and not (AFFIRM.search(p) and AC3_NAME.search(p))]
+for p in DENIAL_HITS:
+    check("AC3", False, f"a paragraph denies a falsification without reporting one as falsified: "
+                        f"'{DENIAL.search(p).group(0)}'")
+check("AC3", not DENIAL_HITS, "no paragraph denies a falsification without the affirmative report of AC-3")
+if TOP_BYTES is not None and TOP_BYTES > BOUND:
+    REPORT = [p for p in PARAS_FLAT if AFFIRM.search(p) and AC3_NAME.search(p) and "012-08" in p]
+    check("AC3", bool(REPORT),
+          "a paragraph reports as falsified (is/are falsified) the epic's AC-3 and 012-08 AC 2, which assume a "
+          "one-message manifest")
+    if REPORT:
+        R = REPORT[0]
+        nums = {to_int(x) for x in re.findall(NUM, R)}
+        check("AC3", TOP_BYTES in nums and BOUND in nums and re.search(r"exceed", R, re.I) is not None,
+              f"the same paragraph states the computed maximum, {TOP_BYTES} bytes, and that it exceeds {BOUND} bytes")
+        check("AC3", re.search(r"design owner", R, re.I) is not None,
+              "the same paragraph says the report goes to the design owner")
+        cap = ENV["manifest_max"] or 0
+        need = math.ceil(TOP_BYTES / cap) if cap else None
+        claimed = {to_int(x) for x in re.findall(r"(" + NUM + r")\s+(?:manifest\s+)?sections?", R, re.I)}
+        check("AC3", need is not None and need in claimed and need <= (ENV["section_max"] or 0) and
+              re.search(r"split", R, re.I) is not None,
+              f"the same paragraph proposes the split: ceil({TOP_BYTES} / {cap}) = {need} sections, within the "
+              f"landed count maximum {ENV['section_max']} (claimed section counts {sorted(claimed)})")
+    join_clause = re.compile(r"(already|is met|are met)[^.]{0,80}1[   ]?252|1[   ]?252[^.]{0,80}(already|is met)", re.I)
+    check("AC4", any(join_clause.search(p) for p in join_open),
+          "the join-delay open item says the second clause of the ticket's falsifier is already met at 1 252 bytes")
+
+# AC 5 reassembly (T3 e): one outcome for a duplicate section index, one for disagreeing sections
+dup_rows = [(f, o) for f, o in FORMS if re.search(r"section index", f, re.I) and re.search(r"duplicate|twice|same|two sections", f, re.I)]
+check("AC5", bool(dup_rows), "a duplicate section index has an invalid-form row")
+for f, o in dup_rows:
+    check("AC5", len([n for n in ALL_REASONS if re.search(r"\b" + n + r"\b", o)]) == 1,
+          "the duplicate section index names exactly one outcome")
+dis_rows = [(f, o) for f, o in FORMS if re.search(r"disagree|differ|different|conflict", f, re.I) and re.search(r"section count|manifest length", f, re.I)]
+check("AC5", any(re.search(r"manifest length", f, re.I) for f, o in dis_rows),
+      "sections that disagree on the manifest length have an invalid-form row")
+check("AC5", any(re.search(r"section count", f, re.I) for f, o in dis_rows),
+      "sections that disagree on the section count have an invalid-form row")
+for f, o in dis_rows:
+    check("AC5", len([n for n in ALL_REASONS if re.search(r"\b" + n + r"\b", o)]) == 1,
+          f"the disagreement row '{f[:40]}' names exactly one outcome")
 
 # --- AC6 and DoD: evidence tags, subsections, and the Markdown/TOML agreement ----------
 for block_kind, text in prose_blocks(MAN_TEXT):
@@ -958,10 +1002,16 @@ else:
 TOML_MSGS = (toml_root or {}).get("message", []) if isinstance(toml_root, dict) else []
 REJECT_SET = set(REJECT)
 
+# T2: the whole manifest above the bound needs a stated reason and an owner for the tooling gap
+WHOLE_OK = any(re.search(r"schema|wire-check|checker", sent, re.I) and
+               re.search(r"cannot|can not|does not|not expressible|no single|not declare", sent, re.I) and
+               re.search(r"\b0\d\d-\d\d\b|\b004-02\b", sent)
+               for p in PARAS_FLAT for sent in re.split(r"(?<=[.;:])\s+", p))
 for k, (rows, offs, total, errs, where) in enumerate(MODELS):
     top = k == 0
-    if rows and sum(r["bits"] * (r["maxc"] or 1) for r in rows) // 8 > BOUND:
-        print(f"NOTE AC6: {where} is above the control bound; its toml declaration is the split's, not checked here")
+    if total // 8 > BOUND:
+        check("AC6", WHOLE_OK, f"{where} ({total // 8} bytes) is above the control bound: wire.toml cannot declare it "
+                               "as one message, and the section says so with an owner for the tooling gap")
         continue
     sig_md = [(offs[i], rows[i]["bits"], rows[i]["maxc"]) for i in range(len(rows))]
     matches = []
@@ -982,6 +1032,131 @@ for k, (rows, offs, total, errs, where) in enumerate(MODELS):
     check("AC6", bool(good), f"{where}: a matching toml message is layer control, dscp 40 (C-13), its max_size "
                              f"equals the computed {size} bytes, its reasons are Reject members, and each counted "
                              f"field carries both count and max_count")
+
+# --- T2: the fixed part of the top-level table is declared in wire.toml, row for row ----------------
+TOP_MODEL = None
+if TOP_BYTES is not None:
+    TOP_MODEL = next((m for m in TOP_CANDIDATES if m[2] // 8 == TOP_BYTES), None)
+FIXED_MD = []
+if TOP_MODEL is not None:
+    for r in TOP_MODEL[0]:
+        if r["maxc"] is not None:
+            break
+        FIXED_MD.append(r)
+fixed_offs = tile(FIXED_MD)[0] if FIXED_MD else []
+fixed_bytes = sum(r["bits"] for r in FIXED_MD) // 8
+fixed_sig = [(fixed_offs[i], FIXED_MD[i]["bits"], None) for i in range(len(FIXED_MD))]
+fixed_msgs = []
+for m in TOML_MSGS:
+    fields = m.get("field", []) if isinstance(m, dict) else []
+    if [(f.get("offset"), f.get("width"), f.get("max_count")) for f in fields] == fixed_sig and fixed_sig:
+        fixed_msgs.append(m)
+check("AC6", len(fixed_msgs) >= 1,
+      f"wire.toml declares the manifest fixed part as a [[message]] whose rows agree with the markdown fixed part "
+      f"row for row ({len(fixed_msgs)} found)")
+check("AC6", any(m.get("max_size") == fixed_bytes and m.get("layer") == "control" and m.get("dscp") == 40
+                 for m in fixed_msgs),
+      f"the fixed-part message has max_size equal to the markdown fixed-part sum ({fixed_bytes} bytes), layer control, dscp 40")
+
+# --- T3 (a): the L range keeps 64 processors' declared delay inside the landed u32 ----------------------
+L_ROWS = [r for r in ALL_ROWS if r["meaning"].lower().startswith("structural latency")]
+hop_m = re.search(r"maximum hop count of (" + NUM + ")", wire)
+sat_m = re.search(r"Saturates at (" + NUM + r") samples", wire)
+L_hi = numeric_range(L_ROWS[0]["valid"])[1] if L_ROWS and numeric_range(L_ROWS[0]["valid"]) else None
+if L_hi is not None and hop_m and sat_m:
+    hop, sat = to_int(hop_m.group(1)), to_int(sat_m.group(1))
+    check("AC1", hop * L_hi <= sat,
+          f"the largest L ({L_hi} samples) times the landed maximum hop count ({hop}) is within the landed declared-delay "
+          f"saturation value {sat}, so the sum cannot saturate (Measurement extension, Open item)")
+else:
+    check("AC1", False, "the L range, the landed maximum hop count and the landed saturation value are all readable")
+
+# --- T3 (b): every sentinel stated in prose equals the table row and the toml field -------------------
+E_SENT = {"none": REQ_E, "unknown": DEC_E}
+TABLE_CODE = {}
+for kind_, rows_ in E_SENT.items():
+    for r in rows_:
+        c_ = code_for(r["valid"], kind_)
+        if c_ is not None:
+            TABLE_CODE[kind_] = c_
+            break
+for kind_, other_ in (("none", "unknown"), ("unknown", "none")):
+    if kind_ not in TABLE_CODE:
+        continue
+    prose_hex = set()
+    for sent in re.split(r"(?<=[.;:])\s+", " ".join(PARAS_FLAT)):
+        if re.search(r"\b" + kind_ + r"\b", sent, re.I) and re.search(r"\bE\b", sent):
+            prose_hex |= {int(h, 16) for h in re.findall(r"0x[0-9a-fA-F]+", sent)}
+    stray = prose_hex - {TABLE_CODE[kind_], TABLE_CODE.get(other_)}
+    if prose_hex:
+        check("AC2", TABLE_CODE[kind_] in prose_hex and not stray,
+              f"the prose sentinel for {kind_} agrees with the table row ({hex(TABLE_CODE[kind_])}); "
+              f"prose hex values {sorted(hex(x) for x in prose_hex)}")
+    fixed_fields = [f for m in fixed_msgs for f in m.get("field", [])]
+    row_bits = [r["bits"] for r in FIXED_MD]
+    if fixed_msgs and FIXED_MD:
+        for r, off in zip(FIXED_MD, fixed_offs):
+            meaning_ = r["meaning"].lower()
+            if (kind_ == "none" and meaning_.startswith("required e")) or (kind_ == "unknown" and meaning_.startswith("declared e")):
+                tf = [f for f in fixed_msgs[0].get("field", []) if f.get("offset") == off]
+                tcode = code_for(tf[0].get("valid", ""), kind_) if tf else None
+                check("AC2", tcode == TABLE_CODE[kind_],
+                      f"wire.toml's valid range for the {kind_} field states {hex(TABLE_CODE[kind_])} as the markdown does "
+                      f"(read {tcode if tcode is None else hex(tcode)})")
+
+# --- T3 (c): a stated maximum is never [measured]; a chosen maximum is tagged [decision] -----------------
+MAXW = r"maximum|at[ -]most|\bmax\b|no more than|\bup to\b|\bto\s+\d"
+bad_maxima = [s_ for s_ in re.split(r"(?<=[.;:])\s+", " ".join(PARAS_FLAT))
+              if "[measured]" in s_ and re.search(MAXW, s_, re.I)]
+bad_rows = [r for r in ALL_ROWS if "[measured]" in (r["meaning"] + " " + r["valid"]) and re.search(MAXW, r["meaning"] + " " + r["valid"], re.I)]
+check("DoD", not bad_maxima and not bad_rows, "no stated maximum carries the [measured] tag")
+chosen = [s_ for s_ in re.split(r"(?<=[.;:])\s+", " ".join(PARAS_FLAT))
+          if re.search(r"\bchosen\b|not derived", s_, re.I) and re.search(MAXW, s_, re.I) and re.search(r"\d", s_)]
+check("DoD", all("[decision]" in s_ for s_ in chosen),
+      f"every sentence that calls a number chosen or not derived is tagged [decision] ({len(chosen)} found)")
+
+# --- T3 (d): every reserved or accept-any manifest field is recorded in the landed Reserved fields table -----
+RES_SEC = section_lines(wire, r"^Reserved fields$", 2) or []
+RES_ROWS = []
+for _, hdr_, rows_ in parse_tables("\n".join(RES_SEC)):
+    if hdr_ and hdr_[0].lower().startswith("field"):
+        RES_ROWS += rows_
+TITLE_OF = {}
+for title_, body_ in subsections(MAN):
+    for _, hdr_, rows_ in parse_tables(body_):
+        if is_field_table(hdr_):
+            for rr in rows_:
+                if len(rr) >= 5:
+                    TITLE_OF[rr[3].strip()] = title_.lower()
+RESERVED_MD = [r for r in ALL_ROWS if r["meaning"].startswith("Reserved") or r["valid"].strip().lower() == "0 only"
+               or re.search(r"must be zero|accept any|ignores? any other", r["valid"], re.I)]
+for r in RESERVED_MD:
+    title_ = TITLE_OF.get(r["meaning"], "")
+    key_ = title_.split()[0] if title_.split() else ""
+    words = ["manifest", key_] + (["content"] if re.search(r"content", r["meaning"] + r["valid"], re.I) else [])
+    found = any(all(w and w in (rr[0] + " " + rr[1]).lower() for w in words) for rr in RES_ROWS if len(rr) >= 2)
+    check("DoD", found, f"the reserved or accept-any manifest field '{r['meaning'][:50]}' has a row in the landed "
+                        f"Reserved fields table naming {words}")
+
+# --- T3 (f): the audio-length bound on a stream's channel count -------------------------------------
+AUD_M = re.search(r"frames × channels × 4, the samples that follow \|[^\n]*?at most (" + NUM + ")", wire)
+AUD_MAX = to_int(AUD_M.group(1)) if AUD_M else None
+aud_stated = AUD_MAX is not None and (
+    any(re.search(r"channel", sent, re.I) and AUD_MAX in {to_int(x) for x in re.findall(NUM, sent)}
+        for sent in re.split(r"(?<=[.;:])\s+", FLAT)) or
+    any(AUD_MAX in {to_int(x) for x in re.findall(NUM, f + " " + o)} and re.search(r"channel|frames", f, re.I)
+        for f, o in FORMS))
+check("AC1", aud_stated, f"the manifest states the landed audio length bound ({AUD_MAX}) for frames × channels × 4, "
+                         "or an invalid form for exceeding it")
+
+# --- T3 (g): a sentence that waits for every section names what does not wait ------------------------
+WAIT = re.compile(r"(judges?|wait|waits|waiting|decide|decides|hold|holds)[^.]{0,120}(every section|complete manifest)", re.I)
+EXCEPT = re.compile(r"\bexcept\b|other refusals|without (the|a|its) manifest|(does|do|need) not wait", re.I)
+for p in PARAS_FLAT:
+    if WAIT.search(p):
+        check("DoD", re.search(r"BadMemberList", p) is not None and EXCEPT.search(p) is not None,
+              f"the paragraph that waits for every section names BadMemberList as waiting and what does not wait "
+              f"('{p[:50]}...')")
 
 # Landed tables unchanged, in the way 004-18's check holds them: the admission headers equal the Hello header
 if HELLO_HEADER is not None and _adm is not None:
