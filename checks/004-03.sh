@@ -1115,7 +1115,25 @@ if tables_text is None:
 else:
     try:
         document = parse_toml(tables_text)
-        toml_pairs = collect_toml_enumeration(document)
+        # The packet Reject enumeration ([[reject]]) is compared with wire.md. A
+        # refusal enumeration of another kind (admission refusals, separate numeric
+        # values per wire.md's Rejection reasons section) may name the same
+        # variant with its own value, so the one-name-one-value rule is applied
+        # within each top-level enumeration, not across them.
+        groups = {}
+        for key, sub in document.items():
+            groups[key] = collect_toml_enumeration({key: sub})
+        for key, pairs in groups.items():
+            if key == "reject":
+                continue
+            for name, values in pairs.items():
+                if len(values) > 1:
+                    fail(4, f"{tables_path}: {name} is listed with more than one value within '{key}': {sorted(values)}")
+                    ac4 = False
+        if "reject" in groups:
+            toml_pairs = groups["reject"]
+        else:
+            toml_pairs = collect_toml_enumeration(document)
     except TomlError as error:
         toml_error = error
         fail(4, f"{tables_path} could not be read by this check: {error}")
