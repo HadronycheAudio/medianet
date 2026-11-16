@@ -3485,7 +3485,7 @@ The other fields of the measurement extension — the hop count, the declared de
 
 **Reviewer:** Claude Opus 5.5, coder of ticket 004-22 in the implementation swarm; an independent Opus reviewer reviews the pull request that carries this record `[decision]`.
 
-**Independent review:** PR #39, Claude Opus (reviewer agent), 2026-11-16: round 1 returned findings, applied in this revision, among them R-12, R-13 and R-14 and the rows X-31 to X-51; approval pending `[decision]`.
+**Independent review:** PR #39, Claude Opus (reviewer agent), 2026-11-16: round 1 returned findings, among them R-12, R-13, R-14 and the rows X-31 to X-51; round 2 returned three wording findings (stale cells of the traceability table, X-53's wording of decision 27, X-42's owner); all applied; approved in round 3 at head e7c21e8 `[decision]`.
 
 **Date:** 2026-11-16 `[decision]`.
 
