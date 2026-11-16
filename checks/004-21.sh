@@ -69,6 +69,16 @@
 #   WORK 3  One tagged paragraph of the section states the uniform outcome:
 #         drop, count per (input, reason), no state change, and a named event
 #         for a version mismatch (VersionMismatch).
+#   N1      A gap packet is exactly the 38 bytes of its two headers: a tagged
+#         sentence of Validity rules says it skips the rows beyond them, and the
+#         Checksum and Announcements rows that read bytes after the header are
+#         restricted to non-gap packets (in the row or the section's lead-in).
+#   N2      The reorder's outcome changes are stated: a tagged listing with
+#         'outcome', 'chang' and 'order'/'reorder', and each of the four reviewed
+#         cases (count 0, frames 0, UnadmittedSource, domain in 16 to 37 bytes)
+#         is listed as changed or stated unchanged in one sentence.
+#   MANIFEST  The held-bytes cap stated in Validity rules has a Manifest row with
+#         the same figure.
 #   OPEN  Every open item and provisional outcome outside the section that
 #         names 004-21 as owner (a bold "Open item", a table row or a prose
 #         paragraph that mentions 004-21) is accounted for: either it carries
@@ -841,7 +851,14 @@ elif zero_i > index_i:
 # ---------------------------------------------------------------------------
 vr_prose = [u for u in vr_units if u["kind"] == "prose" and has_evidence(u["text"])]
 ann_rows = validity_rows("Announcements") or []
-if any(re.search(r"length above 10", r["form"], re.I) and re.search(r"skip", r["outcome"], re.I) for r in ann_rows):
+# Trigger (a): a row accepts a length above 10 by skipping. Trigger (b): the
+# Announcements open items state the merged growth rule that conflicts with the
+# valid range: "a minor version of the same major grows the payload, which the
+# length prefix makes a minor change (004-04)".
+ann_rg = sec_range("Announcements")
+ann_text = "\n".join(lines[ann_rg[0]:ann_rg[1]]) if ann_rg else ""
+if (any(re.search(r"length above 10", r["form"], re.I) and re.search(r"skip", r["outcome"], re.I) for r in ann_rows)
+        or re.search(r"minor version of the same major grows the payload", ann_text)):
     if not any(re.search(r"Reported contradiction", u["text"]) and re.search(r"\blength\b", u["text"])
                and "wire.toml" in u["text"] and re.search(r"announcement", u["text"], re.I) for u in vr_prose):
         fail("C2", "the announcement's length: a validity row accepts lengths above the field's valid range "
@@ -855,6 +872,110 @@ if any(re.search(r"version", r["form"], re.I) and re.search(r"major", r["form"],
         fail("C2", "the media packet's version: a validity row accepts a major-1 packet of another minor, outside the "
              "field's valid range '0x0100 in v1' (wire.toml media packet version), but no tagged 'Reported "
              "contradiction' paragraph of 'Validity rules' names the version field and wire.toml")
+
+# ---------------------------------------------------------------------------
+# N1 (review round 2): a gap packet skips the rows beyond its 38 bytes.
+# Quoted merged text, Slice header (line 348): "A gap slice is header-only
+# (rule 10): its packet carries exactly these 38 bytes, and any payload beyond
+# them is the gap-with-payload case the packet header's validity rules already
+# reject under BadLength." Rule order, item 5 (f) to (i) reads the count byte,
+# the announcements, the extension and the checksum; a gap packet reaches none
+# of them. Assertion (a): a tagged sentence of the media order says so.
+# Assertion (b): in the Checksum and Announcements tables, the rows that read
+# the bytes after the header ("too short", "count byte", "ends inside") are
+# restricted to non-gap packets, in the row or in the section's lead-in.
+# ---------------------------------------------------------------------------
+GAP_SKIP = re.compile(r"skips|goes straight|is not judged by|exempt", re.I)
+GAP_LIST = ["announcement", "extension", "checksum", "content"]
+n1a_ok = False
+for u in vr_units:
+    if u["kind"] != "prose" or not has_evidence(u["text"]):
+        continue
+    for sent in re.split(r"(?<=[.;])\s+", u["text"]):
+        if (re.search(r"\bgap\b", sent, re.I) and GAP_SKIP.search(sent)
+                and sum(1 for w in GAP_LIST if re.search(w, sent, re.I)) >= 2):
+            n1a_ok = True
+if not n1a_ok:
+    fail("N1", "no tagged sentence of 'Validity rules' says that a gap packet skips the rows beyond its 38 bytes "
+         "(the announcement count byte, announcements, extension, checksum, content): needs 'gap', a skip word "
+         "('skips', 'goes straight', 'is not judged by', 'exempt') and two of those words in one sentence")
+
+RESTRICT = re.compile(r"non-gap|not a gap|gap packets are exempt", re.I)
+for title, form_rx in (("Checksum", r"too short|too few bytes"),
+                       ("Announcements", r"ends inside|too short|count byte")):
+    rg = sec_range(title)
+    if rg is None:
+        continue
+    for t in tables(units(*rg)):
+        oi = [j for j, h in enumerate(t["header"]) if OUTCOME_HDR.match(h.strip())]
+        if not oi:
+            continue
+        lead = "\n".join(lines[rg[0]:t["line"]])
+        for r in t["rows"]:
+            form = r[0] if r else ""
+            if re.search(form_rx, form, re.I) and not (RESTRICT.search(form) or RESTRICT.search(lead)):
+                fail("N1", f"{title}: the row {form[:70]!r} reads bytes after the header, so it must be restricted "
+                     "to non-gap packets (a gap packet is exactly the 38 header bytes and reaches no such row)")
+
+# ---------------------------------------------------------------------------
+# N2 (review round 2): the reorder changes the outcome of some datagrams that
+# match two rows. The change must be stated: a tagged unit of Validity rules
+# with 'outcome', 'chang' and 'order'/'reorder'; and each of the four cases the
+# reviewer found is either listed (its keyword and a change word in one unit)
+# or stated unchanged (its keyword and 'unchanged', 'as before' or 'still' in one
+# sentence). Cases: count 0; frames 0; UnadmittedSource; domain in 16 to 37 bytes.
+# ---------------------------------------------------------------------------
+CHG = re.compile(r"chang|now counts|now under|now judged", re.I)
+UNCH = re.compile(r"unchanged|as before|\bstill\b", re.I)
+N2_CASES = [
+    ("packet count 0", lambda s: re.search(r"count[^.;|]{0,30}\b(?:0|zero)\b|\b(?:0|zero)\b[^.;|]{0,30}count", s, re.I)),
+    ("frames 0", lambda s: re.search(r"frames[^.;|]{0,30}\b(?:0|zero)\b|\b(?:0|zero)\b[^.;|]{0,30}frames", s, re.I)),
+    ("unadmitted source", lambda s: re.search(r"unadmitted|UnadmittedSource", s, re.I)),
+    ("domain in a 16 to 37 byte datagram", lambda s: re.search(r"domain", s, re.I)
+     and re.search(r"16 to 37|16–37|16-37", s)),
+]
+listing_units = [u for u in vr_units if u["kind"] in ("prose", "row") and has_evidence(u["text"])
+                 and re.search(r"outcome", u["text"], re.I) and re.search(r"chang", u["text"], re.I)
+                 and re.search(r"\border\b|reorder", u["text"], re.I)]
+if not listing_units:
+    fail("N2", "no tagged paragraph or table row of 'Validity rules' lists the outcome changes the reorder causes "
+         "(needs 'outcome', 'chang' and 'order' or 'reorder')")
+for name, matcher in N2_CASES:
+    listed = any(matcher(s) and CHG.search(s)
+                 for u in vr_units if u["kind"] in ("prose", "row") and has_evidence(u["text"])
+                 for s in re.split(r"(?<=[.;])\s+|\|", u["text"]))
+    stated = any(matcher(s) and UNCH.search(s)
+                 for u in vr_units if u["kind"] in ("prose", "row")
+                 for s in re.split(r"(?<=[.;])\s+|\|", u["text"]))
+    if not (listed or stated):
+        fail("N2", f"the outcome of the reordered case '{name}' is neither listed as a change in 'Validity rules' "
+             "nor stated unchanged in a sentence with 'unchanged', 'as before' or 'still'")
+
+# ---------------------------------------------------------------------------
+# Review (round 1, mutation teeth): (i) an announcement row that accepts a
+# length above 10 with 'skip' must not coexist with the conservative 'length
+# other than 10' row; (ii) the held-bytes cap that the text states for the
+# manifest needs a Manifest validity row with the same figure.
+# ---------------------------------------------------------------------------
+ann_rows2 = validity_rows("Announcements") or []
+skip_rows = [r for r in ann_rows2 if re.search(r"length above 10", r["form"], re.I)
+             and re.search(r"skip", r["outcome"], re.I)]
+cons_rows = [r for r in ann_rows2 if re.search(r"length other than 10", r["form"], re.I)]
+if skip_rows and cons_rows:
+    fail("C2", "Announcements: a row accepts 'length above 10' by skipping the rest, beside the conservative "
+         "'length other than 10' row; the two cannot both stand against the field's valid range '10 in v1'")
+held_figs = set()
+HELD_CAP = re.compile(r"(?:at most|more than|above|no more than|up to)\s+(\d{1,3}(?: \d{3})+|\d{4,})[^.;|]{0,40}\bheld\b")
+for u in vr_units:
+    if u["kind"] not in ("prose", "row"):
+        continue
+    for sent in re.split(r"[.;|]", u["text"]):
+        if re.search(r"manifest", sent, re.I):
+            held_figs |= {m.group(1) for m in HELD_CAP.finditer(sent)}
+man_text = " ".join(r["form"] + " " + r["outcome"] for r in (validity_rows("Manifest") or []))
+for f in sorted(held_figs):
+    if f not in man_text:
+        fail("MANIFEST", f"the held-bytes cap {f} stated in 'Validity rules' has no Manifest validity row with that figure")
 
 # ---------------------------------------------------------------------------
 # AC 2: every enumeration value is used across the matrix and the toml lists
