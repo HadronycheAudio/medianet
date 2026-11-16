@@ -91,20 +91,21 @@
 #        pair at a time.  All pairs exact: exit 0, PASS.  Each single pair with
 #        X < Y (or Y = 0 for audio): exit non-zero with a FAIL line naming it.
 #   RUN1/RUN2 repeat (ruling B): each is repeated ONCE, and only when its first
-#        attempt fails with the loss message (FAIL loss:) or the missing-section
-#        message (FAIL summary: missing section ...).  Printed as
+#        attempt fails with the loss message ("FAIL loss:").  Printed as
 #        "NOTE RUN<n> repeated once after: <FAIL line>".  A failed repeat FAILS.
-#        Nothing else is repeated, and the first failure never counts as a pass.
-#   A    summary selection (ruling A), by stubs that print several per-second
-#        lines: ruleA-i the last line lacks synth2, the previous complete line
-#        is all-exact -> PASS; ruleA-ii the previous complete line has a synth2
-#        pair X < Y -> FAIL naming it; ruleA-iii no complete line, none of the
-#        last three has synth2 -> FAIL naming the missing section; ruleA-iv a
-#        complete line four back does not rescue -> FAIL naming the section.
-#        Message form the script must use for a missing section:
-#          FAIL summary: missing section "<name>" in the last 3 per-second lines
-#        Section markers: audio "windows exact,"; synth1 music "max pitch";
-#        transport "transport: "; the synth2 section "also synth2:".
+#   A'   the FINAL per-second line is judged (ruling A').  Required sections:
+#        audio (windows exact,), synth1 music (voice channels X/Y windows exact,
+#        max pitch), transport (synth playhead / metronome clicks / channel
+#        exact).  A missing required section FAILS with the message
+#          FAIL summary: missing section "<name>" in the final line
+#        The also-synth2 section is optional: when present its pairs must be
+#        exact; when absent the script prints
+#          NOTE summary: no "also synth2" section in the final line; synth2 was not verified in this run
+#        and does not fail.  The PASS line ends with "synth2 verified" or
+#        "synth2 not reported".  Stub cases: final-1 (all-exact, synth2 present),
+#        final-2 (no synth2 section), synth2 pair X < Y (voice-synth2 and the
+#        other synth2 stubs), final-4 (no transport), final-5 (no synth1 voice
+#        pair), final-6 (complete earlier line, final line audio X < Y -> FAIL).
 #   CARGO cargo test passes; transport::tests::time_code and scenario ok.
 #   TREE the POC working tree is clean vs HEAD, except while the orchestrator
 #        marker swarm/poc-write-in-flight exists (then a loud SKIP).
@@ -114,7 +115,7 @@
 # Cost: cargo build (cached), three 25 s runs (RUN1, RUN2, RUN3), quick rejected
 # invocations, metrics cases (fast), stub runs (fast), one cargo test.  Runs are
 # unprivileged, each on its own isolated multicast group
-# (239.72.68.44 with a port in 47901-47940), with --no-tui.  Before each run the
+# (239.72.68.44 with a port in 47941-47980), with --no-tui.  Before each run the
 # script waits while another hadropoc process is active, and it never runs two
 # POC runs at once.
 
@@ -133,10 +134,10 @@ UNT_BIN="$UNT_DIR/target/release/hadropoc"
 STUB="$OUT/stub"                               # stub hadropoc, outside the POC
 mkdir -p "$OUT" || { echo "FAIL  cannot create $OUT"; exit 1; }
 
-# Three isolated ports in 47901-47940, distinct for the runs of this check.
-PORT_FIX=$(( 47901 + ($$ % 40) ))
-PORT_UNT=$(( 47901 + (($$ + 13) % 40) ))
-PORT_FLAG=$(( 47901 + (($$ + 26) % 40) ))
+# Three isolated ports in 47941-47980, distinct for the runs of this check.
+PORT_FIX=$(( 47941 + ($$ % 40) ))
+PORT_UNT=$(( 47941 + (($$ + 13) % 40) ))
+PORT_FLAG=$(( 47941 + (($$ + 26) % 40) ))
 
 fail=0
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -417,9 +418,6 @@ run1_once() {
   if [ "$RUN1_RC" -ne 0 ] || [ -z "$total" ] || [ "$total" -lt 98 ] || [ "$total" -gt 102 ] || [ "$ok_mod" -ne 1 ]; then
     RUN1_VERDICT=bad
     RUN1_MSG="RUN1 clean run: exit $RUN1_RC, metrics [$RUN1_COUNTS] (expected exit 0, 98..102 rows, 23..27 per module)"
-  elif ! printf '%s\n' "$last" | grep -q 'also synth2'; then
-    RUN1_VERDICT=repeat
-    RUN1_MSG='FAIL summary: missing section "also synth2" in the last per-second line of RUN1'
   elif [ -z "$lost" ]; then
     RUN1_VERDICT=bad
     RUN1_MSG="RUN1 final line has no 'sent S lost N' field"
@@ -477,9 +475,9 @@ run2_once() {
   RUN2_RC=$?
   RUN2_FAIL="$(grep '^FAIL' "$OUT/smoke-fixed.out" | head -n 1 || true)"
   RUN2_LEFT="$(find "$T2" -mindepth 1 -print -quit)"
-  if [ "$RUN2_RC" -eq 0 ] && grep -q '^PASS' "$OUT/smoke-fixed.out" && [ -z "$RUN2_LEFT" ]; then
+  if [ "$RUN2_RC" -eq 0 ] && grep -Eq '^PASS .*synth2 (verified|not reported)' "$OUT/smoke-fixed.out" && [ -z "$RUN2_LEFT" ]; then
     RUN2_VERDICT=ok
-  elif [ "$RUN2_RC" -ne 0 ] && printf '%s\n' "$RUN2_FAIL" | grep -Eq '^FAIL (loss:|summary: missing section)'; then
+  elif [ "$RUN2_RC" -ne 0 ] && printf '%s\n' "$RUN2_FAIL" | grep -Eq '^FAIL loss:'; then
     RUN2_VERDICT=repeat
   else
     RUN2_VERDICT=bad
@@ -728,21 +726,25 @@ exit 0
 EOF
       chmod +x "$STUB/stub-$name.sh"
     done
-    stub_case() { # name, expect ok|fail, words (all must appear in the FAIL line)
-      local name="$1" expect="$2" words="$3" T out rc w miss
+    stub_case() { # name, expect ok|fail, words (all must appear in the PASS line or FAIL line), note regex or ""
+      local name="$1" expect="$2" words="$3" note_re="${4:-}" T out rc w miss
       T="$OUT/tmp-stub-$name"; rm -rf "$T"; mkdir -p "$T"
       out="$(HADROPOC_BIN="$STUB/stub-$name.sh" TMPDIR="$T" timeout 60 bash "$SMOKE" --group "239.72.68.44:$PORT_UNT" 2>&1)"; rc=$?
       if [ "$expect" = "ok" ]; then
-        if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q '^PASS'; then
-          pass "S $name: every pair exact, exit 0 with a PASS line"
+        miss=""
+        for w in $words; do
+          printf '%s\n' "$out" | grep '^PASS' | grep -qi -- "$w" || miss="$miss $w"
+        done
+        if [ "$rc" -eq 0 ] && [ -z "$miss" ] && { [ -z "$note_re" ] || printf '%s\n' "$out" | grep -Eq -- "$note_re"; }; then
+          pass "S $name: exit 0, PASS line states: $(printf '%s\n' "$out" | grep '^PASS' | tail -n 1 | sed -E 's/.*, (synth2 [a-z ]+)$/\1/')${note_re:+; NOTE printed}"
         else
-          bad "S $name: all pairs exact but exit $rc (expected 0 with a PASS line):"
+          bad "S $name: expected exit 0 with a PASS line containing [$words]${note_re:+ and a NOTE line}; got exit $rc, missing:${miss:- none}${note_re:+; NOTE present: $(printf '%s\n' "$out" | grep -Ec -- "$note_re")}"
           printf '%s\n' "$out" | tail -n 3 | while IFS= read -r l; do note "$l"; done
         fi
       else
         if [ "$rc" -eq 0 ]; then
-          bad "S $name: a pair with X < Y (or Y = 0) accepted (exit 0), must be rejected"
-          return
+          bad "S $name: accepted (exit 0), must be rejected"
+          rm -rf "$T"; return
         fi
         miss=""
         for w in $words; do
@@ -757,7 +759,7 @@ EOF
       fi
       rm -rf "$T"
     }
-    stub_case all-exact ok ""
+    stub_case all-exact ok "synth2 verified"
     stub_case audio-zero fail "audio"
     stub_case voice-synth1 fail "voice channels"
     stub_case voice-synth2 fail "voice synth2"
@@ -766,47 +768,46 @@ EOF
     stub_case clicks-synth1 fail "clicks"
     stub_case clicks-synth2 fail "clicks synth2"
     stub_case channel-synth1 fail "channel exact"
-    # Ruling A: the summary is the last per-second line that is complete within
-    # the last three.  Stubs print several per-second lines.
+    # Ruling A' (final line): the FINAL per-second line is judged.  The
+    # cases print the final line (and, for the look-back case, an earlier one).
     python3 - "$STUB" "$R1_SUMMARY" <<'PY'
 import re, sys
 stub, line = sys.argv[1], sys.argv[2]
 def at(text, sec):
     return re.sub(r'^\[ *\d+s\]', '[%4ds]' % sec, text, count=1)
-def no_synth(text):
-    out, n = re.subn(r'\s\|\s+also synth2:[^|]*', '', text)
+def cut(text, pattern, what):
+    out, n = re.subn(pattern, '', text, count=1)
     if n != 1:
-        sys.exit("ruling A: no also synth2 section in the summary")
+        sys.exit("final-line stub: no " + what)
     return out
-def synth_bad(text):
-    i = text.find('also synth2:')
-    if i < 0:
-        sys.exit("ruling A: no also synth2 section in the summary")
-    tail, n = re.subn(r'voice channels (\d+)/(\d+) windows exact',
-                      lambda m: 'voice channels %d/%s windows exact' % (int(m.group(1)) - 1, m.group(2)),
-                      text[i:], count=1)
-    if n != 1:
-        sys.exit("ruling A: no synth2 voice pair")
-    return text[:i] + tail
+def no_synth(text):
+    return cut(text, r'\s\|\s+also synth2:[^|]*', "also synth2 section")
+def no_transport(text):
+    return cut(text, r'\s\|\s+transport: [^|]*', "transport section")
+def no_synth1_voice(text):
+    return cut(text, r'voice channels \d+/\d+ windows exact, (?=max pitch)', "synth1 voice-channels pair")
+def dec(text, pattern):
+    m = re.compile(pattern).search(text)
+    if not m:
+        sys.exit("final-line stub: no " + pattern)
+    x, y = int(m.group(1)), m.group(2)
+    return text[:m.start(1)] + "%d/%s" % (x - 1, y) + text[m.end(2):]
 full = line
 cases = {
-    # (i) last line lacks the synth2 section, previous complete line all exact
-    "ruleA-i": [at(full, 24), no_synth(at(full, 25))],
-    # (ii) same, but the previous complete line has a synth2 pair with X < Y
-    "ruleA-ii": [synth_bad(at(full, 24)), no_synth(at(full, 25))],
-    # (iii) no complete line among the last four, none of the last three has synth2
-    "ruleA-iii": [no_synth(at(full, 22)), no_synth(at(full, 23)), no_synth(at(full, 24)), no_synth(at(full, 25))],
-    # (iv) a complete line four back does not rescue the last three
-    "ruleA-iv": [at(full, 21), no_synth(at(full, 22)), no_synth(at(full, 23)), no_synth(at(full, 24)), no_synth(at(full, 25))],
+    "final-2-no-synth2": [no_synth(at(full, 25))],
+    "final-4-no-transport": [no_transport(at(full, 25))],
+    "final-5-no-synth1-voice": [no_synth1_voice(at(full, 25))],
+    # the earlier line is complete and exact, the FINAL line has an audio pair X < Y
+    "final-6-look-back": [at(full, 24), dec(at(full, 25), r'\((\d+)/(\d+) windows exact')],
 }
 for name, lines in cases.items():
     with open(f"{stub}/summary-{name}.txt", "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
 PY
     if [ $? -ne 0 ]; then
-      bad "A could not prepare the ruling-A stub summaries"
+      bad "A' could not prepare the final-line stub summaries"
     else
-      for name in ruleA-i ruleA-ii ruleA-iii ruleA-iv; do
+      for name in final-2-no-synth2 final-4-no-transport final-5-no-synth1-voice final-6-look-back; do
         cat > "$STUB/stub-$name.sh" <<EOF
 #!/usr/bin/env bash
 metrics=""
@@ -822,10 +823,10 @@ exit 0
 EOF
         chmod +x "$STUB/stub-$name.sh"
       done
-      stub_case ruleA-i ok ""
-      stub_case ruleA-ii fail "synth2 voice"
-      stub_case ruleA-iii fail "synth2 missing"
-      stub_case ruleA-iv fail "synth2 missing"
+      stub_case final-2-no-synth2 ok "synth2 not reported" 'NOTE summary: no "also synth2" section in the final line'
+      stub_case final-4-no-transport fail "missing transport"
+      stub_case final-5-no-synth1-voice fail "missing synth1"
+      stub_case final-6-look-back fail "audio"
     fi
   fi
 fi
