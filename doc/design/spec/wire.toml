@@ -2144,7 +2144,7 @@ name = "time_state"
 offset = 416
 width = 8
 type = "u8"
-meaning = "time state of the winner when it takes over: 0 = time unusable, 1 = holdover with the alignment claim not lapsed, 2 = Locked; the hello's encoding (C-213)"
+meaning = "time state: the one the winner declared in its own candidacy for this election epoch, the value the election was decided on, so that 1 or 2 means kept and 0 means bumped; 0 = time unusable, 1 = holdover with the alignment claim not lapsed, 2 = Locked; the hello's encoding (C-213)"
 valid = "0 to 2; a receiver reads a value above 2 as 0"
 
 [[message.field]]
