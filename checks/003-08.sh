@@ -30,8 +30,11 @@
 #       --duration run shorter than about 5 s exits non-zero by design.
 #   H6  the zero-sample line `check family <name>: 0 windows analysed`, equal to
 #       the eprintln! at HEAD:src/main.rs (read at run time).
-#   H7  the smoke command with --no-tui, --group, HADROPOC_BIN, --check-metrics;
-#       it asserts nothing about sync rate, latency or percentiles.
+#   H7  the smoke run: a caller-supplied --group, the --check-metrics form, and
+#       the script's OWN --no-tui (a caller must not pass it: hadropoc would get
+#       the flag twice).  It asserts nothing about sync rate, latency or
+#       percentiles.  tools/smoke.sh at HEAD is read at run time and must still
+#       pass --no-tui to its own hadropoc command and append "$@".
 #   H8  POC loss figures are never citable from the baseline.
 #   H9  the POC wire is not the runtime wire: a baseline is not a wire reference.
 #   H10 every factual paragraph carries [code], [measured] or [decision] and
@@ -48,17 +51,26 @@
 #     `docs(003-08): ...` (or `003-08: ...`), and that commit touches nothing else.
 #   * Headings (any level; matched case-insensitively, first match wins):
 #       tags | fix | sync | lock | famil | smoke | zero | wire | loss
-#   * Paragraphs: a paragraph is a block of lines between blank lines (a table
-#     row, a bullet, a heading-free block).  A block containing a digit must
-#     carry one of [code] [measured] [decision].  Fenced code is not a claim.
+#   * Paragraphs: a block of lines between blank lines (a table data row, a
+#     bullet, a heading-free block).  Every prose block of 5 or more words, and
+#     every block containing a digit, must carry one of [code] [measured]
+#     [decision].  Headings, table header rows and fenced code are not claims.
+#   * Figures in the sync section: every percentage and every row length
+#     (number followed by s or ms) must appear in swarm/notes/003-05.md or in
+#     the 002-12 sub-section of REPORT-0b (parsed at run time).
 #   * Fix paragraphs: a block whose first words are "Fix 1", "Fix 2" or "Fix 3"
 #     (optional bold/bullet marks).  Each names its ticket id 003-NN and the
 #     src/ and tools/ paths its commits touch, and no other such path.
 #   * Sync table: one markdown table in the sync section with rows whose first
 #     cell carries 50 or 1000; cell 2 is the BEFORE figure (first number in the
 #     cell), cell 3 the AFTER figure, each cell containing [measured].
-#   * Smoke command: a fenced line naming tools/smoke.sh carries --no-tui; the
-#     literal `tools/smoke.sh --no-tui` appears in the document.
+#   * Smoke run: a fenced line beginning `tools/smoke.sh --group 239.72.68.44:<port>`
+#     (or a placeholder); a fenced or inline `tools/smoke.sh --check-metrics <file>`;
+#     no fenced line passes --no-tui to tools/smoke.sh (the script passes it
+#     itself, verified against tools/smoke.sh at HEAD).
+#   * Sync table: the header names a 003-02 column (before), a 003-05 column
+#     (after) and a P-02 column (like-for-like before, clean, duration-corrected).
+#     Cells are bound by header text, each figure `[measured]`.
 #   * Zero-sample line: the literal `check family <name>: 0 windows analysed`.
 #   * Opened items: a block starting "Open item" also contains "Owner:" and
 #     "Falsifier:".
@@ -241,7 +253,7 @@ else
   cat > "$OUT/doc-check.py" <<'PY'
 import re, sys
 
-doc_path, n02_path, n05_path, const_path, main_path, f03, f04, f06 = sys.argv[1:9]
+doc_path, n02_path, n05_path, const_path, main_path, f03, f04, f06, report_path, script_path = sys.argv[1:11]
 results = []
 
 
@@ -326,6 +338,19 @@ if not chimera:
 if not p02_pair or not p02_runs:
     bad("constants: P-02 values (36.1 / 71.4) or run length (3 runs of 35 s) not found")
 lock_s = list(lock_values)[0] if len(lock_values) == 1 else None
+
+rep_text = read(report_path, "REPORT-0b")
+m212 = re.search(r"^### [^\n]*002-12[^\n]*\n(.*?)(?=^### |\Z)", rep_text, re.M | re.S)
+report_212 = m212.group(1) if m212 else ""
+if not report_212:
+    bad("sources: REPORT-0b's 002-12 sub-section is not found")
+smoke_script = read(script_path, "tools/smoke.sh at HEAD")
+src_text = n05 + "\n" + report_212
+src_pct = {float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*%", src_text)}
+src_sec = set()
+for num, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(ms|s)\b", src_text):
+    src_sec.add(round(float(num) / 1000 if unit == "ms" else float(num), 9))
+runs02 = re.findall(r"\((\d+\.\d+) in run 1, (\d+\.\d+) in run 2\)", n02)
 
 # ---------------------------------------------------------------- sections
 sections = []
@@ -414,7 +439,10 @@ if cur:
     blocks.append((cur_start, "\n".join(cur)))
 
 # ---------------------------------------------------------------- AC 5a tags
-bad_tag = [(i + 1, t[:60]) for i, t in blocks if re.search(r"\d", t) and not re.search(TAG_RE, t)]
+def words(t):
+    return len(re.findall(r"[A-Za-z0-9]+", t))
+bad_tag = [(i + 1, t[:60]) for i, t in blocks
+           if (re.search(r"\d", t) or words(t) >= 5) and not re.search(TAG_RE, t)]
 if bad_tag:
     for ln, snippet in bad_tag[:5]:
         bad("tags: line %d carries a figure or identifier without [code], [measured] or [decision]: %s" % (ln, snippet))
@@ -485,8 +513,25 @@ for n in (1, 2, 3):
                " ".join(sorted(want - named)) or "none", " ".join(sorted(named - want)) or "none"))
 
 # ---------------------------------------------------------------- sync table
+p02_value = {50: float(p02_pair.group(1)), 1000: float(p02_pair.group(2))} if p02_pair else {}
+t_lines = S_SYNC.split("\n")
+hdr_idx = None
+for i, l in enumerate(t_lines):
+    if l.strip().startswith("|") and i + 1 < len(t_lines) and re.match(r"^\s*\|?\s*:?-{3,}", t_lines[i + 1]):
+        hdr_idx = i
+        break
+hdr_cells = [c.strip() for c in t_lines[hdr_idx].strip().strip("|").split("|")] if hdr_idx is not None else []
+col_b = next((k for k, c in enumerate(hdr_cells) if "003-02" in c), None)
+col_a = next((k for k, c in enumerate(hdr_cells) if "003-05" in c), None)
+col_p = next((k for k, c in enumerate(hdr_cells) if "P-02" in c), None)
+if col_b is None or col_a is None or col_p is None:
+    bad("sync: the table header must name a 003-02 column (before), a 003-05 column (after) and a P-02 column")
+elif not re.search(r"clean|duration-corrected", hdr_cells[col_p], re.I):
+    bad("sync: the P-02 column must be labelled clean or duration-corrected (like-for-like before)")
+else:
+    ok("sync: the table has a 003-02 column, a 003-05 column and a P-02 column")
 rows = {}
-for line in S_SYNC.split("\n"):
+for line in t_lines:
     if not line.strip().startswith("|"):
         continue
     cells = [c.strip() for c in line.strip().strip("|").split("|")]
@@ -500,28 +545,42 @@ for rate in (50, 1000):
     if len(rows.get(rate, [])) != 1:
         bad("sync: the table needs exactly one row for --sync-hz %d (found %d)" % (rate, len(rows.get(rate, []))))
 for rate in (50, 1000):
-    if len(rows.get(rate, [])) != 1:
+    if len(rows.get(rate, [])) != 1 or col_b is None or col_a is None or col_p is None:
         continue
     cells = rows[rate][0]
-    b_num = first(r"(\d+(?:\.\d+)?)", cells[1])
-    a_num = first(r"(\d+(?:\.\d+)?)", cells[2])
-    if b_num is None or a_num is None:
-        bad("sync: --sync-hz %d row has no before or after figure" % rate)
+    if max(col_b, col_a, col_p) >= len(cells):
+        bad("sync: --sync-hz %d row lacks the 003-02, 003-05 or P-02 cell" % rate)
+        continue
+    cb, ca, cp = cells[col_b], cells[col_a], cells[col_p]
+    b_num = first(r"(\d+(?:\.\d+)?)", cb)
+    a_num = first(r"(\d+(?:\.\d+)?)", ca)
+    p_num = first(r"(\d+(?:\.\d+)?)", cp)
+    if b_num is None or a_num is None or p_num is None:
+        bad("sync: --sync-hz %d row has no before, after or P-02 figure" % rate)
         continue
     b_want = rates02.get(rate, [None])[0]
     a_want = after05.get(rate)
     if b_want is not None and abs(float(b_num) - b_want) < 1e-9:
-        ok("sync: before at --sync-hz %d is %s, equal to the 003-02 note" % (rate, b_num))
+        ok("sync: 003-02 before at --sync-hz %d is %s, equal to the 003-02 note" % (rate, b_num))
     else:
-        bad("sync: before at --sync-hz %d is %s, the 003-02 note reports %s" % (rate, b_num, b_want))
+        bad("sync: 003-02 before at --sync-hz %d is %s, the 003-02 note reports %s" % (rate, b_num, b_want))
     if a_want is not None and abs(float(a_num) - a_want) < 1e-9:
-        ok("sync: after at --sync-hz %d is %s, equal to the 003-05 note" % (rate, a_num))
+        ok("sync: 003-05 after at --sync-hz %d is %s, equal to the 003-05 note" % (rate, a_num))
     else:
-        bad("sync: after at --sync-hz %d is %s, the 003-05 note reports %s" % (rate, a_num, a_want))
-    if "[measured]" in cells[1] and "[measured]" in cells[2]:
-        ok("sync: the --sync-hz %d before and after figures are each tagged [measured]" % rate)
+        bad("sync: 003-05 after at --sync-hz %d is %s, the 003-05 note reports %s" % (rate, a_num, a_want))
+    p_want = p02_value.get(rate)
+    if p_want is not None and abs(float(p_num) - p_want) < 1e-9:
+        ok("sync: P-02 like-for-like before at --sync-hz %d is %s, equal to constants P-02" % (rate, p_num))
     else:
-        bad("sync: the --sync-hz %d before and after figures must each carry [measured]" % rate)
+        bad("sync: P-02 like-for-like before at --sync-hz %d is %s, constants P-02 says %s" % (rate, p_num, p_want))
+    if all("[measured]" in c for c in (cb, ca, cp)):
+        ok("sync: the --sync-hz %d before, after and P-02 figures are each tagged [measured]" % rate)
+    else:
+        bad("sync: the --sync-hz %d before, after and P-02 figures must each carry [measured]" % rate)
+if any(re.search(r"not comparable|not like for like", t, re.I) and "38" in t and "75" in t for _, t in blocks):
+    ok("sync: 38 / 75 (003-02, literal) are stated not comparable with the after column")
+else:
+    bad("sync: state in one sentence that 003-02's 38 / 75 are literal figures and not comparable (not like for like) with the after column")
 
 # Method, provenance and machine identity (parsed values).
 def need(label, cond, msg):
@@ -535,8 +594,21 @@ need("sync", re.search(r"duration-corrected", S_SYNC, re.I) is not None,
      "the after figures are stated as duration-corrected")
 need("sync", re.search(r"literal|naive", S_SYNC, re.I) is not None,
      "the before figures are stated as the literal (naive) method")
-need("sync", re.search(r"2\.5\D{1,8}3\.4", S_SYNC) is not None,
-     "the naive method is said to read 2.5 to 3.4 % high")
+need("sync", any(re.search(r"literal|naive", t, re.I) and re.search(r"\bhigh\b", t, re.I)
+                 and re.search(r"(more|longer) than (1 s|one second)", t, re.I) for _, t in blocks),
+     "the literal method is stated to read high, because a metrics row covers more than 1 s")
+bad_src = []
+for num in re.findall(r"(\d+(?:\.\d+)?)\s*%", S_SYNC):
+    if float(num) not in src_pct:
+        bad_src.append(num + " %")
+for num, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(ms|s)\b", S_SYNC):
+    if round(float(num) / 1000 if unit == "ms" else float(num), 9) not in src_sec:
+        bad_src.append(num + " " + unit)
+if bad_src:
+    bad("sync: unsourced figure(s) %s: every percentage and row length must appear in swarm/notes/003-05.md or REPORT-0b's 002-12 sub-section"
+        % ", ".join(sorted(set(bad_src))))
+else:
+    ok("sync: every percentage and duration in the sync section is sourced (003-05 note or REPORT-0b 002-12)")
 need("sync", re.search(r"covered span", S_SYNC, re.I) is not None and re.search(r"per follower", S_SYNC, re.I) is not None,
      "the corrected method is stated (sum served / covered span / followers, per follower)")
 if chimera:
@@ -562,8 +634,48 @@ if duration02 and p02_runs and p02_pair:
          and p02_pair.group(1) in S_SYNC and p02_pair.group(2) in S_SYNC,
          "P-02 (%s / %s, %s s runs) is stated beside the 003-02 figures (%s s runs)"
          % (p02_pair.group(1), p02_pair.group(2), p02_runs.group(1), duration02))
-    need("sync", re.search(r"differ|because|why", S_SYNC, re.I) is not None,
-         "the reason both before figures exist (method and run length) is given")
+    need("sync", any(re.search(r"not the same runs?", t, re.I) for _, t in blocks),
+         "both pre-fix figure sets are named with their known runs and method, and state that they are not the same runs")
+if len(runs02) == 2:
+    ok("sync: swarm/notes/003-02.md records two runs per rate")
+    if re.search(r"single[- ]runs?", doc, re.I):
+        bad("sync: the document says 'single run(s)' but swarm/notes/003-02.md records two runs per rate (38.4 / 37.5; 75.7 / 74.7)")
+    else:
+        ok("sync: no 'single run' claim for 003-02")
+else:
+    bad("sync: swarm/notes/003-02.md does not show the two per-run figures per rate (the run count cannot be checked)")
+need("sync", any("003-02" in t and re.search(r"\b(two|2) runs\b", t, re.I) for _, t in blocks),
+     "003-02's figures are stated as two runs per rate")
+
+for lit, what in (('windows exact, [0-9]+ lost', 'the windows-field lost count'),
+                  ('"name"', 'the header name column (field 4)'),
+                  ('"lock"', 'the header lock column (field 8)'),
+                  ('synth1', 'the synth1 name'), ('synth2', 'the synth2 name')):
+    if lit in smoke_script:
+        ok("SCRIPT tools/smoke.sh at HEAD asserts %s" % what)
+    else:
+        bad("SCRIPT tools/smoke.sh at HEAD no longer contains %s (%s): the smoke section must be revised" % (lit, what))
+
+# ---- hand-off statements (C4, C6) and the duplicate --no-tui rule
+def block_has(*pats):
+    return any(all(re.search(p, t, re.I) for p in pats) for _, t in blocks)
+
+need("claims", block_has(r"slot-0|first-listed", r"\blost\b", r"\bonly\b"),
+     "lost covers only the first-listed (slot-0) synth's return path")
+need("claims", block_has(r"repeat", r"FAIL loss"), "the per-change suite may repeat a clean run once after FAIL loss")
+need("claims", block_has(r"repeat", r"003-09|three runs", r"never|no repeat"),
+     "the script itself and 003-09's three runs never repeat")
+need("claims", block_has(r"poc-baseline", r"\bcite"), "citations and vectors come only from the poc-baseline tag")
+need("claims", block_has(r"--group", r"cross-?wire", r"own"),
+     "a citable run uses its own --group, because two instances on one group cross-wire")
+need("claims", block_has(r"4a4885e", r"poc-baseline"),
+     "the after figures, measured at 4a4885e, hold for poc-baseline because later commits do not touch the clock path")
+for _, t in blocks:
+    if "--no-tui" in t and re.search(r"repeat|twice|multiple times|duplicat", t, re.I) and re.search(r"fail|reject|error|exit", t, re.I):
+        if "[measured]" in t:
+            ok("claims: the repeated --no-tui failure is tagged [measured]")
+        else:
+            bad("claims: a sentence says a repeated --no-tui fails; it must carry [measured] (run it, quote hadropoc's error)")
 
 # ---------------------------------------------------------------- lock and range
 if lock_s is not None:
@@ -635,6 +747,12 @@ need("smoke", re.search(r"lock.{0,60}column", S_SMOKE, re.I | re.S) is not None 
      "every module's lock column is judged, not the headless clock field")
 need("smoke", re.search(r"\b101\b", S_SMOKE) is not None and "--no-tui" in S_SMOKE and re.search(r"headless", S_SMOKE, re.I) is not None,
      "the POC has no headless fallback: without --no-tui and a terminal it exits 101")
+need("smoke", re.search(r"windows[^.\n]{0,60}\blost\b[^.\n]{0,20}\b0\b|\blost\b[^.\n]{0,20}\b0\b[^.\n]{0,20}windows", S_SMOKE) is not None,
+     "the windows-field loss count is asserted to be 0 (N lost in the audio windows)")
+need("smoke", "`name`" in S_SMOKE and "`lock`" in S_SMOKE, "the header's name and lock columns are named")
+need("smoke", re.search(r"synth1", S_SMOKE) is not None and re.search(r"synth2", S_SMOKE) is not None
+     and re.search(r"exactly[^.\n]{0,60}synth1|synth1 and synth2[^.\n]{0,60}exact", S_SMOKE, re.I) is not None,
+     "the two synth names are exactly synth1 and synth2")
 need("smoke", re.search(r"asserts?\s+nothing", S_SMOKE, re.I) is not None
      and re.search(r"sync rate", S_SMOKE, re.I) and re.search(r"latency", S_SMOKE, re.I)
      and re.search(r"percentile", S_SMOKE, re.I),
@@ -683,8 +801,9 @@ need("loss", "lost 5" in S_LOSS and re.search(r"not reproduced", S_LOSS, re.I) i
 for r in results:
     print(r)
 PY
+  gitpoc show "HEAD:tools/smoke.sh" > "$OUT/smoke-head.sh" 2>/dev/null || : > "$OUT/smoke-head.sh"
   py_out="$(python3 -I "$OUT/doc-check.py" "$OUT/$DOC" "$NOTE02" "$NOTE05" "$CONSTANTS" "$GIT_MAIN_RS" \
-      "$FIX_FILES_03" "$FIX_FILES_04" "$FIX_FILES_06")"
+      "$FIX_FILES_03" "$FIX_FILES_04" "$FIX_FILES_06" "$REPO_ROOT/doc/design/reports/archaeology/REPORT-0b.md" "$OUT/smoke-head.sh")"
   rc=$?
   if [ "$rc" -ne 0 ]; then
     bad "AC5 document checker crashed (python exit $rc)"
