@@ -949,9 +949,30 @@ def rule_cands(pos_label, neg_label, first_req):
             if re.search(pos_label, lab) and not re.search(neg_label, lab) and re.search(first_req, first)]
 
 
-OPEN_C = rule_cands(r"\bopen", r"^$", r"\bopens\b")
-EXP_C = rule_cands(r"expir", r"already|past|unknown|late|copy|repeat|after|second", r"\bclos")
-EXPL_C = rule_cands(r"explicit|close", r"unknown|late|copy|repeat|after|already|second", r"\bclos")
+# Review round 2: a transition rule's first sentence applies a present-tense closing verb to the window, and
+# the rule is not about what happens after a close, about memory of a closed window, or about a past expiry.
+CLOSE_VERB = r"closes (?:its |the |it\b)|window closes|closes it\b|ends the window"
+NEG_STATE = r"stays|remember|memor|already|past|\bafter\b|closed window|ignores"
+
+
+def transition_cands(label_pos, label_neg, first_pos, need_close_verb):
+    out = []
+    for i, (lab, first) in enumerate(RULE_INFO):
+        text = lab + " " + first
+        if not re.search(label_pos, lab) or re.search(label_neg, lab) or re.search(NEG_STATE, text):
+            continue
+        if not re.search(first_pos, first):
+            continue
+        if need_close_verb and not re.search(CLOSE_VERB, first):
+            continue
+        out.append(i)
+    return out
+
+
+OPEN_C = transition_cands(r"\bopen", r"^$", r"\bopens\b", False)
+EXP_C = transition_cands(r"expir", r"unknown|late|copy|repeat|after|second", r"expir|reached", True)
+EXPL_C = transition_cands(r"explicit|close", r"unknown|late|copy|repeat|after|already|second",
+                          r"explicit close|close message|a close|valid close", True)
 check("AC3", bool(OPEN_C), f"the receiver rules hold a numbered rule for the open transition (found rules {OPEN_C})")
 check("AC3", bool(EXP_C), f"the receiver rules hold a numbered rule for the expiry transition (found rules {EXP_C})")
 check("AC3", bool(EXPL_C), f"the receiver rules hold a numbered rule for the explicit close (found rules {EXPL_C})")
