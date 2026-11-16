@@ -4,57 +4,55 @@
 #
 # Ticket: doc/design/tickets/003/003-10-Update-design-set-with-baseline.md
 #
-# The design set (doc/design, tickets/ excluded) must carry the post-fix sync
-# rates of the POC tag poc-baseline: one POC reference row next to P-02 in
-# doc/design/02-constants.md, the same figures in doc/design/06-evidence-
-# appendix.md, the C-130 exception with the freeze after poc-baseline, and the
-# lock sub-question answered.  Read-only and unprivileged (C-146): nothing is
-# created or modified, the POC is only read through `git show` and
-# `git merge-base` with --no-optional-locks.
+# The design set (doc/design) must carry the post-fix sync rates of the POC tag
+# poc-baseline: one POC reference row next to P-02 in 02-constants.md, the same
+# figures in 06-evidence-appendix.md, the freeze after the tag in
+# 01-architecture.md, and the lock sub-question answered.  Read-only and
+# unprivileged (C-146): nothing is created or modified, the POC is only read
+# through git with --no-optional-locks.
 #
 # Overrides (used for the throwaway fixture only):
 #   DESIGN_DIR=/path/to/doc/design   (default: this tree's doc/design)
 #   HADROPOC=/path/to/poc            (default: /home/dorian/workspace/hadropoc)
 #
-# RULINGS applied (lead, 003-10 brief; L1-L8):
+# RULINGS (lead, 003-10 brief L1-L8 and the review R1-R7):
 #   L1  the two post-fix rates are READ from the sync table of BASELINE.md at
 #       the tag poc-baseline (column "After"), never pinned.  The new P row and
 #       one appendix entry each carry both figures, [measured], poc-baseline,
-#       the machine (hackrobustus or i7-1365U) and CONFIG_HZ=250.  Any commit
-#       named in such a paragraph must be an ancestor of the tag.
-#   L2  P-02 and P-03 rows are pinned by sha256 of their exact text (frozen
-#       rows, not snapshots).  Exactly one P row names poc-baseline; it sits
-#       next to P-02; P-01 and P-04..P-06 still exist.  37 / 77 is not asserted.
-#   L3  every freeze or no-code statement in doc/design (tickets/ excluded, and
-#       the 003 epic excluded because it is the task definition that states the
-#       exception) carries task 003 or C-130 in its paragraph.  C-130 names
-#       poc-baseline; 01-architecture.md says the POC is frozen after it.
-#   L4  lock: a [measured] paragraph records LOCKED at 4.1 s within the 25 s
-#       run.  Known-inert: the true answer, none, is recorded (BASELINE.md
-#       section 5: no in-scope family is known-inert; the audio-only
-#       alternative of epic 003 does not apply).
-#   L5  no paragraph says the POC runs headless "when there is no terminal"
-#       (headless only with --no-tui); a paragraph with the POC, lost/loss and
-#       a number must say the loss figure is "not citable".
-#   L6  the evidence appendix discloses the HADROPOC_BIN pass-through wrapper
-#       of the three poc-baseline smoke runs (a tagged paragraph).
-#   L7  every paragraph mentioning poc-baseline carries an evidence tag; an
-#       "Open item" paragraph that mentions poc-baseline or 003 names an owner
-#       and a falsifier.
+#       the machine (hackrobustus or i7-1365U) and CONFIG_HZ=250.  A commit named
+#       in such a paragraph must be an ancestor of the tag.
+#   L2  P-02 and P-03 rows are pinned by sha256 of their exact text.  Exactly
+#       one POC row names poc-baseline; it sits next to P-02; P-01 and P-04..P-06
+#       still exist.  37 / 77 is not asserted.
+#   L4  lock: a [measured] paragraph records LOCKED at 4.1 s within the 25 s run.
+#       Known-inert: none (BASELINE.md section 5).
+#   L6  the appendix discloses the HADROPOC_BIN pass-through wrapper (tagged).
 #   L8  doc/kickoff/check-design.py passes on the design set.
+#   R1  02-constants.md: C-130 is pinned by sha256 (a decided constant, never
+#       edited) and must still say "except by task 003"; the file minus the lines
+#       naming the tag is byte-identical to today (sha256 and line count), so
+#       ONE added P row is the only permitted change.
+#   R2  doc/design/reports/ is an archive: never scanned by any rule.
+#   R3  loss: a paragraph that mentions the tag may carry a loss number only with
+#       "not citable"; the appendix has one [decision] paragraph (owner,
+#       2026-11-16) saying POC loss figures, including "0 lost", are not citable
+#       because the loss counter defect was kept at poc-baseline.  Pre-existing,
+#       unchanged descriptions of the defect are exempt by sha256.
+#   R4  freeze: only non-modification assertions (NONMOD_RE) in a paragraph about
+#       the POC are scanned; the paragraph needs task 003 or C-130.  Quotations in
+#       C-125 paragraphs are not scanned.  01-architecture.md must say the POC is
+#       frozen after the tag (tagged, with task 003 or C-130).
+#   R5  every paragraph that mentions the tag carries a tag, except unchanged
+#       pre-existing paragraphs (sha256 embedded).
+#   R6  implementation/003-POC-smoke-fixes.md:19 must not say headless "when there
+#       is no terminal" (headless only with --no-tui).
+#   R7  everything else as in L1-L8.
 #
 # Scope decisions (reported, not silent):
-#   - tickets/ is never scanned (nobody may edit it).
-#   - implementation/003-POC-smoke-fixes.md is excluded from L3 (it is the task
-#     that owns the exception and quotes the history).  It is still scanned for
-#     L5 (headless) and L7 (tags) and must be corrected for L5.
-#   - reports/ is excluded from L3 only: those files are archived records of
-#     earlier tasks (C-130) and are not rewritten; they are still scanned for
-#     L5 (loss figures), L7 (tags) and the open-item rule.
-#   - .csv and .diff data files are not scanned; .md, .toml, .sh, .py and .log
-#     are.
-#   - "freeze" statements are recognised by a fixed phrase list (FREEZE_RE) in a
-#     paragraph that is about the POC (POC_RE, the paragraph or its heading).
+#   - tickets/ and reports/ are never scanned.
+#   - implementation/003-POC-smoke-fixes.md is excluded from the R4 freeze scan
+#     (it is the task that owns the exception); it is scanned for R6 and R5.
+#   - .csv and .diff data files are not scanned.
 
 set -u
 cd "$(dirname "$0")/.."
@@ -80,19 +78,27 @@ EPIC003 = "implementation/003-POC-smoke-fixes.md"
 P02_SHA = "bd9b54d70227a6e567df073e55338e5dc540455d1029b12ea7dff9de9641d900"
 P03_SHA = "efa69476086bc34c84f08ca4c4eca981e1c59edb5c47042e35b46646a28b3e7c"
 P_KEEP = ["P-01", "P-02", "P-03", "P-04", "P-05", "P-06"]
+# R1: the constants table is pinned except for ONE added row naming the tag.
+CONST_LINES = 280          # lines of 02-constants.md today (none names the tag)
+CONST_SHA = "8bde3759c7c583a7c6e20fbdb7e9bd6c808c3be5e898ddc17451fb8156652efb"
+C130_SHA = "5f717dc8b082d6ed50c7075629c208648821c1c30b5d9065d83cdcfbee089882"
+# R5/R3: pre-existing paragraphs that mention the tag and are unchanged by this
+# ticket.  Exempt from the tag rule (R5) and the loss rule (R3).
+EXEMPT_PREEXISTING_SHA = {
+    "8ec1c81468e78c9dd98bf2c542acfdd5b0f8e1b32b80e51f401be8843543cdb2",  # 007b:55 (no tag)
+    "d06f6876d5f6c28679ce3d76ab8f24e1061e34cec62968c4be046e1a623808fa",  # 06:32 REPORT-0b (b) (loss, descriptive)
+}
 
 TAG_RE = re.compile(r"\[(code|measured|decision|kernel-doc|memory|standard)\]")
 EXC_RE = re.compile(r"task 003|tasks? [\d ,and]*003|epic 003|\bC-130\b|003-(AC|\d)", re.I)
 POC_RE = re.compile(r"\bpoc\b|hadropoc|proof of concept", re.I)
-FREEZE_RE = re.compile(
-    r"frozen (POC|proof|tree|reference|instrument|baseline)"
-    r"|POC (is |was |stays |remains )?frozen"
-    r"|\bis not modified\b|\bnot modified\b|\bnever modified\b"
-    r"|no code goes|goes into (the )?(hadropoc|POC)|written into"
-    r"|nothing (else )?(is )?written|nothing else writes|changes only in"
-    r"|only change (the POC|ever)|(?<!poc-)\buntouched\b|modified again|writes to it",
+NONMOD_RE = re.compile(
+    r"no code goes into|nothing (else )?is written into|nothing else writes"
+    r"|not modified|never modified|is not changed"
+    r"|only change (the POC )?ever receives|POC ever receives|goes into (the )?(hadropoc|POC)",
     re.I,
 )
+QUOTE_RE = re.compile(r'"[^"]*"')
 LOSS_NUM_RE = re.compile(
     r"\b(lost|loss)\b[\"'`*]?\s*(?:\w+\s+){0,2}\d"
     r"|\d[\d ,.]*\s*(million|datagrams?|packets?)?\s*(lost|loss)\b"
@@ -168,13 +174,17 @@ def read_blocks(path):
     return out
 
 
+ARCHIVE = "reports"   # R2: an archive, never edited by this ticket, never scanned
+
+
 def corpus(exclude=(), suffixes=(".md", ".toml", ".sh", ".py", ".log")):
     blocks = []
     for p in sorted(DESIGN.rglob("*")):
         if not p.is_file() or p.suffix not in suffixes:
             continue
         rel = p.relative_to(DESIGN).as_posix()
-        if rel.split("/")[0] == "tickets" or any(rel == x or rel.startswith(x + "/") for x in exclude):
+        top = rel.split("/")[0]
+        if top in ("tickets", ARCHIVE) or any(rel == x or rel.startswith(x + "/") for x in exclude):
             continue
         blocks += read_blocks(p)
     return blocks
@@ -341,12 +351,22 @@ def run():
             else:
                 bad(G1, "new row %s: %s" % (rid, why))
 
-    # the C-130 row carries the freeze after the tag (C-130 is the exception)
+    # R1: the constants table is pinned; C-130 is a decided constant, never edited
     c130 = [l for l in constants.split("\n") if l.startswith("| C-130 |")]
-    if len(c130) == 1 and TAG in c130[0] and re.search(r"frozen", c130[0], re.I) and EXC_RE.search(c130[0]):
-        ok("AC3 rule", "C-130 names task 003 as the exception and the freeze after %s" % TAG)
+    if len(c130) == 1 and hashlib.sha256(c130[0].encode("utf-8")).hexdigest() == C130_SHA:
+        ok("AC3 rule", "C-130 row is unchanged (pinned) and states the exception 'except by task 003'")
     else:
-        bad("AC3 rule", "C-130 row must name task 003 as the exception and say the POC is frozen after %s" % TAG)
+        bad("AC3 rule", "C-130 row changed or missing: it is a decided constant and is never edited")
+    all_lines = constants.split("\n")
+    no_tag = [l for l in all_lines if TAG not in l]
+    if len(no_tag) == CONST_LINES:
+        ok("AC1 constants table", "02-constants.md has %d lines outside the one new row (today's count)" % CONST_LINES)
+    else:
+        bad("AC1 constants table", "02-constants.md: %d lines without %s, expected %d (only ONE row may be added)" % (len(no_tag), TAG, CONST_LINES))
+    if hashlib.sha256("\n".join(no_tag).encode("utf-8")).hexdigest() == CONST_SHA:
+        ok("AC1 constants table", "02-constants.md is byte-identical to today apart from the one new row")
+    else:
+        bad("AC1 constants table", "02-constants.md differs from today beyond the one new row (sha256 of the rest changed)")
 
     # ---- AC2: evidence appendix carries the same figures ----
     G2 = "AC2 evidence appendix"
@@ -404,15 +424,17 @@ def run():
         ok(G2, "appendix records that the loss-counter bug is kept at %s" % TAG)
     else:
         bad(G2, "appendix must record that the loss-counter bug is kept (not fixed) at %s" % TAG)
-    if any(TAG in b["text"] and re.search(r"\blosse?s?\b|\blost\b|\bloss\b", b["text"], re.I)
-           and NOT_CITABLE_RE.search(b["text"]) for b in appendix_blocks):
-        ok("L5 loss figures", "appendix says the POC loss figures at %s are not citable" % TAG)
+    if any(TAG in b["text"] and re.search(r"0 lost|zero lost", b["text"], re.I)
+           and NOT_CITABLE_RE.search(b["text"]) and re.search(r"loss counter", b["text"], re.I)
+           and "[decision]" in b["text"] and "2026-11-16" in b["text"] and re.search(r"owner", b["text"], re.I)
+           for b in appendix_blocks):
+        ok("L5 loss figures", "appendix: owner decision (2026-11-16) makes POC loss figures, incl. 0 lost, not citable")
     else:
-        bad("L5 loss figures", "appendix must say the POC loss figures at %s (including 0 lost) are not citable" % TAG)
+        bad("L5 loss figures", "appendix needs one [decision] paragraph (owner, 2026-11-16) stating POC loss figures incl. '0 lost' are not citable because the loss counter defect was kept at %s" % TAG)
 
     # the architecture (C-171's home) says the POC is frozen after the tag
     if any(TAG in b["text"] and re.search(r"frozen|freeze", b["text"], re.I) and re.search(r"\bafter\b", b["text"], re.I)
-           for b in arch_blocks):
+           and TAG_RE.search(b["text"]) and EXC_RE.search(b["text"]) for b in arch_blocks):
         ok("AC3 rule", "01-architecture.md says the POC is frozen after %s" % TAG)
     else:
         bad("AC3 rule", "01-architecture.md must say the POC is frozen after %s (C-171 home)" % TAG)
@@ -420,8 +442,11 @@ def run():
     # ---- AC3 / L3: the unqualified rule ----
     G3 = "AC3 rule"
     offenders = []
-    for b in corpus(exclude=(EPIC003, "reports")):
-        if FREEZE_RE.search(b["text"]) and POC_RE.search(b["text"] + " " + b["heading"]):
+    for b in corpus(exclude=(EPIC003,)):
+        # R4: only non-modification assertions; quotations of the DoD title in
+        # C-125 paragraphs are checklist quotations, not new statements
+        scan = QUOTE_RE.sub("", b["text"]) if "C-125" in b["text"] else b["text"]
+        if NONMOD_RE.search(scan) and (POC_RE.search(b["text"]) or "frozen tree" in b["text"]):
             if not EXC_RE.search(b["text"]):
                 offenders.append(b)
     if not offenders:
@@ -455,14 +480,18 @@ def run():
     if not any(HEADLESS_NO_TERM_RE.search(b["text"]) for b in corpus(exclude=())):
         ok(G5, "no paragraph says the POC runs headless when there is no terminal")
     for b in corpus(exclude=(EPIC003,)):
-        ctx = b["text"] + " " + b["heading"]
-        if POC_RE.search(ctx) and LOSS_NUM_RE.search(b["text"]) and not NOT_CITABLE_RE.search(b["text"]):
+        # R3: a paragraph that mentions the tag may carry a loss number only with "not citable"
+        if hashlib.sha256(b["text"].encode("utf-8")).hexdigest() in EXEMPT_PREEXISTING_SHA:
+            continue
+        if TAG in b["text"] and LOSS_NUM_RE.search(b["text"]) and not NOT_CITABLE_RE.search(b["text"]):
             bad(G5, "%s:%d: POC loss figure with no 'not citable' statement: \"%s\"" % (rel(b), b["line"], quote(b)))
 
     # ---- L7: tags on paragraphs that mention the tag; open items ----
     G7 = "AC4 tags"
     for b in corpus(exclude=(EPIC003,)):
         if b["text"].lstrip().startswith("#"):
+            continue
+        if hashlib.sha256(b["text"].encode("utf-8")).hexdigest() in EXEMPT_PREEXISTING_SHA:
             continue
         if TAG in b["text"] and not TAG_RE.search(b["text"]):
             bad(G7, "%s:%d: paragraph mentions %s without an evidence tag: \"%s\"" % (rel(b), b["line"], TAG, quote(b)))
@@ -485,6 +514,7 @@ def run():
     else:
         bad(G8, "doc/kickoff/check-design.py not found")
 
+    ok("scope", "doc/design/reports/ is an archive: not scanned by any rule (R2)")
     report()
 
 
