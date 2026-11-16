@@ -907,7 +907,13 @@ for _, header, rows in VALID_TABS:
         if len(r) >= 2:
             FORMS.append((r[0], r[1]))
 check("AC5", len(FORMS) >= 5, f"at least five invalid forms are tabled ({len(FORMS)} found)")
+def is_repeat_row(f):
+    return re.search(r"section index", f, re.I) is not None and re.search(r"identical|same|repeat|duplicate", f, re.I) is not None
+
+
 for form, outcome in FORMS:
+    if is_repeat_row(form):
+        continue  # an identical repeat is not a rejection; checked with the duplicate rule below
     names = [n for n in ALL_REASONS if re.search(r"\b" + n + r"\b", outcome)]
     check("AC5", bool(names), f"the invalid form '{form[:50]}' names its outcome as a member of the Reject or refusal enumeration")
 
@@ -944,6 +950,18 @@ if TOP_BYTES is not None and TOP_BYTES > BOUND:
           "one-message manifest")
     if REPORT:
         R = REPORT[0]
+        def affirmed_for(text, idpat):
+            for m in re.finditer(idpat + r"([^.;]{0,400}?)\b(?:is|are)\s+falsified\b", text, re.I):
+                if not re.search(r"\bnot\b", m.group(1), re.I):
+                    return True
+            for m in re.finditer(r"\bfalsifies\b([^.;]{0,400}?)" + idpat, text, re.I):
+                if not re.search(r"\bnot\b", m.group(1), re.I):
+                    return True
+            return False
+        check("AC3", affirmed_for(R, r"AC[- ]3\b"),
+              "the report affirmatively falsifies the epic's AC-3 (is/are falsified, or falsifies, with no negation between)")
+        check("AC3", affirmed_for(R, r"012-08"),
+              "the report affirmatively falsifies 012-08 AC 2 (is/are falsified, or falsifies, with no negation between)")
         nums = {to_int(x) for x in re.findall(NUM, R)}
         check("AC3", TOP_BYTES in nums and BOUND in nums and re.search(r"exceed", R, re.I) is not None,
               f"the same paragraph states the computed maximum, {TOP_BYTES} bytes, and that it exceeds {BOUND} bytes")
@@ -960,20 +978,28 @@ if TOP_BYTES is not None and TOP_BYTES > BOUND:
     check("AC4", any(join_clause.search(p) for p in join_open),
           "the join-delay open item says the second clause of the ticket's falsifier is already met at 1 252 bytes")
 
-# AC 5 reassembly (T3 e): one outcome for a duplicate section index, one for disagreeing sections
-dup_rows = [(f, o) for f, o in FORMS if re.search(r"section index", f, re.I) and re.search(r"duplicate|twice|same|two sections", f, re.I)]
-check("AC5", bool(dup_rows), "a duplicate section index has an invalid-form row")
+# AC 5 reassembly. Merged text fixes the duplicate rule, quoted here so the rule is traceable:
+#   Receiver report: "a report that is not newer ... it is a valid message, never a rejection";
+#   Sync: "A stale or duplicate reply is therefore a valid exchange ... and never an invalid form";
+#   media rule 9: "copies are deduplicated by stream, position and packet index - the first valid copy wins".
+# So an IDENTICAL repeated section is not a rejection: its outcome names no Reject reason and says it is
+# ignored, valid or not a rejection, the section already held being kept. Sections that DISAGREE (on the
+# section count or on the manifest length or bytes) are rejections and name exactly one Reject reason.
+dup_rows = [(f, o) for f, o in FORMS if is_repeat_row(f)]
+check("AC5", bool(dup_rows), "an identical repeated section has an invalid-form row (its outcome is stated)")
 for f, o in dup_rows:
-    check("AC5", len([n for n in ALL_REASONS if re.search(r"\b" + n + r"\b", o)]) == 1,
-          "the duplicate section index names exactly one outcome")
+    named = [n for n in REJECT if re.search(r"\b" + n + r"\b", o)]
+    check("AC5", not named and re.search(r"not a rejection|never a rejection|ignored|valid|kept", o, re.I) is not None,
+          f"the identical repeated section is not a rejection: its outcome names no Reject reason and keeps "
+          f"the section already held (names found: {named})")
 dis_rows = [(f, o) for f, o in FORMS if re.search(r"disagree|differ|different|conflict", f, re.I) and re.search(r"section count|manifest length", f, re.I)]
 check("AC5", any(re.search(r"manifest length", f, re.I) for f, o in dis_rows),
       "sections that disagree on the manifest length have an invalid-form row")
 check("AC5", any(re.search(r"section count", f, re.I) for f, o in dis_rows),
       "sections that disagree on the section count have an invalid-form row")
 for f, o in dis_rows:
-    check("AC5", len([n for n in ALL_REASONS if re.search(r"\b" + n + r"\b", o)]) == 1,
-          f"the disagreement row '{f[:40]}' names exactly one outcome")
+    check("AC5", len([n for n in REJECT if re.search(r"\b" + n + r"\b", o)]) == 1,
+          f"the disagreement row '{f[:40]}' names exactly one Reject reason")
 
 # --- AC6 and DoD: evidence tags, subsections, and the Markdown/TOML agreement ----------
 for block_kind, text in prose_blocks(MAN_TEXT):
@@ -1033,6 +1059,15 @@ for k, (rows, offs, total, errs, where) in enumerate(MODELS):
                              f"equals the computed {size} bytes, its reasons are Reject members, and each counted "
                              f"field carries both count and max_count")
 
+# --- point 2: "every addition ... major change" keeps the accept-any content-type exception -----------
+for p in PARAS_FLAT:
+    for sent in re.split(r"(?<=[.;:])\s+", p):
+        if re.search(r"every addition", sent, re.I) and re.search(r"\bmajor\b", sent, re.I):
+            check("DoD", re.search(r"content[- ]type", sent, re.I) is not None and
+                  re.search(r"\bexcept\b|other than", sent, re.I) is not None,
+                  "the sentence that says every addition to the manifest is a major change excepts a new "
+                  "content-type code (accept-any)")
+
 # --- T2: the fixed part of the top-level table is declared in wire.toml, row for row ----------------
 TOP_MODEL = None
 if TOP_BYTES is not None:
@@ -1057,6 +1092,26 @@ check("AC6", len(fixed_msgs) >= 1,
 check("AC6", any(m.get("max_size") == fixed_bytes and m.get("layer") == "control" and m.get("dscp") == 40
                  for m in fixed_msgs),
       f"the fixed-part message has max_size equal to the markdown fixed-part sum ({fixed_bytes} bytes), layer control, dscp 40")
+
+# --- point 4: the toml stream element's channel-count field states the audio-length bound -------------
+ST_LOC = None
+for k_, (rows_, offs_, total_, errs_, where_) in enumerate(MODELS):
+    for i_, r_ in enumerate(rows_):
+        if r_["meaning"].lower().startswith("channel count: how many channel-map entries"):
+            ST_LOC = (k_, offs_[i_])
+if ST_LOC is None:
+    check("AC1", False, "the markdown stream element has a channel-count row")
+else:
+    k_, boff_ = ST_LOC
+    rows_, offs_, _t, _e, where_ = MODELS[k_]
+    sig_ = [(offs_[j_], rows_[j_]["bits"], rows_[j_]["maxc"]) for j_ in range(len(rows_))]
+    texts_ = []
+    for m_ in TOML_MSGS:
+        fl_ = m_.get("field", []) if isinstance(m_, dict) else []
+        if [(f_.get("offset"), f_.get("width"), f_.get("max_count")) for f_ in fl_] == sig_:
+            texts_ += [f_.get("meaning", "") + " " + f_.get("valid", "") for f_ in fl_ if f_.get("offset") == boff_]
+    check("AC1", any(re.search(r"65[ \u00a0\u202f]?535", t_) for t_ in texts_),
+          "wire.toml's channel-count field of the stream element states the audio-length bound (65 535)")
 
 # --- T3 (a): the L range keeps 64 processors' declared delay inside the landed u32 ----------------------
 L_ROWS = [r for r in ALL_ROWS if r["meaning"].lower().startswith("structural latency")]
