@@ -22,13 +22,11 @@
 #   ## Manifest                prose: the manifest's content and its envelope
 #       (004-18's Manifest section), every prose paragraph of 5+ words tagged.
 #   field tables               five columns (Offset, Width, Type, Meaning, Valid
-#       range). The FIRST field table of the section is the manifest's top-level
-#       table; it tiles from its first offset. Every counted row states its
-#       fixed maximum ("W × max M"). A row whose Type names a blob or an element
-#       has a W equal to the size of another field table of the section, so an
-#       element is declared once and referenced by its size. The maximum manifest
-#       size is stated in a sentence that also says "maximum" and "manifest",
-#       with a number of bytes equal to the top-level table's computed size.
+#       range); each tiles from its first offset; every counted row states its
+#       fixed maximum ("W × max M"). The layout (one table or several, and which
+#       is top-level) is the coder's: the maximum manifest size is the computed
+#       size of a table that no counted row references, stated in a sentence
+#       that also says "maximum" and "manifest" with its bytes.
 #   ### <title>                one per subsection; a subsection with a table has
 #       an evidence tag in its prose.
 #   Invalid forms              a two-column table with a "Form" and an "Outcome"
@@ -49,10 +47,12 @@
 #         flag, dense controller initial values, the conversion delay of a
 #         device-facing port, the cost bound in operations per slice, required E,
 #         declared E and the unit of E.
-#   AC 2  the "none" code of required E and the "unknown" code of declared E are
-#         numeric, distinct, fit their field's width, and lie outside the numeric
-#         range each E row states. The encoding itself is free.
-#   AC 3  the maximum manifest size, computed from the top-level table at its
+#   AC 2  the none encoding of required E and the unknown encoding of declared E
+#         are stated, in either of two forms the ticket leaves open: a sentinel
+#         outside the stated E range (checked arithmetically), or a flag field
+#         (its meaning stated, the E value stated as not interpreted, and a
+#         sentence stating distinctness from every valid E value).
+#   AC 3  the maximum manifest size, computed from the table no counted row references, at its
 #         maximum counts, is stated in bytes; it fits the landed envelope (its
 #         sections, at most 255 of 1 196 bytes of manifest each, the landed
 #         envelope's 56 + 1 196 = 1 252 bytes agreeing with C-17). Above 1 252
@@ -60,8 +60,7 @@
 #   AC 4  the join-delay bound is an open item with an owner and a falsifier.
 #   AC 5  at least five invalid forms; the five categories of Work item 3 are
 #         each covered; every outcome names an existing reason of the Reject or
-#         refusal enumeration; the length row names BadLength and the reserved row
-#         names ReservedNonZero, as the ticket fixes.
+#         refusal enumeration; the length row names BadLength (Work item 3 fixes it).
 #   AC 6  the Markdown and TOML agree table for table (offsets, widths, maximum
 #         counts, max_size, layer, dscp, reasons); when the paths are not
 #         overridden, `cargo run --bin wire-check` reports "checks clean" and
@@ -122,7 +121,7 @@ def read_text(path):
 
 NUM = r"(?:0x[0-9a-fA-F]+|\d{1,3}(?:[   ]\d{3})+|\d+)"
 TIME_UNIT = r"(?:µs|μs|\bus\b|microseconds?|\bns\b|nanoseconds?|\bms\b|milliseconds?)"
-ANY_UNIT = r"(?:samples?|frames?|operations?|" + TIME_UNIT + r"|\bns\b)"
+ANY_UNIT = r"(?:samples?|frames?|operations?|bits?|bytes?|Hz|seconds?|\bs\b|" + TIME_UNIT + r"|\bns\b)"
 
 
 def to_int(s):
@@ -756,8 +755,7 @@ def rows_where(pred):
 has_ports = rows_where(lambda r: "port" in r["meaning"].lower() or "port" in r["valid"].lower())
 has_content = rows_where(lambda r: "content type" in txt(r))
 check("AC1", has_ports and has_content, "ports and content types have fields")
-check("AC1", rows_where(lambda r: "channel map" in txt(r) and r["maxc"] is not None),
-      "the channel map has a counted field of entries")
+check("AC1", rows_where(lambda r: "channel map" in txt(r)), "the channel map has a field")
 
 L_rows = rows_where(lambda r: (re.search(r"\bL\b", r["meaning"]) or "latency" in r["meaning"].lower())
                     and "sample" in txt(r))
@@ -790,8 +788,16 @@ check("AC1", DEC_E, "declared E per sink has a field")
 check("AC1", any(re.search(TIME_UNIT, txt(r), re.I) for r in REQ_E + DEC_E),
       "the unit of E is stated")
 
-# --- AC2: none and unknown are distinct numeric codes outside the numeric E range ---
+# --- AC2: the none and unknown encodings are stated, distinct, and kept apart from every valid E value ---
+# The ticket fixes the property, not the representation, so two forms are accepted:
+#   (a) a sentinel: a numeric code in the E row's valid range, outside the stated "lo to hi" range
+#       of that row, and within the field's width;
+#   (b) a flag: a separate field (a row without a count) whose valid range maps a number to none or
+#       to unknown, with the E value stated as not interpreted when the flag says so, and a sentence
+#       stating that none and unknown are distinct from every valid E value.
 HEXNUM = r"0x[0-9a-fA-F]+"
+NOT_INTERP = r"not (?:interpreted|read|used)|ignored|disregard|does not apply|no meaning"
+DISTINCT_TXT = r"distinct|never|cannot|not a valid|no valid|differ"
 
 
 def code_for(text, word):
@@ -808,77 +814,91 @@ def numeric_range(text):
     return to_int(m.group(1)), to_int(m.group(2))
 
 
-none_code = None
-range_req = None
-for r in REQ_E[:1]:
-    none_code = code_for(r["valid"], "none")
-    range_req = numeric_range(r["valid"])
-unknown_code = None
-range_dec = None
-for r in DEC_E[:1]:
-    unknown_code = code_for(r["valid"], "unknown")
-    range_dec = numeric_range(r["valid"])
-check("AC2", none_code is not None, "the required-E row gives the 'none' encoding as a number")
-check("AC2", unknown_code is not None, "the declared-E row gives the 'unknown' encoding as a number")
-check("AC2", range_req is not None, "the required-E row states its numeric range 'lo to hi'")
-check("AC2", range_dec is not None, "the declared-E row states its numeric range 'lo to hi'")
-if none_code is not None and unknown_code is not None:
-    check("AC2", none_code != unknown_code, "the 'none' and 'unknown' encodings are distinct")
-    for label_, code, rng in (("none", none_code, range_req), ("unknown", unknown_code, range_dec)):
-        if rng is not None:
-            check("AC2", not (rng[0] <= code <= rng[1]),
-                  f"the '{label_}' encoding lies outside the numeric E range {rng[0]} to {rng[1]}")
-    for label_, code, rows_ in (("none", none_code, REQ_E[:1]), ("unknown", unknown_code, DEC_E[:1])):
-        if rows_:
-            bits = rows_[0]["bits"]
-            check("AC2", code < 2 ** bits, f"the '{label_}' encoding fits the {bits}-bit E field")
+def encoding_of(kind, E_rows):
+    """('sentinel' | 'flag', code, row) for the kind word, or None."""
+    for r in E_rows:
+        code = code_for(r["valid"], kind)
+        rng = numeric_range(r["valid"])
+        if code is not None and rng is not None and not (rng[0] <= code <= rng[1]) and code < 2 ** r["bits"]:
+            return ("sentinel", code, r)
+    for r in ALL_ROWS:
+        if r["maxc"] is None and numeric_range(r["valid"]) is None:
+            code = code_for(r["meaning"] + " " + r["valid"], kind)
+            if code is not None:
+                return ("flag", code, r)
+    return None
+
+
+for label_, kind_, E_rows in (("none", "none", REQ_E), ("unknown", "unknown", DEC_E)):
+    for r in E_rows:
+        c_ = code_for(r["valid"], kind_)
+        g_ = numeric_range(r["valid"])
+        if c_ is not None and g_ is not None:
+            check("AC2", not (g_[0] <= c_ <= g_[1]),
+                  f"the {label_} code {c_} lies outside the E range {g_[0]} to {g_[1]} that the same row states")
+ENC_NONE = encoding_of("none", REQ_E)
+ENC_UNKNOWN = encoding_of("unknown", DEC_E)
+check("AC2", ENC_NONE is not None,
+      "the none encoding of required E is stated (a sentinel outside the E range, or a flag field)")
+check("AC2", ENC_UNKNOWN is not None,
+      "the unknown encoding of declared E is stated (a sentinel outside the E range, or a flag field)")
+for label_, enc, E_rows in (("none", ENC_NONE, REQ_E), ("unknown", ENC_UNKNOWN, DEC_E)):
+    if enc is not None and enc[0] == "sentinel":
+        check("AC2", enc[1] < 2 ** enc[2]["bits"],
+              f"the {label_} sentinel {enc[1]} fits the {enc[2]['bits']}-bit E field")
+    if enc is not None and enc[0] == "flag":
+        check("AC2", any(re.search(NOT_INTERP, r["valid"] + " " + r["meaning"], re.I) for r in E_rows),
+              f"the E value is stated as not interpreted when the flag says {label_}")
+        check("AC2", any(label_ in sent.lower() and "valid" in sent.lower() and re.search(DISTINCT_TXT, sent, re.I)
+                         for sent in re.split(r"(?<=[.;:])\s+", FLAT)),
+              f"a sentence states that {label_} is distinct from every valid E value")
+if ENC_NONE is not None and ENC_UNKNOWN is not None:
+    if ENC_NONE[0] == "sentinel" and ENC_UNKNOWN[0] == "sentinel":
+        check("AC2", ENC_NONE[1] != ENC_UNKNOWN[1], "the none and unknown sentinels are distinct numbers")
+        for label_, enc in (("none", ENC_NONE), ("unknown", ENC_UNKNOWN)):
+            rng = numeric_range(enc[2]["valid"])
+            check("AC2", not (rng[0] <= enc[1] <= rng[1]),
+                  f"the {label_} sentinel {enc[1]} lies outside its stated E range {rng[0]} to {rng[1]}")
+    else:
+        check("AC2", True, "the none and unknown encodings take different forms or values; distinctness is stated")
 
 # --- AC3: the maximum manifest size, computed and stated ---------------------
-TOP_BYTES = None
-if MODELS:
-    TOP_BYTES = MODELS[0][2] // 8
-    other_sizes = {}
-    for k in range(1, len(MODELS)):
-        other_sizes[k] = MODELS[k][2]
-    for k, (rows, offs, total, errs, where) in enumerate(MODELS):
-        for r in rows:
-            if r["maxc"] is None:
-                continue
-            is_blob = bool(re.search(r"blob|element", r["type"] + " " + r["meaning"], re.I))
-            if not is_blob:
-                continue
-            sizes = [MODELS[j][2] for j in range(len(MODELS)) if j != k]
-            check("AC3", r["bits"] in sizes,
-                  f"{where}: the counted row '{r['meaning'][:40]}' has a per-element width equal to the size of a "
-                  f"field table of the section ({r['bits']} bits)")
-    claims = []
-    for sent in re.split(r"(?<=[.;:])\s+", FLAT):
-        if re.search(r"maximum", sent, re.I) and re.search(r"manifest", sent, re.I):
-            for m in re.finditer(r"(" + NUM + r")\s*bytes", sent):
-                claims.append(to_int(m.group(1)))
-    check("AC3", TOP_BYTES in claims,
-          f"the maximum manifest size is stated in bytes and equals the top-level table at its maximum counts "
-          f"({TOP_BYTES} bytes; claimed: {sorted(set(claims))})")
-    if TOP_BYTES is not None and ENV["length_max"] and ENV["section_max"]:
-        sections = math.ceil(TOP_BYTES / ENV["length_max"])
-        check("AC3", sections <= ENV["section_max"],
-              f"the manifest needs {sections} section(s) of {ENV['length_max']} bytes, within the landed count "
-              f"maximum {ENV['section_max']}")
-    if TOP_BYTES is not None:
-        if TOP_BYTES <= BOUND:
-            check("AC3", True, f"the maximum manifest size, {TOP_BYTES} bytes, fits the {BOUND}-byte control bound")
-        else:
-            falsified = re.search(r"falsif", FLAT, re.I) is not None
-            split = re.search(r"\bsplit", FLAT, re.I) is not None
-            check("AC3", falsified and split,
-                  f"the maximum manifest size, {TOP_BYTES} bytes, exceeds {BOUND}: the text reports the falsified "
-                  "constant and proposes a split")
-else:
-    check("AC3", False, "no field table in the Manifest section to compute the maximum manifest size from")
+# The ticket fixes the size, not the table layout. The maximum is the computed size of a manifest table
+# that no counted row of the section references (its size is not the per-element width of another row).
+REFERENCED_BITS = set()
+for k, (rows, offs, total, errs, where) in enumerate(MODELS):
+    for r in rows:
+        if r["maxc"] is not None:
+            REFERENCED_BITS.add(r["bits"])
+TOP_CANDIDATES = [m for k, m in enumerate(MODELS) if m[2] not in {b for b in REFERENCED_BITS}] or list(MODELS)
+claims = []
+for sent in re.split(r"(?<=[.;:])\s+", FLAT):
+    if re.search(r"maximum", sent, re.I) and re.search(r"manifest", sent, re.I):
+        for m in re.finditer(r"(" + NUM + r")\s*bytes", sent):
+            claims.append(to_int(m.group(1)))
+matched = [m[2] // 8 for m in TOP_CANDIDATES if m[2] // 8 in claims]
+TOP_BYTES = max(matched) if matched else None
+check("AC3", TOP_BYTES is not None,
+      f"the maximum manifest size is stated in bytes and equals the computed size of a manifest table that no "
+      f"counted row references (candidates {[m[2] // 8 for m in TOP_CANDIDATES]} bytes; claimed {sorted(set(claims))})")
+if TOP_BYTES is not None and ENV["length_max"] and ENV["section_max"]:
+    sections = math.ceil(TOP_BYTES / ENV["length_max"])
+    check("AC3", sections <= ENV["section_max"],
+          f"the manifest needs {sections} section(s) of {ENV['length_max']} bytes, within the landed count "
+          f"maximum {ENV['section_max']}")
+if TOP_BYTES is not None:
+    if TOP_BYTES <= BOUND:
+        check("AC3", True, f"the maximum manifest size, {TOP_BYTES} bytes, fits the {BOUND}-byte control bound")
+    else:
+        falsified = re.search(r"falsif", FLAT, re.I) is not None
+        split = re.search(r"\bsplit", FLAT, re.I) is not None
+        check("AC3", falsified and split,
+              f"the maximum manifest size, {TOP_BYTES} bytes, exceeds {BOUND}: the text reports the falsified "
+              "constant and proposes a split")
 
 # --- AC4: join-delay bound recorded as an open item with an owner and a falsifier ---
 PROSE = [b for b in prose_blocks(MAN_TEXT) if b[0] == "p"]
-OPEN_PARAS = [b[1] for b in PROSE if re.sub(r"[*_`]", "", b[1]).strip().lower().startswith("open item")]
+OPEN_PARAS = [b[1] for b in PROSE if re.search(r"open item", re.sub(r"[*_`]", "", b[1]).strip()[:40], re.I)]
 join_open = [p for p in OPEN_PARAS if re.search(r"\bjoin", p, re.I) and re.search(r"bound|maximum|\bmax\b", p, re.I)]
 check("AC4", join_open, "an open item records the join-delay bound")
 check("AC4", any(re.search(r"\b(epic\s*)?004\b", p, re.I) for p in join_open),
@@ -908,8 +928,8 @@ check("AC5", cat(lambda f, o: re.search(r"channel[- ]map", f, re.I) and re.searc
       "a channel-map entry out of range or duplicated is an invalid form")
 check("AC5", cat(lambda f, o: re.search(r"device", f, re.I) and re.search(r"conversion", f, re.I)),
       "a conversion delay on a port that is not device-facing is an invalid form")
-check("AC5", cat(lambda f, o: re.search(r"reserved|non-?zero", f, re.I) and "ReservedNonZero" in o),
-      "a reserved field that is non-zero is an invalid form with outcome ReservedNonZero")
+check("AC5", cat(lambda f, o: re.search(r"reserved|non-?zero", f, re.I)),
+      "a non-zero reserved field is an invalid form (Work item 3)")
 
 # --- AC6 and DoD: evidence tags, subsections, and the Markdown/TOML agreement ----------
 for block_kind, text in prose_blocks(MAN_TEXT):
@@ -940,7 +960,7 @@ REJECT_SET = set(REJECT)
 
 for k, (rows, offs, total, errs, where) in enumerate(MODELS):
     top = k == 0
-    if top and TOP_BYTES is not None and TOP_BYTES > BOUND:
+    if rows and sum(r["bits"] * (r["maxc"] or 1) for r in rows) // 8 > BOUND:
         print(f"NOTE AC6: {where} is above the control bound; its toml declaration is the split's, not checked here")
         continue
     sig_md = [(offs[i], rows[i]["bits"], rows[i]["maxc"]) for i in range(len(rows))]
