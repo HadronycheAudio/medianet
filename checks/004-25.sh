@@ -880,11 +880,14 @@ check("AC1", len(TYPES) == 7 and len(codes) == len(set(codes)) == len(TYPES), f"
 
 # Products and sums in the regime stamp section, computed (lesson 4)
 _bad = []
-for a, b, c in re.findall(r"(\d+)\s*(?:×|\bx\b)\s*(\d+)\s*=\s*(\d+)", STAMP):
-    if int(a) * int(b) != int(c):
-        _bad.append(f"{a} x {b} = {c}")
+for expr, c in re.findall(r"((?:\d+\s*(?:×|\bx\b|\*)\s*)+\d+)\s*=\s*(\d+)", STAMP):
+    prod = 1
+    for fac in re.split(r"\s*(?:×|\bx\b|\*)\s*", expr.strip()):
+        prod *= int(fac)
+    if prod != int(c):
+        _bad.append(f"{expr.strip()} = {c}")
 for expr, c in re.findall(r"([\d\s\u00d7*+-]*\d[\d\s\u00d7*+-]*)=\s*(\d+)", STAMP):
-    if re.search(r"[+*\u00d7-]", expr.strip()) and re.search(r"\d\s*[+*\u00d7-]\s*\d", expr):
+    if re.search(r"\+|-", expr.strip()) and re.search(r"\d\s*(\+|-)\s*\d", expr):
         _val = eval(re.sub(r"\s", "", expr).replace("\u00d7", "*"))
         if _val != int(c):
             _bad.append(f"{expr.strip()} = {c}")
@@ -1171,26 +1174,41 @@ if _S > (SECTION_MAX or 64):
         check("DoD", has_evidence(best), "review C1: the report paragraph carries an evidence tag")
 
 # C2: a capability the text names as needed by a ticket has an id in the capability table.
-CAP_VOCAB = ["drop accounting", "dscp marking", "fault injection", "holder-eligible", "holder eligible",
-             "real-time scheduling", "memory lock", "control isolation", "idle states"]
+def capnorm(x):
+    return re.sub(r"[_\-]+", " ", x.lower())
+
+
+CAP_VOCAB = ["drop accounting", "dscp marking", "fault injection", "holder eligible", "real time scheduling",
+             "memory lock", "control isolation", "idle states", "bounded real time"]
 TICKET_ID = re.compile(r"\b\d{3}[a-z]?-\d{2}\b")
 CAP_T = TYPES.get("capability")
 if CAP_T is not None:
     cap_rows = []
+    id_rows = 0
     for tb in parse_tables(CAP_T["text"]):
+        is_id_table = bool(tb[1]) and tb[1][0].strip().lower() == "id"
         for r in tb[2]:
             if r and re.fullmatch(r"\d+", r[0].strip()):
-                cap_rows.append(" ".join(r).lower())
+                cap_rows.append(capnorm(" ".join(r)))
+                if is_id_table:
+                    id_rows += 1
     needs = set()
     for s in sentences(STAMP):
-        sl = s.lower()
         if TICKET_ID.search(s):
+            sl = capnorm(s)
             for term in CAP_VOCAB:
                 if term in sl:
                     needs.add(term)
     for term in sorted(needs):
         check("DoD", any(term in row for row in cap_rows),
-              f"review C2: the capability \"{term}\" named as needed by a ticket has an id (a numbered row) in the capability table")
+              f"review C2: the capability \"{term}\" named with a ticket id has a numbered row in the capability table")
+    WORDS = {w: i for i, w in enumerate(["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"])}
+    stated = []
+    for w in re.findall(r"stamps? (\w+) capabilities", STAMP, re.I):
+        stated.append(int(w) if w.isdigit() else WORDS.get(w.lower(), -1))
+    for n in stated:
+        check("DoD", n == id_rows,
+              f"review R2-1: the stated count of {n} capabilities equals the numbered rows of the capability id table ({id_rows} numbered rows)")
 
 # C3: no circular hand-back of a Manifest open item whose owner is 004-25.
 MAN = span_of(r"^manifest$", 2)
