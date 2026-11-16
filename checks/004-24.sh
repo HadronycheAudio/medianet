@@ -688,6 +688,26 @@ check("AC1", len(HDR) == 7 and sum(size_of_field(f) for f in HDR) == 256 and all
     f["off"] == sum(size_of_field(g) for g in HDR[:i]) // 8 for i, f in enumerate(HDR)),
       f"the hello's common control header is seven rows tiling 32 bytes (found {len(HDR)} rows)")
 
+HELLO_TEXT = "\n".join(body(HELLO_SPAN))
+
+
+def hello_width(pattern):
+    """Bit width of the first fixed-width row of the hello's layout whose meaning matches the pattern."""
+    for _s, _hd, _rows in parse_tables(HELLO_TEXT):
+        for _r in _rows:
+            if len(_r) >= 5 and re.fullmatch(r"\d+", _r[0].strip()) and re.search(pattern, _r[3], re.I):
+                _bits, _mc = width_of(_r[1])
+                if _bits is not None and not _mc:
+                    return _bits
+    return None
+
+
+VER_BITS = hello_width(r"regime\s+stamp\s+version\s+number")
+MODULE_BITS = hello_width(r"module\s+id\s+\(C-11\)")
+check("AC1", VER_BITS is not None and MODULE_BITS is not None,
+      f"the hello's layout gives the widths the stamp reuses: the stamp version number {VER_BITS} bits, "
+      f"the module id {MODULE_BITS} bits (C-11)")
+
 BLOCK = None
 _cds = find_sub(HSUBS, r"control\s+message\s+type\s+codes")
 if _cds:
@@ -760,8 +780,8 @@ if SEC_FL is None:
 check("AC1", len(SEC_FL) >= 8 and [(f["off"], f["bits"], f["type"]) for f in SEC_FL[:7]] == HDR_SIG,
       "the section table opens with the seven common control header rows of the hello, unchanged (Hello, Common control header)")
 _ver = [f for f in rows_matching(SEC_FL, r"version", 32) if not re.search(r"section\W+(count|index|type|length)|number of sections", f["meaning"], re.I)]
-check("AC1", len(_ver) == 1 and _ver[0]["bits"] == 32 and not _ver[0]["maxc"],
-      "the section table carries one stamp version number of 32 bits, the hello's width (Hello, Regime stamp version number)")
+check("AC1", len(_ver) == 1 and VER_BITS is not None and _ver[0]["bits"] == VER_BITS and not _ver[0]["maxc"],
+      f"the section table carries one stamp version number of the hello's width, {VER_BITS} bits (Hello, Regime stamp version number)")
 check("AC1", any(re.search(r"version", s) and re.search(r"serial|half the range|modulo|2\^31|hello", s) for s in SENT),
       "the stamp states the version comparison of the hello (serial comparison within one instance nonce)")
 for _label, _pat in [("section index", r"section\W+(index|number)"), ("section count", r"section\W+count"),
@@ -781,8 +801,8 @@ if REQ_FL is None:
 check("AC1", len(REQ_FL) >= 8 and [(f["off"], f["bits"], f["type"]) for f in REQ_FL[:7]] == HDR_SIG,
       "the stamp request opens with the seven common control header rows of the hello, unchanged")
 _mod = [f for f in REQ_FL if re.search(r"module\s+id", f["meaning"], re.I)]
-check("AC3", len(_mod) == 1 and _mod[0]["bits"] == 64 and not _mod[0]["maxc"],
-      "the stamp request names the requested module by its 64-bit module id (C-11)")
+check("AC3", len(_mod) == 1 and MODULE_BITS is not None and _mod[0]["bits"] == MODULE_BITS and not _mod[0]["maxc"],
+      f"the stamp request names the requested module by its {MODULE_BITS}-bit module id (C-11, the hello's width)")
 REQ_TILE, REQ_PROBS = tile_problems(REQ_FL)
 check("AC1", not REQ_PROBS and 0 < REQ_TILE <= CTRL_BOUND,
       f"the request table tiles its bytes and totals {REQ_TILE} bytes, at most the control bound (C-17)"
