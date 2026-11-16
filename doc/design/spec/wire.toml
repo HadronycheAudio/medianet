@@ -2154,3 +2154,653 @@ width = 16
 type = "u16"
 meaning = "winner timeline epoch (C-10): the timeline epoch the winner serves from its takeover; kept when its time state is 1 or 2 (C-213), bumped when it is 0 (C-113)"
 valid = "any 16-bit value"
+
+# Admission messages (ticket 004-18): wire.md's "Admission messages" field
+# tables are the human-readable authority. Codes 16 (admission request),
+# 17 (admission accept), 18 (admission refusal) and 19 (manifest section) of
+# the admission block 16 to 31; 20 to 31 are unused in v1. Field names follow
+# the markdown Meaning labels. Maximum sizes: request 239 bytes (79 + 32 x 5),
+# accept 62, refusal 53, manifest section 1 252 (56 + 1 196), all within the
+# control bound (C-17). The member element of the request is declared as its
+# own [[message]] below, as the hello's elements are; a duplicate or unknown
+# member is the refusal BadMemberList (C-173), not a packet rejection, so its
+# rejection_reasons list is empty. No field is a timer:
+# Pending has no timeout (C-45). The refusal reasons (C-185) are the
+# [[refusal]] array at the end of this file; they are not packet rejections,
+# so no rejection_reasons list names one.
+
+[[message]]
+name = "admission request"
+layer = "control"
+dscp = 40
+max_size = 239
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 16 = admission request (Control message type codes)"
+valid = "16 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "sender_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "sender module id (C-11): the source side's module id"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "recipient_module_id"
+offset = 320
+width = 64
+type = "u64"
+meaning = "recipient module id (C-11): the consumer module the request is for"
+valid = "the receiving module's own module id"
+
+[[message.field]]
+name = "request_id"
+offset = 384
+width = 32
+type = "u32"
+meaning = "request id: chosen by the source side; names this handshake in the accept, refusal and manifest sections that belong to it"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "source_port_id"
+offset = 416
+width = 8
+type = "u8"
+meaning = "source port id: the source output's port id in the source's hello and manifest (Hello, Port element; 004-26)"
+valid = "0 to 255"
+
+[[message.field]]
+name = "consumer_port_id"
+offset = 424
+width = 8
+type = "u8"
+meaning = "consumer port id: the consumer input's port id in the consumer's hello and manifest (Hello, Port element; 004-26)"
+valid = "0 to 255"
+
+[[message.field]]
+name = "pinned_source_address"
+offset = 432
+width = 32
+type = "u32"
+meaning = "pinned source address: the IPv4 address (C-100) the source sends this connection's media from; the consumer demultiplexes on it plus the stream number (rule 7) and it changes only by re-admission (L-5)"
+valid = "a class A, B or C IPv4 address: a first octet of 1 to 223 (Encodings)"
+
+[[message.field]]
+name = "reverse_measurement_port"
+offset = 464
+width = 16
+type = "u16"
+meaning = "reverse measurement port: the source side's UDP port to which the consumer sends this connection's receiver reports and probe requests; renewed on re-admission"
+valid = "1 to 65535; 0 is invalid"
+
+[[message.field]]
+name = "intended_packet_size"
+offset = 480
+width = 16
+type = "u16"
+meaning = "intended packet size: the UDP payload bytes of the largest media packet the source sends on this connection, the size at which the path-MTU probe pair (004-27) first probes (C-116)"
+valid = "1 to 65 507; 0 is invalid"
+
+[[message.field]]
+name = "declared_wire_rate"
+offset = 496
+width = 64
+type = "u64"
+meaning = "declared wire rate: bit/s on the wire, Ethernet, IPv4 and UDP overhead included, summed over the listed streams; a stream of one packet per slice at the C-219 figure (Declared rates)"
+valid = "1 to 18 446 744 073 709 551 615; 0 is invalid"
+
+[[message.field]]
+name = "declared_packet_rate"
+offset = 560
+width = 32
+type = "u32"
+meaning = "declared packet rate: packets per second, summed over the listed streams"
+valid = "1 to 4 294 967 295, and at least the declared slice rate"
+
+[[message.field]]
+name = "declared_slice_rate"
+offset = 592
+width = 32
+type = "u32"
+meaning = "declared slice rate: slices per second, summed over the listed streams"
+valid = "1 to 96 000 × member count"
+
+[[message.field]]
+name = "member_count"
+offset = 624
+width = 8
+type = "u8"
+meaning = "member count: how many member elements follow, one per requested stream, the controller member included (C-08, C-209)"
+valid = "1 to 32; 33 to 255 is refused with BadMemberList (below)"
+
+[[message.field]]
+name = "member"
+offset = 632
+width = 40
+type = "uint"
+meaning = "member: a member element, a stream number and its session, laid out as the member element table below fixes; member count elements back to back with no separator"
+valid = "member count elements, at most 32 (160 bytes)"
+count = "member_count"
+max_count = 32
+
+[[message]]
+name = "admission request member element"
+layer = "control"
+dscp = 40
+max_size = 5
+rejection_reasons = []
+
+[[message.field]]
+name = "stream_number"
+offset = 0
+width = 8
+type = "u8"
+meaning = "stream number (C-10) at the source of a requested stream, in the hello's 1-byte member-list encoding (Hello, Bundle element)"
+valid = "0 to 255 (C-09); distinct; every one a stream of the output the source port id names (012-05)"
+
+[[message.field]]
+name = "session"
+offset = 8
+width = 32
+type = "u32"
+meaning = "session (C-19, C-10): the source's current session number of this stream, which every consumer of the stream sees"
+valid = "any 32-bit value"
+
+[[message]]
+name = "admission accept"
+layer = "control"
+dscp = 40
+max_size = 62
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 17 = admission accept (Control message type codes)"
+valid = "17 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "sender_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "sender module id (C-11): the consumer side's module id"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "recipient_module_id"
+offset = 320
+width = 64
+type = "u64"
+meaning = "recipient module id (C-11): the source side whose request this answers"
+valid = "the receiving module's own module id"
+
+[[message.field]]
+name = "request_id"
+offset = 384
+width = 32
+type = "u32"
+meaning = "request id: the request id of the request this accept answers"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "pinned_destination_address"
+offset = 416
+width = 32
+type = "u32"
+meaning = "pinned destination address: the consumer's IPv4 address (C-100) to which the source sends this connection's media; it changes only by re-admission (L-5)"
+valid = "a class A, B or C IPv4 address: a first octet of 1 to 223 (Encodings)"
+
+[[message.field]]
+name = "pinned_destination_port"
+offset = 448
+width = 16
+type = "u16"
+meaning = "pinned destination port: the consumer's UDP port for this connection's media, its receiving socket of the bundle (01-architecture.md § 7); pinned with the destination (L-5)"
+valid = "1 to 65535; 0 is invalid"
+
+[[message.field]]
+name = "downstream_a"
+offset = 464
+width = 32
+type = "u32"
+meaning = "downstream A: the consumer's current A (C-142, C-198), in nanoseconds, the value its receiver reports carry (Receiver report, Current A); 0 = no A known"
+valid = "0 to 4 294 967 295 ns: every value is valid; 0 = no A known"
+
+[[message]]
+name = "admission refusal"
+layer = "control"
+dscp = 40
+max_size = 53
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 18 = admission refusal (Control message type codes)"
+valid = "18 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "sender_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "sender module id (C-11): the refusing side's module id"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "recipient_module_id"
+offset = 320
+width = 64
+type = "u64"
+meaning = "recipient module id (C-11): the other side of the handshake"
+valid = "the receiving module's own module id"
+
+[[message.field]]
+name = "request_id"
+offset = 384
+width = 32
+type = "u32"
+meaning = "request id: the request id of the handshake refused"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "refusal_reason"
+offset = 416
+width = 8
+type = "u8"
+meaning = "refusal reason: a value of the refusal enumeration (Refusal reasons, C-185)"
+valid = "0 to 17, except the three discovery-raised values 8, 13 and 14"
+
+[[message]]
+name = "manifest section"
+layer = "control"
+dscp = 40
+max_size = 1252
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 19 = manifest section (Control message type codes)"
+valid = "19 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "sender_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "sender module id (C-11): the module whose manifest this section carries"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "recipient_module_id"
+offset = 320
+width = 64
+type = "u64"
+meaning = "recipient module id (C-11): the other side of the handshake"
+valid = "the receiving module's own module id"
+
+[[message.field]]
+name = "request_id"
+offset = 384
+width = 32
+type = "u32"
+meaning = "request id: the request id of the handshake the manifest belongs to"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "section_index"
+offset = 416
+width = 8
+type = "u8"
+meaning = "section index: this section's place in the sender's manifest, counted from 0"
+valid = "0 to section count − 1"
+
+[[message.field]]
+name = "section_count"
+offset = 424
+width = 8
+type = "u8"
+meaning = "section count: how many sections carry the sender's manifest for this handshake"
+valid = "1 to 255"
+
+[[message.field]]
+name = "manifest_length"
+offset = 432
+width = 16
+type = "u16"
+meaning = "manifest length: how many manifest bytes follow"
+valid = "1 to 1 196"
+
+[[message.field]]
+name = "manifest_bytes"
+offset = 448
+width = 8
+type = "u8"
+meaning = "manifest bytes: this section's part of the sender's manifest, laid out by 004-26 (Manifest); the sections' bytes in index order are the manifest"
+valid = "manifest length bytes, at most 1 196"
+count = "manifest_length"
+max_count = 1196
+
+# The refusal reasons (ticket 004-18, C-185): the closed set of 18, values
+# 0 to 17 in C-185's order (the RefuseReason discriminants of 012-01),
+# numbered independently of the [[reject]] enumeration; the machine-readable
+# copy of wire.md's Admission messages, Refusal reasons table, which is the
+# authority; values 18 to 255 are unused. VersionMismatch, ModuleCap and
+# NameTaken are raised at discovery and never carried by an admission
+# refusal (C-185). The checker does not model this array; checks/004-18.sh
+# compares it with wire.md.
+
+[[refusal]]
+name = "PortCeiling"
+value = 0
+meaning = "bit/s on the wire, headers included, above 70 % of either side's interface rate (C-23), per direction for a declared trunk (C-117)"
+raised = "admission (005-13, 005-14)"
+
+[[refusal]]
+name = "PacketRate"
+value = 1
+meaning = "declared packets/s above what the receiver accepts (01-architecture.md § 6.2)"
+raised = "admission (005-14)"
+
+[[refusal]]
+name = "SliceRate"
+value = 2
+meaning = "declared slice rate above what the receiver accepts (01-architecture.md § 6.2)"
+raised = "admission (005-14)"
+
+[[refusal]]
+name = "InputCount"
+value = 3
+meaning = "the receiver's input count would be exceeded, a full connection table included (012-13)"
+raised = "admission (012-13)"
+
+[[refusal]]
+name = "BufferMemory"
+value = 4
+meaning = "the alignment rings, sized to A times the rate of the subscribed members (C-96), do not fit the receiver's buffer memory"
+raised = "admission (005-14)"
+
+[[refusal]]
+name = "CostBound"
+value = 5
+meaning = "a DSL consumer's cost bound in abstract operations per slice, converted with its calibration factor (C-106), exceeds the time it has per slice"
+raised = "admission (005-14)"
+
+[[refusal]]
+name = "ContentMismatch"
+value = 6
+meaning = "the output's content type does not match the input's (012-05)"
+raised = "admission (012-05)"
+
+[[refusal]]
+name = "NotAnInput"
+value = 7
+meaning = "the consumer's named port is not an input (012-05)"
+raised = "admission (012-05)"
+
+[[refusal]]
+name = "VersionMismatch"
+value = 8
+meaning = "the peer's protocol major differs (Versioning); raised at discovery, where it stops a module joining; never carried by an admission refusal (C-185)"
+raised = "discovery"
+
+[[refusal]]
+name = "ForeignDomain"
+value = 9
+meaning = "the peer is in a different non-zero domain (C-173, C-11); a hello with domain 0 is ignored and counted, not refused"
+raised = "placed inconsistently: epic 005 puts it in its machine 1, where a module joins, not at admission (its file, 005-21), and 012-06 puts it at admission; in this message set a foreign-domain request is dropped by the shared rules before any refusal could be sent (Open item 7)"
+
+[[refusal]]
+name = "PathMtuTooSmall"
+value = 10
+meaning = "the probe at the 1 280-byte fallback also fails (C-173, C-06; 004-27)"
+raised = "admission (005-14)"
+
+[[refusal]]
+name = "RequiredEExceeded"
+value = 11
+meaning = "the sink's E is above the group's required E, or unknown where the group sets one (C-103, C-140)"
+raised = "admission (005-14)"
+
+[[refusal]]
+name = "FollowerCap"
+value = 12
+meaning = "a clock holder refuses a 65th follower (C-35, C-114); the holder's check, not a stream admission check (012-06)"
+raised = "clock holder (Open item 7)"
+
+[[refusal]]
+name = "ModuleCap"
+value = 13
+meaning = "the medianet already has its 64 active modules (C-34); raised at discovery, where it stops a module joining; never carried by an admission refusal (C-185)"
+raised = "discovery"
+
+[[refusal]]
+name = "NameTaken"
+value = 14
+meaning = "the module's name is already used (Hello, Name); raised at discovery, where it stops a module joining; never carried by an admission refusal (C-185)"
+raised = "discovery"
+
+[[refusal]]
+name = "BadMemberList"
+value = 15
+meaning = "an unknown or duplicate bundle member, or more than 32 members, the controller member included (C-173, C-209)"
+raised = "admission (005-14)"
+
+[[refusal]]
+name = "ControlDegraded"
+value = 16
+meaning = "the target's housekeeping has stopped restarting (C-139); answered by its housekeeping supervisor's minimal refusal path (C-185)"
+raised = "admission, by the target's supervisor"
+
+[[refusal]]
+name = "NoSkewBudget"
+value = 17
+meaning = "an aligned input of a fan-in with no downstream group and no configured budget (C-142)"
+raised = "admission (005-27, 005-14)"
