@@ -93,19 +93,18 @@
 #   RUN1/RUN2 repeat (ruling B): each is repeated ONCE, and only when its first
 #        attempt fails with the loss message ("FAIL loss:").  Printed as
 #        "NOTE RUN<n> repeated once after: <FAIL line>".  A failed repeat FAILS.
-#   A'   the FINAL per-second line is judged (ruling A').  Required sections:
-#        audio (windows exact,), synth1 music (voice channels X/Y windows exact,
-#        max pitch), transport (synth playhead / metronome clicks / channel
-#        exact).  A missing required section FAILS with the message
-#          FAIL summary: missing section "<name>" in the final line
-#        The also-synth2 section is optional: when present its pairs must be
-#        exact; when absent the script prints
-#          NOTE summary: no "also synth2" section in the final line; synth2 was not verified in this run
-#        and does not fail.  The PASS line ends with "synth2 verified" or
-#        "synth2 not reported".  Stub cases: final-1 (all-exact, synth2 present),
-#        final-2 (no synth2 section), synth2 pair X < Y (voice-synth2 and the
-#        other synth2 stubs), final-4 (no transport), final-5 (no synth1 voice
-#        pair), final-6 (complete earlier line, final line audio X < Y -> FAIL).
+#   C3   both synth sections are REQUIRED and verified, in either order.  The
+#        main section ("music N voices on <A>:", before " | also ") names synth A
+#        and carries A's voice, playhead, clicks and channel-exact figures; the
+#        "| also <B>:" section carries B's voice, playhead and clicks figures.
+#        Audio, both voice pairs and the transport figures must be exact (X = Y,
+#        Y > 0).  Messages the script must use:
+#          FAIL summary: missing section "<name>" in the final line   (name: synth1 / synth2 / "<A> music" / "<A> transport")
+#          FAIL summary: synth sections name "<A>" and "<B>"; expected synth1 and synth2
+#          FAIL content: <synth> <pair> has X of Y exact   (the pair names its own synth)
+#          FAIL content: <pair> has no count (0 of 0)
+#        PASS line ends "synth1 and synth2 verified".  Stubs are built from two
+#        fixed final lines embedded in this check (usual and swapped order).
 #   CARGO cargo test passes; transport::tests::time_code and scenario ok.
 #   TREE the POC working tree is clean vs HEAD, except while the orchestrator
 #        marker swarm/poc-write-in-flight exists (then a loud SKIP).
@@ -115,7 +114,7 @@
 # Cost: cargo build (cached), three 25 s runs (RUN1, RUN2, RUN3), quick rejected
 # invocations, metrics cases (fast), stub runs (fast), one cargo test.  Runs are
 # unprivileged, each on its own isolated multicast group
-# (239.72.68.44 with a port in 47941-47980), with --no-tui.  Before each run the
+# (239.72.68.44 with a port in 48061-48100), with --no-tui.  Before each run the
 # script waits while another hadropoc process is active, and it never runs two
 # POC runs at once.
 
@@ -134,10 +133,10 @@ UNT_BIN="$UNT_DIR/target/release/hadropoc"
 STUB="$OUT/stub"                               # stub hadropoc, outside the POC
 mkdir -p "$OUT" || { echo "FAIL  cannot create $OUT"; exit 1; }
 
-# Three isolated ports in 47941-47980, distinct for the runs of this check.
-PORT_FIX=$(( 47941 + ($$ % 40) ))
-PORT_UNT=$(( 47941 + (($$ + 13) % 40) ))
-PORT_FLAG=$(( 47941 + (($$ + 26) % 40) ))
+# Three isolated ports in 48061-48100, distinct for the runs of this check.
+PORT_FIX=$(( 48061 + ($$ % 40) ))
+PORT_UNT=$(( 48061 + (($$ + 13) % 40) ))
+PORT_FLAG=$(( 48061 + (($$ + 26) % 40) ))
 
 fail=0
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -391,9 +390,10 @@ row_counts() {
 }
 
 # ------------------------------------------------------------------ RUN1
-# RUN1 and RUN2 are repeated ONCE, and only when the first attempt fails for
-# loss, or for a missing section of the summary (ruling B).  A repeat that
-# also fails, or any other failure, FAILS.  A repeat is never counted as a
+# RUN1 and RUN2 are repeated ONCE, and only when the first attempt fails with the
+# loss message (FAIL loss:) (ruling B).  The code repeats on that prefix only; a
+# missing section is never a repeat cause.  A repeat that also fails, or any
+# other failure, FAILS.  A repeat is never counted as a
 # pass of the first attempt; the first failure is printed as a NOTE line.
 echo "-- RUN1 clean 25 s run of the fixed build (the real metrics file and summary)"
 GOOD="$OUT/good"
@@ -448,6 +448,11 @@ else
   case "$RUN1_VERDICT" in
     ok)
       GOOD_OK=1
+      case "$(grep -E '^\[ *[0-9]+s\] clock ' "$GOOD/out.txt" | tail -n 1)" in
+        *'voices on synth1:'*) note 'RUN1 final line order: usual (voices on synth1, also synth2)' ;;
+        *'voices on synth2:'*) note 'RUN1 final line order: swapped (voices on synth2, also synth1)' ;;
+        *) note 'RUN1 final line order: unrecognised' ;;
+      esac
       if [ "$RUN1_REPEATED" -eq 1 ]; then
         pass "RUN1 clean run passed on the single repeat; metrics $RUN1_COUNTS"
       else
@@ -475,7 +480,7 @@ run2_once() {
   RUN2_RC=$?
   RUN2_FAIL="$(grep '^FAIL' "$OUT/smoke-fixed.out" | head -n 1 || true)"
   RUN2_LEFT="$(find "$T2" -mindepth 1 -print -quit)"
-  if [ "$RUN2_RC" -eq 0 ] && grep -Eq '^PASS .*synth2 (verified|not reported)' "$OUT/smoke-fixed.out" && [ -z "$RUN2_LEFT" ]; then
+  if [ "$RUN2_RC" -eq 0 ] && grep -Eq '^PASS .*synth1 and synth2 verified' "$OUT/smoke-fixed.out" && [ -z "$RUN2_LEFT" ]; then
     RUN2_VERDICT=ok
   elif [ "$RUN2_RC" -ne 0 ] && printf '%s\n' "$RUN2_FAIL" | grep -Eq '^FAIL loss:'; then
     RUN2_VERDICT=repeat
@@ -658,176 +663,153 @@ if [ "$mk_ok" -eq 1 ]; then
 fi
 
 # ------------------------------------------------------------------ S
-# Stub hadropoc: writes the prepared good metrics file to --metrics and prints
-# a prepared final summary (RUN1's real line with one pair changed), then exits 0.
-echo "-- S summary pairs (R6) through a stub hadropoc: every exact-count pair X = Y, Y > 0"
+# C3: both synth sections are required and verified, in either order.  The stubs
+# print FIXED final lines embedded in this check (captured once from real runs:
+# one in the usual order, one swapped), never the current run's output.
+echo "-- S final line: both synths verified in either order (C3); stubs from fixed lines"
 if [ "$SMOKE_OK" -ne 1 ]; then
   bad "S not evaluated: tools/smoke.sh is missing"
-elif [ "$GOOD_OK" -ne 1 ] || [ -z "$R1_SUMMARY" ]; then
-  bad "S not evaluated: RUN1 produced no metrics file or no final summary line"
 elif [ "$mk_ok" -ne 1 ]; then
   bad "S not evaluated: the good metrics file was not prepared"
 else
   rm -rf "$STUB"; mkdir -p "$STUB"
   cp "$PREP/good.csv" "$STUB/metrics-good.csv"
-  printf '%s\n' "$R1_SUMMARY" > "$STUB/summary-all-exact.txt"
-  # Variants: name, python edit, words the FAIL line must contain.
-  python3 - "$STUB" "$R1_SUMMARY" <<'PY'
+  cat > "$STUB/fixed-usual.txt" <<'FIXED_USUAL'
+[  25s] clock LOCKED drift -34.96 ppm err 0.2 µs | rtt mean 0.087 p99 0.110 max 3.861 ms | fwd mean 0.009 p99 0.016 max 0.040 ms | ret mean 0.016 p99 0.022 max 0.068 ms | inside mean 0.062 p99 0.083 max 3.836 ms | Round trip: synth 2 mean 0.088 p99 0.113 max 3.928 ms | Round trip: feed only mean 0.084 p99 0.105 max 3.780 ms | playable(99.9%) 0.521 ms | sent 50156 lost 0 (fwd 0) dropped-at-sender 0 | audio 48 ch: mixer-vs-sender identical (2347/2347 windows exact, 0 lost, 1 sender gaps), vs ideal: mixer -145.4 dB sender -145.4 dB | volume controller: PASS (0 of 2347 windows over epsilon 1e-4), 50156 messages, sent 0.9280 measured 0.9280, range 0.002..0.997, max error 2.5e-8 | music 32 voices on synth1: PASS (steady: 0 of 48328 over epsilon, max level error 2.3e-5; moving: 0 of 13272 over, max 2.5e-2), voice channels 1925/1925 windows exact, max pitch error 2.0e-3 Hz (1925 windows) | parts sent 19628 (637 notes started, 14 replaced while waiting), refreshed 382220, deepest queue 160, longest wait 9.50 ms, samples without controller values at the mixer 0 | transport: PASS (9 changes, 55 pulses, 790 repeats sent; synth playhead identical for 41097/41097 datagrams, 0 changes arrived late; metronome: 47/47 clicks on the right sample, 0 wrong (furthest 0 samples), channel exact in 1925/1925 windows) | least accurate voice 0 (23 % of epsilon), now: pitch 1134.81 Hz (+1.3e-4), level 1.0000/1.0000, timbre 0.7500/0.7500, articulation 1.0000/1.0000 | also synth2: music PASS (0 of 48349 steady and 0 of 13283 moving measurements over epsilon), voice channels 1926/1926 windows exact, 0 lost, transport PASS (playhead identical for 41126/41126 datagrams, 47/47 clicks right) | mix peak 3.069 | playhead: STOPPED  bar 4 beat 6 (19.333)  6/8  tempo —  time code 01:00:08:00 @ 25
+FIXED_USUAL
+  cat > "$STUB/fixed-swapped.txt" <<'FIXED_SWAPPED'
+[  25s] clock LOCKED drift +0.00 ppm err 0.0 µs | rtt mean 0.089 p99 0.124 max 1.617 ms | fwd mean 0.013 p99 0.023 max 1.133 ms | ret mean 0.013 p99 0.040 max 0.076 ms | inside mean 0.063 p99 0.096 max 1.529 ms | Round trip: synth 2 mean 0.085 p99 0.117 max 1.608 ms | Round trip: feed only mean 0.080 p99 0.112 max 1.103 ms | playable(99.9%) 0.529 ms | sent 50069 lost 0 (fwd 0) dropped-at-sender 0 | audio 48 ch: mixer-vs-sender identical (2342/2342 windows exact, 0 lost, 1 sender gaps), vs ideal: mixer -145.4 dB sender -145.4 dB | volume controller: PASS (0 of 2342 windows over epsilon 1e-4), 50068 messages, sent 0.9816 measured 0.9816, range 0.002..0.997, max error 2.5e-8 | music 32 voices on synth2: PASS (steady: 0 of 48190 over epsilon, max level error 2.3e-5; moving: 0 of 13218 over, max 2.5e-2), voice channels 1919/1919 windows exact, max pitch error 2.0e-3 Hz (1919 windows) | parts sent 19592 (637 notes started, 14 replaced while waiting), refreshed 381504, deepest queue 160, longest wait 9.50 ms, samples without controller values at the mixer 0 | transport: PASS (9 changes, 55 pulses, 790 repeats sent; synth playhead identical for 40957/40957 datagrams, 0 changes arrived late; metronome: 47/47 clicks on the right sample, 0 wrong (furthest 0 samples), channel exact in 1919/1919 windows) | least accurate voice 0 (23 % of epsilon), now: pitch 1125.00 Hz (+4.8e-14), level 1.0000/1.0000, timbre 0.7500/0.7500, articulation 1.0000/1.0000 | also synth1: music PASS (0 of 48213 steady and 0 of 13227 moving measurements over epsilon), voice channels 1920/1920 windows exact, 0 lost, transport PASS (playhead identical for 40986/40986 datagrams, 47/47 clicks right) | mix peak 2.643 | playhead: STOPPED  bar 4 beat 6 (19.333)  6/8  tempo —  time code 01:00:08:00 @ 25
+FIXED_SWAPPED
+  python3 - "$STUB" <<'PY'
 import re, sys
-stub, line = sys.argv[1], sys.argv[2]
-def edit(text, pattern, after=None, numerator_minus=1, replace_with=None):
-    start = 0
-    if after:
-        i = text.find(after)
-        if i < 0:
-            sys.exit(f"stub edit: '{after}' not in the summary")
-        start = i
-    m = re.compile(pattern).search(text, start)
+stub = sys.argv[1]
+U = open(stub + "/fixed-usual.txt", encoding="utf-8").read().rstrip("\n")
+W = open(stub + "/fixed-swapped.txt", encoding="utf-8").read().rstrip("\n")
+def at(t, sec):
+    return re.sub(r'^\[ *\d+s\]', '[%4ds]' % sec, t, count=1)
+def rep1(t, old, new):
+    if t.count(old) != 1:
+        sys.exit("fixed line: expected one %r" % old)
+    return t.replace(old, new)
+def dec(t, pat):
+    m = re.compile(pat).search(t)
     if not m:
-        sys.exit(f"stub edit: {pattern!r} not in the summary")
-    if replace_with is None:
-        x, y = int(m.group(1)), int(m.group(2))
-        new = f"{x - numerator_minus}/{y}"
-    else:
-        new = replace_with
-    # replace the "X/Y" text of the match only (group 1 through group 2)
-    return text[:m.start(1)] + new + text[m.end(2):]
-variants = {
-    "audio-zero": (r"\((\d+)/(\d+) windows exact", None, None, "0/0", "audio"),
-    "voice-synth1": (r"voice channels (\d+)/(\d+) windows exact, max pitch", None, None, None, "voice channels"),
-    "voice-synth2": (r"voice channels (\d+)/(\d+) windows exact", "also synth2", None, None, "synth2"),
-    "playhead-synth1": (r"synth playhead identical for (\d+)/(\d+) datagrams", None, None, None, "playhead"),
-    "playhead-synth2": (r"playhead identical for (\d+)/(\d+) datagrams", "also synth2", None, None, "synth2"),
-    "clicks-synth1": (r"metronome: (\d+)/(\d+) clicks on the right sample", None, None, None, "clicks"),
-    "clicks-synth2": (r"(\d+)/(\d+) clicks right", "also synth2", None, None, "synth2"),
-    "channel-synth1": (r"channel exact in (\d+)/(\d+) windows", None, None, None, "channel exact"),
+        sys.exit("fixed line: no match for %r" % pat)
+    return t[:m.start(1)] + "%d" % (int(m.group(1)) - 1) + t[m.end(1):]
+def zero_audio(t):
+    out, n = re.subn(r'\(\d+/\d+ windows exact', '(0/0 windows exact', t, count=1)
+    if n != 1:
+        sys.exit("fixed line: no audio pair")
+    return out
+def rm_also(t):
+    out, n = re.subn(r' \| also synth\d: [^|]*\| ', ' | ', t, count=1)
+    if n != 1:
+        sys.exit("fixed line: no also section")
+    return out
+def rm_transport(t):
+    out, n = re.subn(r' \| transport: [^|]*\| ', ' | ', t, count=1)
+    if n != 1:
+        sys.exit("fixed line: no main transport section")
+    return out
+AUDIO = r'\((\d+)/\d+ windows exact'
+cases = {
+    "usual-all-exact": ([U], "ok"),
+    "swapped-all-exact": ([W], "ok"),
+    "usual-also-pair-bad": ([dec(U, r'also synth2:.*?voice channels (\d+)/\d+ windows exact')], "fail"),
+    "swapped-also-pair-bad": ([dec(W, r'also synth1:.*?voice channels (\d+)/\d+ windows exact')], "fail"),
+    "usual-main-pair-bad": ([dec(U, r'voices on synth1:.*?voice channels (\d+)/\d+ windows exact, max pitch')], "fail"),
+    "swapped-main-pair-bad": ([dec(W, r'voices on synth2:.*?voice channels (\d+)/\d+ windows exact, max pitch')], "fail"),
+    "usual-main-playhead-bad": ([dec(U, r'synth playhead identical for (\d+)/\d+ datagrams')], "fail"),
+    "swapped-main-playhead-bad": ([dec(W, r'synth playhead identical for (\d+)/\d+ datagrams')], "fail"),
+    "usual-main-clicks-bad": ([dec(U, r'metronome: (\d+)/\d+ clicks on the right sample')], "fail"),
+    "usual-main-channel-bad": ([dec(U, r'channel exact in (\d+)/\d+ windows')], "fail"),
+    "usual-no-also": ([rm_also(U)], "fail"),
+    "swapped-no-also": ([rm_also(W)], "fail"),
+    "usual-both-synth1": ([rep1(U, "also synth2:", "also synth1:")], "fail"),
+    "usual-unknown-name": ([rep1(U, "also synth2:", "also synth3:")], "fail"),
+    "usual-audio-bad": ([dec(U, AUDIO)], "fail"),
+    "usual-audio-zero": ([zero_audio(U)], "fail"),
+    "usual-no-transport": ([rm_transport(U)], "fail"),
+    "swapped-no-transport": ([rm_transport(W)], "fail"),
+    "usual-look-back": ([at(U, 24), dec(at(U, 25), AUDIO)], "fail"),
+    "usual-final-only": ([at(U, 24), rm_also(at(U, 25))], "fail"),
 }
-for name, (pat, after, _, repl, _word) in variants.items():
-    text = edit(line, pat, after=after, replace_with=repl)
-    with open(f"{stub}/summary-{name}.txt", "w", encoding="utf-8") as fh:
-        fh.write(text + "\n")
-PY
-  if [ $? -ne 0 ]; then
-    bad "S could not prepare the stub summaries"
-  else
-    for name in all-exact audio-zero voice-synth1 voice-synth2 playhead-synth1 playhead-synth2 clicks-synth1 clicks-synth2 channel-synth1; do
-      cat > "$STUB/stub-$name.sh" <<EOF
-#!/usr/bin/env bash
+TEMPLATE = """#!/usr/bin/env bash
 metrics=""
-while [ \$# -gt 0 ]; do
-  case "\$1" in
-    --metrics) metrics="\$2"; shift 2 ;;
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --metrics) metrics="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
-cp "$STUB/metrics-good.csv" "\$metrics"
-cat "$STUB/summary-$name.txt"
+cp "__STUB__/metrics-good.csv" "$metrics"
+cat "__STUB__/summary-__NAME__.txt"
 exit 0
-EOF
-      chmod +x "$STUB/stub-$name.sh"
-    done
-    stub_case() { # name, expect ok|fail, words (all must appear in the PASS line or FAIL line), note regex or ""
-      local name="$1" expect="$2" words="$3" note_re="${4:-}" T out rc w miss
+"""
+for name, (lines, _) in cases.items():
+    with open(f"{stub}/summary-{name}.txt", "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+    with open(f"{stub}/stub-{name}.sh", "w", encoding="utf-8") as fh:
+        fh.write(TEMPLATE.replace("__STUB__", stub).replace("__NAME__", name))
+    import os
+    os.chmod(f"{stub}/stub-{name}.sh", 0o755)
+PY
+  if [ $? -ne 0 ]; then
+    bad "S could not prepare the stub summaries from the fixed lines"
+  else
+    stub_case() { # name, expect ok|fail, phrases ('|'-separated; each must appear in the PASS line, or in the FAIL output)
+      local name="$1" expect="$2" phrases="$3" T out rc p miss=""
+      local -a parts
+      IFS='|' read -r -a parts <<< "$phrases"
       T="$OUT/tmp-stub-$name"; rm -rf "$T"; mkdir -p "$T"
       out="$(HADROPOC_BIN="$STUB/stub-$name.sh" TMPDIR="$T" timeout 60 bash "$SMOKE" --group "239.72.68.44:$PORT_UNT" 2>&1)"; rc=$?
-      if [ "$expect" = "ok" ]; then
-        miss=""
-        for w in $words; do
-          printf '%s\n' "$out" | grep '^PASS' | grep -qi -- "$w" || miss="$miss $w"
+      if [ "$expect" = ok ]; then
+        for p in "${parts[@]}"; do
+          printf '%s\n' "$out" | grep '^PASS' | grep -qiF -- "$p" || miss="$miss [$p]"
         done
-        if [ "$rc" -eq 0 ] && [ -z "$miss" ] && { [ -z "$note_re" ] || printf '%s\n' "$out" | grep -Eq -- "$note_re"; }; then
-          pass "S $name: exit 0, PASS line states: $(printf '%s\n' "$out" | grep '^PASS' | tail -n 1 | sed -E 's/.*, (synth2 [a-z ]+)$/\1/')${note_re:+; NOTE printed}"
+        if [ "$rc" -eq 0 ] && [ -z "$miss" ]; then
+          pass "S $name: exit 0; PASS line: $(printf '%s\n' "$out" | grep '^PASS' | tail -n 1 | sed -E 's/.*, (synth1 and synth2 verified)$/\1/')"
         else
-          bad "S $name: expected exit 0 with a PASS line containing [$words]${note_re:+ and a NOTE line}; got exit $rc, missing:${miss:- none}${note_re:+; NOTE present: $(printf '%s\n' "$out" | grep -Ec -- "$note_re")}"
+          bad "S $name: expected exit 0 and a PASS line with [$phrases]; got exit $rc, missing:${miss:- none}"
           printf '%s\n' "$out" | tail -n 3 | while IFS= read -r l; do note "$l"; done
         fi
       else
         if [ "$rc" -eq 0 ]; then
           bad "S $name: accepted (exit 0), must be rejected"
-          rm -rf "$T"; return
-        fi
-        miss=""
-        for w in $words; do
-          printf '%s\n' "$out" | grep '^FAIL' | grep -qi -- "$w" || miss="$miss $w"
-        done
-        if [ -z "$miss" ]; then
-          pass "S $name: rejected (exit $rc): $(printf '%s\n' "$out" | grep '^FAIL' | head -n 1 | cut -c1-150)"
         else
-          bad "S $name: rejected (exit $rc) but no FAIL line names:$miss"
-          printf '%s\n' "$out" | tail -n 3 | while IFS= read -r l; do note "$l"; done
+          for p in "${parts[@]}"; do
+            printf '%s\n' "$out" | grep '^FAIL' | grep -qiF -- "$p" || miss="$miss [$p]"
+          done
+          if [ -z "$miss" ]; then
+            pass "S $name: rejected (exit $rc): $(printf '%s\n' "$out" | grep '^FAIL' | head -n 1 | cut -c1-150)"
+          else
+            bad "S $name: rejected (exit $rc) but no FAIL line contains:$miss"
+            printf '%s\n' "$out" | tail -n 3 | while IFS= read -r l; do note "$l"; done
+          fi
         fi
       fi
       rm -rf "$T"
     }
-    stub_case all-exact ok "synth2 verified"
-    stub_case audio-zero fail "audio"
-    stub_case voice-synth1 fail "voice channels"
-    stub_case voice-synth2 fail "voice synth2"
-    stub_case playhead-synth1 fail "playhead"
-    stub_case playhead-synth2 fail "playhead synth2"
-    stub_case clicks-synth1 fail "clicks"
-    stub_case clicks-synth2 fail "clicks synth2"
-    stub_case channel-synth1 fail "channel exact"
-    # Ruling A' (final line): the FINAL per-second line is judged.  The
-    # cases print the final line (and, for the look-back case, an earlier one).
-    python3 - "$STUB" "$R1_SUMMARY" <<'PY'
-import re, sys
-stub, line = sys.argv[1], sys.argv[2]
-def at(text, sec):
-    return re.sub(r'^\[ *\d+s\]', '[%4ds]' % sec, text, count=1)
-def cut(text, pattern, what):
-    out, n = re.subn(pattern, '', text, count=1)
-    if n != 1:
-        sys.exit("final-line stub: no " + what)
-    return out
-def no_synth(text):
-    return cut(text, r'\s\|\s+also synth2:[^|]*', "also synth2 section")
-def no_transport(text):
-    return cut(text, r'\s\|\s+transport: [^|]*', "transport section")
-def no_synth1_voice(text):
-    return cut(text, r'voice channels \d+/\d+ windows exact, (?=max pitch)', "synth1 voice-channels pair")
-def dec(text, pattern):
-    m = re.compile(pattern).search(text)
-    if not m:
-        sys.exit("final-line stub: no " + pattern)
-    x, y = int(m.group(1)), m.group(2)
-    return text[:m.start(1)] + "%d/%s" % (x - 1, y) + text[m.end(2):]
-full = line
-cases = {
-    "final-2-no-synth2": [no_synth(at(full, 25))],
-    "final-4-no-transport": [no_transport(at(full, 25))],
-    "final-5-no-synth1-voice": [no_synth1_voice(at(full, 25))],
-    # the earlier line is complete and exact, the FINAL line has an audio pair X < Y
-    "final-6-look-back": [at(full, 24), dec(at(full, 25), r'\((\d+)/(\d+) windows exact')],
-}
-for name, lines in cases.items():
-    with open(f"{stub}/summary-{name}.txt", "w", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + "\n")
-PY
-    if [ $? -ne 0 ]; then
-      bad "A' could not prepare the final-line stub summaries"
-    else
-      for name in final-2-no-synth2 final-4-no-transport final-5-no-synth1-voice final-6-look-back; do
-        cat > "$STUB/stub-$name.sh" <<EOF
-#!/usr/bin/env bash
-metrics=""
-while [ \$# -gt 0 ]; do
-  case "\$1" in
-    --metrics) metrics="\$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-cp "$STUB/metrics-good.csv" "\$metrics"
-cat "$STUB/summary-$name.txt"
-exit 0
-EOF
-        chmod +x "$STUB/stub-$name.sh"
-      done
-      stub_case final-2-no-synth2 ok "synth2 not reported" 'NOTE summary: no "also synth2" section in the final line'
-      stub_case final-4-no-transport fail "missing transport"
-      stub_case final-5-no-synth1-voice fail "missing synth1"
-      stub_case final-6-look-back fail "audio"
-    fi
+    stub_case usual-all-exact ok "synth1 and synth2 verified"
+    stub_case swapped-all-exact ok "synth1 and synth2 verified"
+    stub_case usual-also-pair-bad fail "synth2 voice"
+    stub_case swapped-also-pair-bad fail "synth1 voice"
+    stub_case usual-main-pair-bad fail "synth1 voice"
+    stub_case swapped-main-pair-bad fail "synth2 voice"
+    stub_case usual-main-playhead-bad fail "synth1 playhead"
+    stub_case swapped-main-playhead-bad fail "synth2 playhead"
+    stub_case usual-main-clicks-bad fail "synth1 clicks"
+    stub_case usual-main-channel-bad fail "synth1 channel"
+    stub_case usual-no-also fail "missing section|synth2"
+    stub_case swapped-no-also fail "missing section|synth1"
+    stub_case usual-both-synth1 fail "expected synth1 and synth2"
+    stub_case usual-unknown-name fail "synth3|expected"
+    stub_case usual-audio-bad fail "audio"
+    stub_case usual-audio-zero fail "audio"
+    stub_case usual-no-transport fail "missing section|transport"
+    stub_case swapped-no-transport fail "missing section|transport"
+    stub_case usual-look-back fail "audio"
+    stub_case usual-final-only fail "missing section|synth2"
   fi
 fi
 
