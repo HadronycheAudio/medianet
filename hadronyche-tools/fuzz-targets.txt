@@ -1,0 +1,4 @@
+# Fuzz target list (ticket 007a-03 registers, ticket 007a-15 owns the harness).
+# One target per line: <name> <harness source> <corpus directory>, all relative
+# to hadronyche-tools/. Read by 007a-15 and 007b-21 to schedule the C-95 budget.
+vector-reader src/bin/vector-reader-fuzz.rs fuzz-corpus/vector-reader
