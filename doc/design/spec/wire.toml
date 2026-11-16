@@ -2278,7 +2278,7 @@ offset = 432
 width = 32
 type = "u32"
 meaning = "pinned source address: the IPv4 address (C-100) the source sends this connection's media from; the consumer demultiplexes on it plus the stream number (rule 7) and it changes only by re-admission (L-5)"
-valid = "a unicast IPv4 address with a first octet of 1 to 223 (Encodings)"
+valid = "a class A, B or C IPv4 address: a first octet of 1 to 223 (Encodings)"
 
 [[message.field]]
 name = "reverse_measurement_port"
@@ -2351,7 +2351,7 @@ offset = 0
 width = 8
 type = "u8"
 meaning = "stream number (C-10) at the source of a requested stream, in the hello's 1-byte member-list encoding (Hello, Bundle element)"
-valid = "0 to 255 (C-09); distinct; all members of one bundle of the source"
+valid = "0 to 255 (C-09); distinct; every one a stream of the output the source port id names (012-05)"
 
 [[message.field]]
 name = "session"
@@ -2454,7 +2454,7 @@ offset = 416
 width = 32
 type = "u32"
 meaning = "pinned destination address: the consumer's IPv4 address (C-100) to which the source sends this connection's media; it changes only by re-admission (L-5)"
-valid = "a unicast IPv4 address with a first octet of 1 to 223 (Encodings)"
+valid = "a class A, B or C IPv4 address: a first octet of 1 to 223 (Encodings)"
 
 [[message.field]]
 name = "pinned_destination_port"
@@ -2565,7 +2565,7 @@ offset = 416
 width = 8
 type = "u8"
 meaning = "refusal reason: a value of the refusal enumeration (Refusal reasons, C-185)"
-valid = "0 to 17, except the three discovery-raised values 2, 13 and 14"
+valid = "0 to 17, except the three discovery-raised values 8, 13 and 14"
 
 [[message]]
 name = "manifest section"
@@ -2688,14 +2688,14 @@ valid = "manifest length bytes, at most 1 196"
 count = "manifest_length"
 max_count = 1196
 
-# The refusal reasons (ticket 004-18, C-185): the closed set of 18, in
-# value order (C-185's order, with VersionMismatch and ForeignDomain at their
-# Reject values 2 and 3), the machine-readable copy of wire.md's Admission messages,
-# Refusal reasons table, which is the authority; values 18 to 255 are unused.
-# VersionMismatch, ModuleCap and NameTaken are raised at discovery and never
-# carried by an admission refusal (C-185). The checker does not model this
-# array; checks/004-18.sh compares it with wire.md.
-
+# The refusal reasons (ticket 004-18, C-185): the closed set of 18, values
+# 0 to 17 in C-185's order (the RefuseReason discriminants of 012-01),
+# numbered independently of the [[reject]] enumeration; the machine-readable
+# copy of wire.md's Admission messages, Refusal reasons table, which is the
+# authority; values 18 to 255 are unused. VersionMismatch, ModuleCap and
+# NameTaken are raised at discovery and never carried by an admission
+# refusal (C-185). The checker does not model this array; checks/004-18.sh
+# compares it with wire.md.
 
 [[refusal]]
 name = "PortCeiling"
@@ -2710,52 +2710,52 @@ meaning = "declared packets/s above what the receiver accepts (01-architecture.m
 raised = "admission (005-14)"
 
 [[refusal]]
-name = "VersionMismatch"
-value = 2
-meaning = "the peer's protocol major differs (Versioning); raised at discovery, where it stops a module joining; never carried by an admission refusal (C-185)"
-raised = "discovery"
-
-[[refusal]]
-name = "ForeignDomain"
-value = 3
-meaning = "the peer is in a different non-zero domain (C-173, C-11); a hello with domain 0 is ignored and counted, not refused"
-raised = "admission (012-06; Open items)"
-
-[[refusal]]
 name = "SliceRate"
-value = 4
+value = 2
 meaning = "declared slice rate above what the receiver accepts (01-architecture.md § 6.2)"
 raised = "admission (005-14)"
 
 [[refusal]]
 name = "InputCount"
-value = 5
+value = 3
 meaning = "the receiver's input count would be exceeded, a full connection table included (012-13)"
 raised = "admission (012-13)"
 
 [[refusal]]
 name = "BufferMemory"
-value = 6
+value = 4
 meaning = "the alignment rings, sized to A times the rate of the subscribed members (C-96), do not fit the receiver's buffer memory"
 raised = "admission (005-14)"
 
 [[refusal]]
 name = "CostBound"
-value = 7
+value = 5
 meaning = "a DSL consumer's cost bound in abstract operations per slice, converted with its calibration factor (C-106), exceeds the time it has per slice"
 raised = "admission (005-14)"
 
 [[refusal]]
 name = "ContentMismatch"
-value = 8
+value = 6
 meaning = "the output's content type does not match the input's (012-05)"
 raised = "admission (012-05)"
 
 [[refusal]]
 name = "NotAnInput"
-value = 9
+value = 7
 meaning = "the consumer's named port is not an input (012-05)"
 raised = "admission (012-05)"
+
+[[refusal]]
+name = "VersionMismatch"
+value = 8
+meaning = "the peer's protocol major differs (Versioning); raised at discovery, where it stops a module joining; never carried by an admission refusal (C-185)"
+raised = "discovery"
+
+[[refusal]]
+name = "ForeignDomain"
+value = 9
+meaning = "the peer is in a different non-zero domain (C-173, C-11); a hello with domain 0 is ignored and counted, not refused"
+raised = "placed inconsistently: epic 005 puts it in its machine 1, where a module joins, not at admission (its file, 005-21), and 012-06 puts it at admission; in this message set a foreign-domain request is dropped by the shared rules before any refusal could be sent (Open item 7)"
 
 [[refusal]]
 name = "PathMtuTooSmall"
@@ -2773,7 +2773,7 @@ raised = "admission (005-14)"
 name = "FollowerCap"
 value = 12
 meaning = "a clock holder refuses a 65th follower (C-35, C-114); the holder's check, not a stream admission check (012-06)"
-raised = "clock holder (Open items)"
+raised = "clock holder (Open item 7)"
 
 [[refusal]]
 name = "ModuleCap"
