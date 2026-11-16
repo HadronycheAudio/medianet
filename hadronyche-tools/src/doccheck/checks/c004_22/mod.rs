@@ -41,7 +41,7 @@ mod work3;
 
 use std::collections::BTreeMap;
 
-use super::{CheckSpec, KnownDifference, Target};
+use super::{CheckSpec, DiffClass, KnownDifference, Target};
 use crate::doccheck::markdown::{Markdown, Span, norm_title};
 use crate::doccheck::policy::{LineSplit, TableRules, TomlReader};
 use crate::doccheck::tables::Row;
@@ -93,7 +93,13 @@ pub const SPEC: CheckSpec = CheckSpec {
 };
 
 /// The differences the harness found and a reviewer accepted.
-const KNOWN: &[KnownDifference] = &[];
+const KNOWN: &[KnownDifference] = &[KnownDifference {
+    label: r"^wire\.toml:",
+    class: DiffClass::ScriptCrashed,
+    reason: "a mutation that makes wire.toml invalid TOML: the script's tomllib.load raises TOMLDecodeError, which it \
+             does not catch, so it crashes with a traceback and no FAIL line; the port reports WIRE \
+             'wire.toml does not parse (tomllib raises)'",
+}];
 
 /// Everything the check reads, parsed once.
 pub(crate) struct Inputs {
