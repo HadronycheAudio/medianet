@@ -2688,6 +2688,226 @@ valid = "manifest length bytes, at most 1 196"
 count = "manifest_length"
 max_count = 1196
 
+# Path-MTU probe pair (ticket 004-27): the machine-readable copy of wire.md's
+# "Path-MTU probe pair" section, which is the authority. Codes 32 and 33 in the
+# block 32 to 35 the Hello reserves; both messages are sent at the probe's
+# intended packet size, 54 to 65 507 bytes, and are the only messages that carry
+# the C-116 exemption from the 1 252-byte control bound (C-17). The padding is
+# counted by the intended packet size: its count is that size less the 54-byte
+# fixed part, as the audio message's samples are counted by its length.
+
+[[message]]
+name = "path-MTU probe request"
+layer = "control"
+dscp = 40
+max_size = 65507
+exempt_from_control_bound = "C-116"
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 32 = path-MTU probe request (Control message type codes)"
+valid = "32 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "sender_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "sender module id (C-11): the source side's module id, the prober"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "recipient_module_id"
+offset = 320
+width = 64
+type = "u64"
+meaning = "recipient module id (C-11): the consumer module the probe is for"
+valid = "the receiving module's own module id"
+
+[[message.field]]
+name = "request_id"
+offset = 384
+width = 32
+type = "u32"
+meaning = "request id: the request id of the admission request whose path this probe tests (Admission messages, Common admission fields); with the intended packet size it identifies the probe"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "intended_packet_size"
+offset = 416
+width = 16
+type = "u16"
+meaning = "intended packet size: the UDP payload size this probe is sent at, and so the datagram's own size; the request's intended packet size for the first probe (C-116), or 54 when that is smaller; 1 252 for the probe at the fallback (C-06)"
+valid = "54 to 65 507"
+
+[[message.field]]
+name = "padding"
+offset = 432
+width = 8
+type = "pad"
+meaning = "padding: intended packet size − 54 bytes, which bring the datagram to the intended packet size; senders write zero (Reserved fields, General rule for later tickets)"
+valid = "0 only; intended packet size − 54 bytes, at most 65 453"
+count = "intended_packet_size"
+max_count = 65453
+
+[[message]]
+name = "path-MTU probe reply"
+layer = "control"
+dscp = 40
+max_size = 65507
+exempt_from_control_bound = "C-116"
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 33 = path-MTU probe reply (Control message type codes)"
+valid = "33 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "sender_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "sender module id (C-11): the consumer side's module id, the responder"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "recipient_module_id"
+offset = 320
+width = 64
+type = "u64"
+meaning = "recipient module id (C-11): the prober, the sender module id of the probe this reply answers"
+valid = "the receiving module's own module id"
+
+[[message.field]]
+name = "request_id"
+offset = 384
+width = 32
+type = "u32"
+meaning = "request id: the probe's request id, echoed verbatim"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "echoed_intended_packet_size"
+offset = 416
+width = 16
+type = "u16"
+meaning = "echoed intended packet size: the probe's intended packet size, echoed verbatim; the reply's own size"
+valid = "54 to 65 507"
+
+[[message.field]]
+name = "padding"
+offset = 432
+width = 8
+type = "pad"
+meaning = "padding: echoed intended packet size − 54 bytes, which bring the reply to the probe's size; senders write zero (Reserved fields, General rule for later tickets)"
+valid = "0 only; echoed intended packet size − 54 bytes, at most 65 453"
+count = "echoed_intended_packet_size"
+max_count = 65453
+
 # The refusal reasons (ticket 004-18, C-185): the closed set of 18, values
 # 0 to 17 in C-185's order (the RefuseReason discriminants of 012-01),
 # numbered independently of the [[reject]] enumeration; the machine-readable
