@@ -204,7 +204,7 @@ meaning = "the stream number names no stream this consumer admits; on the measur
 [[reject]]
 name = "UnadmittedSource"
 value = 6
-meaning = "the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply); on the measurement layer, a receiver report whose bundle identity is not the receiving producer's module id or whose reporter identity names no module with an admitted connection for the bundle its rows name, a probe request from a module that shares no admitted connection with the responder, or a probe reply without matching fields (Receiver report, One-way probe)"
+meaning = "the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply); on the measurement layer, a receiver report whose bundle identity is not the receiving producer's module id or whose first row's stream number names no bundle admitted for the module its reporter identity names, a probe request from a module that shares no admitted connection with the responder, or a probe reply without matching fields (Receiver report, One-way probe)"
 
 [[reject]]
 name = "BadLength"
@@ -1206,7 +1206,7 @@ offset = 128
 width = 64
 type = "u64"
 meaning = "reporter identity: the module id (C-11) of the consumer that sends the report"
-valid = "any 64-bit value; a producer accepts only a module with an admitted connection for the bundle"
+valid = "any 64-bit value; a producer keys the connection by this identity with the bundle the first row's stream number names, and accepts only a module admitted for that bundle"
 
 [[message.field]]
 name = "report_number"
