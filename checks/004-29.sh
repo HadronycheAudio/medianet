@@ -806,6 +806,7 @@ EXTRA_CLOCKS = ["wall clock", "utc", "tool's clock"]
 print(f"NOTE clock terms extracted from timeline.md: {TL_TERMS}; shared (evaluable by every module): {TL_SHARED}")
 EVAL_RE = re.compile(r"evaluat|convert|does not share|do not share|without the holder|on its own clock|maps? it", re.I)
 EVAL_PARAS = [x for k, x in prose_blocks(ANN_TXT) if k == "p" and has_evidence(x) and EVAL_RE.search(x)]
+ANN_PARAS_TAGGED = [x for k, x in prose_blocks(ANN_TXT) if k == "p" and has_evidence(x)]
 
 REL_FORM = [False]
 
@@ -846,9 +847,13 @@ if ANN:
         em = exp[0]["meaning"]
         ev = em + " " + exp[0]["valid"]
         check("AC2", bool(UNIT_RE.search(ev)), "the expiry row states its unit (Work 1; C-153)")
-        rel = bool(re.search(r"relative|duration", em, re.I))
-        absf = bool(re.search(r"absolute|instant", em, re.I))
+        row_all = em + " " + exp[0]["valid"]
+        rel = bool(re.search(r"relative|duration", row_all, re.I))
+        absf = bool(re.search(r"\babsolute\b", row_all, re.I))
         check("AC2", rel != absf, "the expiry row states one form: an absolute instant or a relative duration (Open item 11)")
+        form_word = "relative" if rel else "absolute"
+        check("AC2", any(re.search(r"expir", x, re.I) and re.search(form_word, x, re.I) for x in ANN_PARAS_TAGGED),
+              f"a tagged sentence of the announcement states the expiry form ({form_word}) (review T2)")
         if rel:
             check("AC2", bool(re.search(r"counted from|counts from|from the issue time|from the instant", ev + " " + ANN_TXT, re.I)),
                   "the relative expiry states the instant it counts from (Open item 11, branch b)")
@@ -911,17 +916,48 @@ second_hit = [x for x in RUL_PARAS + [" ".join(r) for r in ROWS]
               if re.search(SECOND_RE, x, re.I) and re.search(VERB_RE, x, re.I)]
 check("AC3", bool(second_hit), "a second announcement while a window is open has a stated outcome (replace, ignore or extend)")
 
-# AC 3: the three transitions of C-153, each a receiver rule of the Receiver rules subsection; the
-# second-announcement paragraph is no transition, so it cannot satisfy one
-TRANS_PARAS = [x for x in RUL_PARAS if not re.search(SECOND_RE, x, re.I)]
-check("AC3", any(re.search(r"announc", x, re.I) and re.search(r"\bopen", x, re.I) and re.search(r"stamp", x, re.I)
-                 for x in TRANS_PARAS),
-      "the receiver rules state the open transition: a valid announcement opens the window and modules stamp it (C-153)")
-check("AC3", any(re.search(r"expir", x, re.I) and re.search(r"\bclos", x, re.I) for x in TRANS_PARAS),
-      "the receiver rules state the expiry transition: the window closes at its expiry (C-153)")
-check("AC3", any(re.search(r"explicit|close message|close announcement", x, re.I) and re.search(r"\bclos", x, re.I)
-                 for x in TRANS_PARAS),
-      "the receiver rules state the explicit-close transition (C-153)")
+# AC 3 (review T1): the three C-153 transitions are anchored to the receiver rules themselves: one numbered
+# (or "Rule N") item for the open transition, one for the expiry, one for the explicit close, all different.
+# Each rule's bold label names its transition; its first sentence carries the verb of the transition.
+def parse_rules(text):
+    rules, cur = [], None
+    for line in text.splitlines():
+        if re.match(r"^\s*(\d+\.\s|\*\*Rule \d+)", line):
+            cur = [line]
+            rules.append(cur)
+        elif not line.strip():
+            cur = None
+        elif cur is not None:
+            cur.append(line)
+    return [" ".join(r) for r in rules]
+
+
+def rule_parts(rule):
+    lab = re.search(r"\*\*([^*]+)\*\*", rule)
+    label = lab.group(1).strip().rstrip(".").lower() if lab else ""
+    rest = re.sub(r"^\s*(\d+\.|\*\*Rule \d+\*\*)\s*", "", rule)
+    rest = re.sub(r"\*\*[^*]+\*\*", "", rest, count=1).strip()
+    return label, re.split(r"(?<=\.)\s", rest, 1)[0].lower()
+
+
+RULES = parse_rules(RUL_TXT)
+RULE_INFO = [rule_parts(r) for r in RULES]
+
+
+def rule_cands(pos_label, neg_label, first_req):
+    return [i for i, (lab, first) in enumerate(RULE_INFO)
+            if re.search(pos_label, lab) and not re.search(neg_label, lab) and re.search(first_req, first)]
+
+
+OPEN_C = rule_cands(r"\bopen", r"^$", r"\bopens\b")
+EXP_C = rule_cands(r"expir", r"already|past|unknown|late|copy|repeat|after|second", r"\bclos")
+EXPL_C = rule_cands(r"explicit|close", r"unknown|late|copy|repeat|after|already|second", r"\bclos")
+check("AC3", bool(OPEN_C), f"the receiver rules hold a numbered rule for the open transition (found rules {OPEN_C})")
+check("AC3", bool(EXP_C), f"the receiver rules hold a numbered rule for the expiry transition (found rules {EXP_C})")
+check("AC3", bool(EXPL_C), f"the receiver rules hold a numbered rule for the explicit close (found rules {EXPL_C})")
+check("AC3", any(len({o, e, x}) == 3 for o in OPEN_C for e in EXP_C for x in EXPL_C),
+      "the open, expiry and explicit-close transitions are three different receiver rules (C-153: announced, "
+      "modules stamp it while open, closes at expiry or on explicit close)")
 
 # ---------------------------------------------------------------------------
 # DoD: evidence tags, owners and falsifiers, reserved fields, Open item 11
@@ -954,6 +990,52 @@ oi11_open = ("ticket 004-29 (commissioning window announcement and close message
 check("DoD", bool(OI11) and (oi11_status or oi11_open),
       "Open item 11 of the regime stamp is no longer open where this text decides it: a status sentence names this "
       "section (a), or the item is unchanged and a new open item here names it (b)")
+
+# ---------------------------------------------------------------------------
+# Review findings of PR #37 (F1, F2, F3, F7): stated outcomes and a counter denial kept narrow
+# ---------------------------------------------------------------------------
+ALL_PARAS = [x for k, x in prose_blocks(NEW) if k == "p"] + [" ".join(r) for _t in parse_tables(NEW) for r in _t[2]]
+
+# F3: a late or repeated announcement of a window already closed by an explicit close has one stated outcome.
+# Source: Work 3 "stated outcomes" (004-29) and C-153 "it closes ... on explicit close".
+AFTER_CLOSE_RE = (r"after (?:the |an |its |a )?(?:window'?s? )?(?:explicit )?close\b|already closed|closed window|"
+                  r"closed by|had closed|explicitly closed")
+after_close = [x for x in ALL_PARAS if re.search(AFTER_CLOSE_RE, x, re.I)
+               and re.search(r"announc|copy|repeat", x, re.I) and re.search(r"ignored|reopen|remember|refus", x, re.I)]
+check("AC4", bool(after_close), "a late or repeated announcement of a window the module closed by an explicit close has a "
+      "stated outcome: ignored and remembered, or reopens (Work 3 stated outcomes; C-153 closes on explicit close) (review F3)")
+if any(re.search(r"\breopen", x, re.I) and not re.search(r"not reopen|does not reopen|do not reopen|never reopen", x, re.I)
+       for x in after_close):
+    check("DoD", any(re.search(r"clos", x, re.I) and re.search(r"reopen|late|after|repeat", x, re.I)
+                     and re.search(r"owner", x, re.I) and re.search(r"falsifier", x, re.I) for x in OPEN_PARAS),
+          "the reopening outcome after a close is an open item with an owner and a falsifier (review F3)")
+
+# F2: the section states whether two modules can hold different windows at once. Any stated answer passes.
+# Source: Work 3 "stated outcomes" (004-29) and C-153 (one tool's window, open until expiry or explicit close).
+TWO_RE = lambda x: re.search(r"\btwo\b", x, re.I) and re.search(r"windows?\b", x, re.I) \
+    and re.search(r"at once|different|same time", x, re.I) and re.search(r"\bmodules?\b", x, re.I) \
+    and not re.search(r"falsifier:|owner:", x, re.I)
+two_hits = [x for x in RUL_PARAS + OPEN_PARAS if TWO_RE(x) and has_evidence(x)]
+check("AC3", bool(two_hits), "the section states whether two modules can hold different windows at once "
+      "(Work 3 stated outcomes; C-153) (review F2)")
+
+# F7: a module whose time is unusable and whose close was lost keeps the window with no bound: stated.
+# Source: Work 3 "stated outcomes" (004-29) and C-153 "it closes ... on explicit close".
+unbounded = [x for k, x in prose_blocks(NEW) if k == "p" and re.search(r"time state|unusable", x, re.I)
+             and re.search(r"\blost\b|\bnever\b", x, re.I) and re.search(r"\bclose", x, re.I)]
+check("AC3", bool(unbounded), "the case of a module whose time is unusable and whose close was lost is stated "
+      "(Work 3 stated outcomes; C-153 closes on explicit close) (review F7)")
+
+# F1: the message counter. Merged text: Hello, Common control header, offset 8: "in every control message it is the
+# sender's liveness counter (Liveness counter)"; C-115: "the 64-bit counter is live because it is the liveness
+# counter". A denial of that is allowed only as a reported contradiction or an open item naming Hello and C-115.
+DENY_RE = r"cannot be a (?:data-plane )?liveness counter|not a (?:data-plane )?liveness counter|cannot be the liveness counter"
+for x in [x for x in ALL_PARAS if re.search(DENY_RE, x, re.I)]:
+    ok = (bool(re.search(r"reported contradiction|present disagreement", x, re.I)) or bool(re.match(r"\s*\**\s*Open item", x))) \
+        and "Hello" in x and "C-115" in x and bool(re.search(r"owner", x, re.I)) and bool(re.search(r"falsifier", x, re.I))
+    check("DoD", ok, "a denial that the tool's message counter is a liveness counter is a reported contradiction or an open "
+          "item, naming the merged Hello row and C-115, with an owner and a falsifier (review F1; Hello, Common control "
+          "header, offset 8; C-115)")
 
 if REL_FORM[0]:
     check("DoD", oi11_status, "Open item 11 of the regime stamp carries a status sentence for the relative form (branch b)")
