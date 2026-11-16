@@ -135,10 +135,11 @@ fn make_executable(_path: &Path) -> std::io::Result<()> {
 
 /// The verdict of a script from its exit status and output.
 pub fn verdict(passed: bool, output: &str) -> ScriptVerdict {
-    let criteria = rx(r"(?m)^FAIL ([A-Za-z]+ ?[0-9]*):")
+    let mut criteria: BTreeSet<String> = rx(r"(?m)^FAIL ([A-Za-z]+ ?[0-9]*):")
         .captures_iter(output)
         .map(|c| c[1].replace(' ', ""))
         .collect();
+    criteria.extend(grouped_failures(output));
     let lines: Vec<&str> = output.lines().collect();
     let tail = lines[lines.len().saturating_sub(3)..].join(" / ");
     ScriptVerdict {
@@ -146,6 +147,25 @@ pub fn verdict(passed: bool, output: &str) -> ScriptVerdict {
         criteria,
         tail,
     }
+}
+
+/// The criteria of the scripts that print their results grouped (006-01 and
+/// 006-02): a line `  AC1`, then its checks as `    OK   message` or
+/// `    FAIL message`. Additive: output without such groups gives nothing.
+fn grouped_failures(output: &str) -> BTreeSet<String> {
+    let group = rx(r"^  (AC[0-9]+|DoD)\s*$");
+    let mut current: Option<String> = None;
+    let mut out = BTreeSet::new();
+    for line in output.lines() {
+        if let Some(c) = group.captures(line) {
+            current = Some(c[1].to_string());
+        } else if line.starts_with("    FAIL ")
+            && let Some(c) = &current
+        {
+            out.insert(c.clone());
+        }
+    }
+    out
 }
 
 /// The script text of `checks/<id>.sh`: from the working tree while it
@@ -199,6 +219,14 @@ mod tests {
             .collect();
         assert_eq!(v.criteria, want);
         assert!(!v.passed);
+    }
+
+    #[test]
+    fn grouped_output_gives_its_failed_criteria() {
+        let out = "006-01: x\n  AC1\n    OK   fine\n    FAIL no table\n  AC2\n    OK   fine\n  AC3\n    FAIL a\nRESULT: FAIL (2 checks failed)\n";
+        let v = verdict(false, out);
+        let want: BTreeSet<String> = ["AC1", "AC3"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(v.criteria, want);
     }
 
     #[test]
