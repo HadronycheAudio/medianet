@@ -90,6 +90,21 @@
 #        script's summary is taken from RUN1's real final line, varied by one
 #        pair at a time.  All pairs exact: exit 0, PASS.  Each single pair with
 #        X < Y (or Y = 0 for audio): exit non-zero with a FAIL line naming it.
+#   RUN1/RUN2 repeat (ruling B): each is repeated ONCE, and only when its first
+#        attempt fails with the loss message (FAIL loss:) or the missing-section
+#        message (FAIL summary: missing section ...).  Printed as
+#        "NOTE RUN<n> repeated once after: <FAIL line>".  A failed repeat FAILS.
+#        Nothing else is repeated, and the first failure never counts as a pass.
+#   A    summary selection (ruling A), by stubs that print several per-second
+#        lines: ruleA-i the last line lacks synth2, the previous complete line
+#        is all-exact -> PASS; ruleA-ii the previous complete line has a synth2
+#        pair X < Y -> FAIL naming it; ruleA-iii no complete line, none of the
+#        last three has synth2 -> FAIL naming the missing section; ruleA-iv a
+#        complete line four back does not rescue -> FAIL naming the section.
+#        Message form the script must use for a missing section:
+#          FAIL summary: missing section "<name>" in the last 3 per-second lines
+#        Section markers: audio "windows exact,"; synth1 music "max pitch";
+#        transport "transport: "; the synth2 section "also synth2:".
 #   CARGO cargo test passes; transport::tests::time_code and scenario ok.
 #   TREE the POC working tree is clean vs HEAD, except while the orchestrator
 #        marker swarm/poc-write-in-flight exists (then a loud SKIP).
@@ -99,7 +114,7 @@
 # Cost: cargo build (cached), three 25 s runs (RUN1, RUN2, RUN3), quick rejected
 # invocations, metrics cases (fast), stub runs (fast), one cargo test.  Runs are
 # unprivileged, each on its own isolated multicast group
-# (239.72.68.44 with a port in 47841-47900), with --no-tui.  Before each run the
+# (239.72.68.44 with a port in 47901-47940), with --no-tui.  Before each run the
 # script waits while another hadropoc process is active, and it never runs two
 # POC runs at once.
 
@@ -118,10 +133,10 @@ UNT_BIN="$UNT_DIR/target/release/hadropoc"
 STUB="$OUT/stub"                               # stub hadropoc, outside the POC
 mkdir -p "$OUT" || { echo "FAIL  cannot create $OUT"; exit 1; }
 
-# Three isolated ports in 47841-47900, distinct for the runs of this check.
-PORT_FIX=$(( 47841 + ($$ % 60) ))
-PORT_UNT=$(( 47841 + (($$ + 20) % 60) ))
-PORT_FLAG=$(( 47841 + (($$ + 40) % 60) ))
+# Three isolated ports in 47901-47940, distinct for the runs of this check.
+PORT_FIX=$(( 47901 + ($$ % 40) ))
+PORT_UNT=$(( 47901 + (($$ + 13) % 40) ))
+PORT_FLAG=$(( 47901 + (($$ + 26) % 40) ))
 
 fail=0
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -375,34 +390,76 @@ row_counts() {
 }
 
 # ------------------------------------------------------------------ RUN1
+# RUN1 and RUN2 are repeated ONCE, and only when the first attempt fails for
+# loss, or for a missing section of the summary (ruling B).  A repeat that
+# also fails, or any other failure, FAILS.  A repeat is never counted as a
+# pass of the first attempt; the first failure is printed as a NOTE line.
 echo "-- RUN1 clean 25 s run of the fixed build (the real metrics file and summary)"
 GOOD="$OUT/good"
-rm -rf "$GOOD"; mkdir -p "$GOOD"
-GOOD_OK=0
+RUN1_VERDICT=""; RUN1_MSG=""; RUN1_RC=0; RUN1_COUNTS=""
+run1_once() {
+  rm -rf "$GOOD"; mkdir -p "$GOOD"
+  note "running: $BIN loopback --duration 25 --sim-offset-ms 3 --sim-drift-ppm 20 --no-tui --csv $GOOD/smoke.csv --metrics $GOOD/metrics.csv --group 239.72.68.44:$PORT_FIX"
+  timeout 120 "$BIN" loopback --duration 25 --sim-offset-ms 3 --sim-drift-ppm 20 --no-tui \
+    --csv "$GOOD/smoke.csv" --metrics "$GOOD/metrics.csv" --group "239.72.68.44:$PORT_FIX" \
+    > "$GOOD/out.txt" 2> "$GOOD/err.txt"
+  RUN1_RC=$?
+  RUN1_COUNTS="$(row_counts "$GOOD/metrics.csv" 2>/dev/null || true)"
+  local total ok_mod m v last lost
+  total="$(printf '%s' "$RUN1_COUNTS" | sed -nE 's/^rows=([0-9]+).*/\1/p')"
+  ok_mod=1
+  for m in mixer sender synth1 synth2; do
+    v="$(printf '%s' "$RUN1_COUNTS" | sed -nE "s/.* $m=([0-9]+).*/\1/p")"
+    if [ -z "$v" ] || [ "$v" -lt 23 ] || [ "$v" -gt 27 ]; then ok_mod=0; fi
+  done
+  last="$(grep -E '^\[ *[0-9]+s\] clock' "$GOOD/out.txt" | tail -n 1 || true)"
+  lost="$(printf '%s\n' "$last" | sed -nE 's/.*sent [0-9]+ lost ([0-9]+) \(fwd.*/\1/p')"
+  if [ "$RUN1_RC" -ne 0 ] || [ -z "$total" ] || [ "$total" -lt 98 ] || [ "$total" -gt 102 ] || [ "$ok_mod" -ne 1 ]; then
+    RUN1_VERDICT=bad
+    RUN1_MSG="RUN1 clean run: exit $RUN1_RC, metrics [$RUN1_COUNTS] (expected exit 0, 98..102 rows, 23..27 per module)"
+  elif ! printf '%s\n' "$last" | grep -q 'also synth2'; then
+    RUN1_VERDICT=repeat
+    RUN1_MSG='FAIL summary: missing section "also synth2" in the last per-second line of RUN1'
+  elif [ -z "$lost" ]; then
+    RUN1_VERDICT=bad
+    RUN1_MSG="RUN1 final line has no 'sent S lost N' field"
+  elif [ "$lost" != "0" ]; then
+    RUN1_VERDICT=repeat
+    RUN1_MSG="FAIL loss: $lost lost datagrams in the last per-second line of RUN1"
+  else
+    RUN1_VERDICT=ok
+    RUN1_MSG=""
+  fi
+}
+RUN1_REPEATED=0
 if [ "$BUILD_OK" -ne 1 ]; then
   bad "RUN1 not evaluated: build failed"
 elif ! wait_for_poc; then
   bad "RUN1 not run: another hadropoc process stayed active for 600 s"
 else
-  note "running: $BIN loopback --duration 25 --sim-offset-ms 3 --sim-drift-ppm 20 --no-tui --csv $GOOD/smoke.csv --metrics $GOOD/metrics.csv --group 239.72.68.44:$PORT_FIX"
-  timeout 120 "$BIN" loopback --duration 25 --sim-offset-ms 3 --sim-drift-ppm 20 --no-tui \
-    --csv "$GOOD/smoke.csv" --metrics "$GOOD/metrics.csv" --group "239.72.68.44:$PORT_FIX" \
-    > "$GOOD/out.txt" 2> "$GOOD/err.txt"
-  rc=$?
-  counts="$(row_counts "$GOOD/metrics.csv" 2>/dev/null || true)"
-  total="$(printf '%s' "$counts" | sed -nE 's/^rows=([0-9]+).*/\1/p')"
-  ok_mod=1
-  for m in mixer sender synth1 synth2; do
-    v="$(printf '%s' "$counts" | sed -nE "s/.* $m=([0-9]+).*/\1/p")"
-    if [ -z "$v" ] || [ "$v" -lt 23 ] || [ "$v" -gt 27 ]; then ok_mod=0; fi
-  done
-  if [ "$rc" -eq 0 ] && [ -n "$total" ] && [ "$total" -ge 98 ] && [ "$total" -le 102 ] && [ "$ok_mod" -eq 1 ]; then
-    GOOD_OK=1
-    pass "RUN1 clean run exited 0; metrics $counts (ticket bounds: 98..102 rows, 23..27 per module)"
-  else
-    bad "RUN1 clean run: exit $rc, metrics [$counts] (expected exit 0, 98..102 rows, 23..27 per module)"
+  run1_once
+  if [ "$RUN1_VERDICT" = repeat ]; then
+    printf 'NOTE RUN1 repeated once after: %s\n' "$RUN1_MSG"
+    RUN1_REPEATED=1
+    if wait_for_poc; then
+      run1_once
+    else
+      RUN1_VERDICT=bad; RUN1_MSG="RUN1 repeat not run: another hadropoc process stayed active for 600 s"
+    fi
   fi
+  case "$RUN1_VERDICT" in
+    ok)
+      GOOD_OK=1
+      if [ "$RUN1_REPEATED" -eq 1 ]; then
+        pass "RUN1 clean run passed on the single repeat; metrics $RUN1_COUNTS"
+      else
+        pass "RUN1 clean run exited 0; metrics $RUN1_COUNTS (ticket bounds: 98..102 rows, 23..27 per module)"
+      fi ;;
+    repeat) bad "RUN1 failed again after the single repeat: $RUN1_MSG" ;;
+    *) bad "$RUN1_MSG" ;;
+  esac
 fi
+GOOD_OK="${GOOD_OK:-0}"
 
 # Normalised summary line: the last per-second line of RUN1's output.
 R1_SUMMARY="$(grep -E '^\[ *[0-9]+s\] clock ' "$GOOD/out.txt" 2>/dev/null | tail -n 1 || true)"
@@ -410,25 +467,58 @@ R1_SUMMARY="$(grep -E '^\[ *[0-9]+s\] clock ' "$GOOD/out.txt" 2>/dev/null | tail
 # ------------------------------------------------------------------ RUN2
 # Cleanup is checked with find (not ls): an empty directory has no entries.
 echo "-- RUN2 tools/smoke.sh from /tmp on the fixed build: exit 0, PASS line, temporary directory removed"
+RUN2_RC=0; RUN2_FAIL=""; RUN2_LEFT=""; RUN2_VERDICT=""
+T2="$OUT/tmp-fixed"
+run2_once() {
+  rm -rf "$T2"; mkdir -p "$T2"
+  note "running (cwd /tmp): HADROPOC_BIN=$BIN TMPDIR=$T2 bash $SMOKE --group 239.72.68.44:$PORT_FIX"
+  ( cd /tmp && HADROPOC_BIN="$BIN" TMPDIR="$T2" timeout 240 bash "$SMOKE" --group "239.72.68.44:$PORT_FIX" ) \
+    > "$OUT/smoke-fixed.out" 2>&1
+  RUN2_RC=$?
+  RUN2_FAIL="$(grep '^FAIL' "$OUT/smoke-fixed.out" | head -n 1 || true)"
+  RUN2_LEFT="$(find "$T2" -mindepth 1 -print -quit)"
+  if [ "$RUN2_RC" -eq 0 ] && grep -q '^PASS' "$OUT/smoke-fixed.out" && [ -z "$RUN2_LEFT" ]; then
+    RUN2_VERDICT=ok
+  elif [ "$RUN2_RC" -ne 0 ] && printf '%s\n' "$RUN2_FAIL" | grep -Eq '^FAIL (loss:|summary: missing section)'; then
+    RUN2_VERDICT=repeat
+  else
+    RUN2_VERDICT=bad
+  fi
+}
+RUN2_REPEATED=0
 if [ "$SMOKE_OK" -ne 1 ] || [ "$BUILD_OK" -ne 1 ]; then
   bad "RUN2 not evaluated: tools/smoke.sh or the fixed build is missing"
 elif ! wait_for_poc; then
   bad "RUN2 not run: another hadropoc process stayed active for 600 s"
 else
-  T2="$OUT/tmp-fixed"; rm -rf "$T2"; mkdir -p "$T2"
-  note "running (cwd /tmp): HADROPOC_BIN=$BIN TMPDIR=$T2 bash $SMOKE --group 239.72.68.44:$PORT_FIX"
-  ( cd /tmp && HADROPOC_BIN="$BIN" TMPDIR="$T2" timeout 240 bash "$SMOKE" --group "239.72.68.44:$PORT_FIX" ) \
-    > "$OUT/smoke-fixed.out" 2>&1
-  rc=$?
-  if [ "$rc" -eq 0 ]; then pass "RUN2 tools/smoke.sh exits 0 on the fixed build"; else bad "RUN2 tools/smoke.sh exits $rc on the fixed build"; fi
-  if grep -q '^PASS' "$OUT/smoke-fixed.out"; then
-    pass "RUN2 a PASS line is printed:"
-    note "$(grep '^PASS' "$OUT/smoke-fixed.out" | tail -n 1)"
-  else
-    bad "RUN2 no PASS line in the output"
+  run2_once
+  if [ "$RUN2_VERDICT" = repeat ]; then
+    printf 'NOTE RUN2 repeated once after: %s\n' "$RUN2_FAIL"
+    RUN2_REPEATED=1
+    if wait_for_poc; then
+      run2_once
+    else
+      RUN2_VERDICT=bad; RUN2_FAIL="RUN2 repeat not run: another hadropoc process stayed active for 600 s"
+    fi
   fi
-  left="$(find "$T2" -mindepth 1 -print -quit)"
-  if [ -z "$left" ]; then pass "RUN2 the temporary directory is removed (find finds nothing under TMPDIR)"; else bad "RUN2 the script left files behind in its temporary directory: $left"; fi
+  case "$RUN2_VERDICT" in
+    ok)
+      if [ "$RUN2_REPEATED" -eq 1 ]; then
+        pass "RUN2 passed on the single repeat: exit 0, PASS line, temporary directory removed"
+      else
+        pass "RUN2 tools/smoke.sh exits 0 with a PASS line; temporary directory removed (find)"
+      fi
+      note "$(grep '^PASS' "$OUT/smoke-fixed.out" | tail -n 1)" ;;
+    repeat) bad "RUN2 failed again after the single repeat: $RUN2_FAIL" ;;
+    *)
+      if [ "$RUN2_RC" -ne 0 ]; then
+        bad "RUN2 tools/smoke.sh exits $RUN2_RC on the fixed build: ${RUN2_FAIL:-no FAIL line}"
+      elif [ -n "$RUN2_LEFT" ]; then
+        bad "RUN2 the script left files behind in its temporary directory: $RUN2_LEFT"
+      else
+        bad "RUN2 no PASS line in the output"
+      fi ;;
+  esac
   tail -n 4 "$OUT/smoke-fixed.out" | while IFS= read -r l; do note "$l"; done
 fi
 
@@ -676,6 +766,67 @@ EOF
     stub_case clicks-synth1 fail "clicks"
     stub_case clicks-synth2 fail "clicks synth2"
     stub_case channel-synth1 fail "channel exact"
+    # Ruling A: the summary is the last per-second line that is complete within
+    # the last three.  Stubs print several per-second lines.
+    python3 - "$STUB" "$R1_SUMMARY" <<'PY'
+import re, sys
+stub, line = sys.argv[1], sys.argv[2]
+def at(text, sec):
+    return re.sub(r'^\[ *\d+s\]', '[%4ds]' % sec, text, count=1)
+def no_synth(text):
+    out, n = re.subn(r'\s\|\s+also synth2:[^|]*', '', text)
+    if n != 1:
+        sys.exit("ruling A: no also synth2 section in the summary")
+    return out
+def synth_bad(text):
+    i = text.find('also synth2:')
+    if i < 0:
+        sys.exit("ruling A: no also synth2 section in the summary")
+    tail, n = re.subn(r'voice channels (\d+)/(\d+) windows exact',
+                      lambda m: 'voice channels %d/%s windows exact' % (int(m.group(1)) - 1, m.group(2)),
+                      text[i:], count=1)
+    if n != 1:
+        sys.exit("ruling A: no synth2 voice pair")
+    return text[:i] + tail
+full = line
+cases = {
+    # (i) last line lacks the synth2 section, previous complete line all exact
+    "ruleA-i": [at(full, 24), no_synth(at(full, 25))],
+    # (ii) same, but the previous complete line has a synth2 pair with X < Y
+    "ruleA-ii": [synth_bad(at(full, 24)), no_synth(at(full, 25))],
+    # (iii) no complete line among the last four, none of the last three has synth2
+    "ruleA-iii": [no_synth(at(full, 22)), no_synth(at(full, 23)), no_synth(at(full, 24)), no_synth(at(full, 25))],
+    # (iv) a complete line four back does not rescue the last three
+    "ruleA-iv": [at(full, 21), no_synth(at(full, 22)), no_synth(at(full, 23)), no_synth(at(full, 24)), no_synth(at(full, 25))],
+}
+for name, lines in cases.items():
+    with open(f"{stub}/summary-{name}.txt", "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+PY
+    if [ $? -ne 0 ]; then
+      bad "A could not prepare the ruling-A stub summaries"
+    else
+      for name in ruleA-i ruleA-ii ruleA-iii ruleA-iv; do
+        cat > "$STUB/stub-$name.sh" <<EOF
+#!/usr/bin/env bash
+metrics=""
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --metrics) metrics="\$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cp "$STUB/metrics-good.csv" "\$metrics"
+cat "$STUB/summary-$name.txt"
+exit 0
+EOF
+        chmod +x "$STUB/stub-$name.sh"
+      done
+      stub_case ruleA-i ok ""
+      stub_case ruleA-ii fail "synth2 voice"
+      stub_case ruleA-iii fail "synth2 missing"
+      stub_case ruleA-iv fail "synth2 missing"
+    fi
   fi
 fi
 
