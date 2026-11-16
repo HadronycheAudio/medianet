@@ -31,8 +31,8 @@
 #       invalid form; each outcome names members of the Rejection reasons enumeration
 #       and every named member lists the control layer
 #   Open item paragraph       names an owner and a falsifier
-#   wire.toml                 one [[message]] with section_of naming a declared message
-#       (and "stamp" in that name) per section, layer control, dscp 40, max_size at
+#   wire.toml                 one [[message]] with a non-empty section_of (the parent need not
+#       be declared: Work 7 and the schema fix no more) per section, layer control, dscp 40, max_size at
 #       most the control bound, fields agreeing with the markdown table row for row;
 #       one [[message]] for the request (named with "stamp" and "request" or "fetch",
 #       no section_of), with the same checks
@@ -52,7 +52,10 @@
 #         skipping unknown section types by their length (004-04), the complete-stamp
 #         test, discarding an incomplete stamp when a newer version arrives; the request
 #         carries the module id, and the choice of return path is tagged [decision]
-#   AC 4  at least seven invalid forms with outcomes; each outcome names only members of
+#   AC 4  at least seven invalid forms with outcomes (a row whose outcome is "not a rejection", "ignored" or
+#         "valid" and names no Reject reason is not counted); one stated outcome for an identical repeat; sections of
+#         one version that disagree name exactly one Reject reason; the stamp size is count x section maximum; the
+#         storage figures are multiples of the stamp size; totals are per-peer x 63 or 64 with the reason stated; each outcome names only members of
 #         the closed Rejection reasons enumeration whose Layers include control; the
 #         oversize section names OversizeControl, the section length overrun and a count
 #         above its maximum name BadLength (the enumeration's own meaning of BadLength)
@@ -823,7 +826,7 @@ for _label, _fl in [("section", SEC_FL), ("request", REQ_FL)]:
     check("AC1", BLOCK is not None and bool(_codes) and all(c in BLOCK for c in _codes),
           f"the {_label} message type is a code inside the block the hello gives 004-24 (Hello, Control message type codes)")
 
-# --- AC 2: the numbers ---
+# --- AC 2: the numbers, computed from the table and the constants ---
 _cnt = rows_matching(SEC_FL, r"section\W+count")
 M = None
 if len(_cnt) == 1:
@@ -834,21 +837,41 @@ check("AC2", M is not None and M >= 1,
 check("AC2", M is not None and any(re.search(r"section", s) and re.search(r"maximum|at most|fixed|up to", s)
                                     and re.search(rf"(?<!\d){M}(?!\d)", s) for s in SENT),
       f"a sentence states the maximum section count {M} as a number")
-_s_cands = []
-for s in SENT:
-    if "stamp" in s and "storage" not in s and re.search(r"maximum|at most|largest|fixed", s):
-        _s_cands += [int(x) for x in re.findall(r"(?<![\d.])(\d+)\s*bytes", s)]
-_s_ok = [x for x in _s_cands if M and SEC_TILE <= x <= M * CTRL_BOUND]
-S_MAX = max(_s_ok) if _s_ok else None
-check("AC2", S_MAX is not None,
-      f"a sentence states the maximum stamp size in bytes, between one largest section ({SEC_TILE}) and "
-      f"the section count times the control bound ({M} x {CTRL_BOUND})")
-_n_cands = []
-for s in SENT:
-    if "storage" in s:
-        _n_cands += [int(x) for x in re.findall(r"(?<![\d.])(\d+)\s*bytes", s)]
-check("AC2", S_MAX is not None and any(x >= S_MAX for x in _n_cands),
-      f"a sentence states the per-peer storage a receiver needs in bytes, at least the maximum stamp size ({S_MAX})")
+_m = re.search(r"(\d+) peers", const_val("C-217"))
+PEERS = int(_m.group(1)) if _m else None
+_m = re.search(r"at most (\d+)", const_val("C-34"))
+MODULES = int(_m.group(1)) if _m else None
+check("AC2", bool(PEERS) and MODULES == (PEERS or 0) + 1,
+      f"the constants give {PEERS} peers (C-217) and {MODULES} modules (C-34)")
+# The stamp's maximum is the section count times the section maximum computed from the table (and at most
+# the count times the control bound, C-17); the figure must appear in a sentence that states the maximum.
+EXPECT_STAMP = M * SEC_TILE if M else None
+_stamp_nums = [int(x) for s in SENT if "stamp" in s and "storage" not in s
+               and re.search(r"maximum|at most|largest", s)
+               for x in re.findall(r"(?<![\d.])(\d+)\s*bytes", s)]
+S_MAX = EXPECT_STAMP
+check("AC2", bool(EXPECT_STAMP) and EXPECT_STAMP in _stamp_nums and EXPECT_STAMP <= (M * CTRL_BOUND),
+      f"a sentence states the maximum stamp size as {M} x {SEC_TILE} = {EXPECT_STAMP} bytes (the section count "
+      f"times the section maximum computed from the table, at most the count times the control bound {CTRL_BOUND})")
+# The per-peer storage: every byte figure stated for storage is a whole multiple, at least one, of the stamp size.
+_storage_sents = [s for s in SENT if "storage" in s]
+_per = [int(x) for s in _storage_sents for x in re.findall(r"(?<![\d.])(\d+)\s*bytes", s)]
+check("AC2", bool(_per) and bool(S_MAX) and all(c % S_MAX == 0 and c >= S_MAX for c in _per),
+      f"every storage figure stated in bytes is a whole multiple, at least one, of the stamp size {S_MAX} "
+      f"(found {_per})")
+# Products: every stated "a x b = c" in the section is exact.
+_bad_products = [f"{a} x {b} = {c}" for s in SENT for a, b, c in re.findall(r"(\d+)\s*×\s*(\d+)\s*=\s*(\d+)", s)
+                 if int(a) * int(b) != int(c)]
+check("AC2", not _bad_products, "every product stated in the section is exact" + (f": {_bad_products}" if _bad_products else ""))
+# A total over the peers: per-peer figure times the peer count the text cites (C-217 peers or C-34 modules),
+# with the reason stated in the same sentence.
+_totals = [(int(a), int(b), int(c), s) for s in _storage_sents
+           for a, b, c in re.findall(r"(\d+)\s*×\s*(\d+)\s*=\s*(\d+)", s)]
+_bad_totals = [f"{a} x {b} = {c}" for a, b, c, s in _totals
+               if not (a in (PEERS, MODULES) and b in _per and re.search(r"c-217|c-34|entry for itself|does not hold", s))]
+check("AC2", not _bad_totals,
+      "every total over the peers is the per-peer storage times the peer count (C-217 or C-34), with its reason stated"
+      + (f": {_bad_totals}" if _bad_totals else ""))
 
 # --- AC 3: sender and receiver rules ---
 check("AC3", any_sent(r"multicast", r"change"),
@@ -873,7 +896,26 @@ _ret = [t for k, t in STAMP_PROSE if k == "p" and re.search(r"unicast|multicast"
 check("AC3", any("[decision]" in t for t in _ret),
       "a paragraph says how the stamp is returned to the requester (unicast or multicast) and is tagged [decision] (Work item 3)")
 
-# --- AC 4: the invalid forms ---
+# --- AC 3 (review findings): first stamp, restarted peer, fetch only when stale, fetch-load open item ---
+TAGGED = []
+for _k, _t in STAMP_PROSE:
+    if _k == "p" and has_evidence(_t):
+        TAGGED += [x.strip().lower() for x in re.split(r"(?<=[.;:])\s+", _t) if x.strip()]
+check("AC3", any(re.search(r"\bfirst\b|nothing held|no stamp held|none held|nothing is held", x)
+                 and re.search(r"section|stamp", x) and re.search(r"\baccept|\bstart|\bbegin", x) for x in TAGGED),
+      "a tagged receiver rule gives the outcome (accept, start or begin) for the first section of a peer when nothing is held or reassembled")
+check("AC3", any(re.search(r"nonce", x) and re.search(r"\bdifferent\b|\bnew\b|restart", x)
+                 and re.search(r"discard|replace|drop", x) for x in TAGGED),
+      "a tagged receiver rule says that a section with a different instance nonce from the held stamp's discards or replaces the old stamp")
+check("AC3", any(re.search(r"unicast", x) and re.search(r"\bonly\b|\bsolely\b|exactly when", x)
+                 and re.search(r"stale|differ", x) and re.search(r"fetch|request", x) for x in TAGGED),
+      "a tagged rule says a receiver fetches by unicast only when its held copy is stale (the pair differs)")
+_fetch_open = [t for k, t in STAMP_PROSE if k == "p" and re.search(r"open item", t, re.I)
+               and re.search(r"request|fetch|load", t[:200], re.I)]
+check("AC3", any("011-23" in t and "005-07" in t for t in _fetch_open),
+      "the open item about the fetch load names 011-23 and 005-07 as owners")
+
+# --- AC 4: the invalid forms; a row that is not a rejection is allowed and is not counted ---
 VALID_T = None
 for _t in STAMP_TABLES:
     _h = _t[1]
@@ -882,7 +924,17 @@ for _t in STAMP_TABLES:
         break
 check("AC4", VALID_T is not None, "the stamp section has a Validity rules table of 'Invalid form | Required outcome'")
 ROWS = [r for r in (VALID_T[2] if VALID_T else []) if len(r) >= 2]
-check("AC4", len(ROWS) >= 7, f"the stamp section lists at least 7 invalid forms with outcomes (found {len(ROWS)})")
+
+
+def row_members(row):
+    return [t for t in outcome_tokens(row[1]) if t in MEMBERS]
+
+
+NONREJ_RE = re.compile(r"not a rejection|never a rejection|\bignored\b|\bvalid\b", re.I)
+NONREJ = [r for r in ROWS if NONREJ_RE.search(r[1]) and not row_members(r)]
+INVALID = [r for r in ROWS if r not in NONREJ]
+check("AC4", len(INVALID) >= 7,
+      f"the stamp section lists at least 7 invalid forms with outcomes, not counting rows whose outcome is not a rejection (found {len(INVALID)})")
 
 
 def category(form):
@@ -905,7 +957,7 @@ def category(form):
 
 
 _cats = {}
-for row in ROWS:
+for row in INVALID:
     c = category(row[0])
     if c and c not in _cats:
         _cats[c] = row
@@ -915,9 +967,9 @@ for c, label in [("oversize", "an oversize section"), ("index_vs_count", "a sect
                  ("duplicate", "a duplicate section"), ("length_overrun", "a section length overrun"),
                  ("generic", "a generic control violation")]:
     check("AC4", c in _cats, f"the invalid forms include {label}")
-for row in ROWS:
+for row in INVALID:
     toks = outcome_tokens(row[1])
-    mem = [t for t in toks if t in MEMBERS]
+    mem = row_members(row)
     unknown = [t for t in toks if t not in MEMBERS]
     ok = bool(mem) and not unknown and all("control" in MEMBER_LAYERS[t] for t in mem)
     check("AC4", ok, f"the outcome of '{row[0][:48]}' names only members of the Rejection enumeration whose "
@@ -927,7 +979,22 @@ for c, need, why in [("oversize", "OversizeControl", "the oversize section (C-17
                      ("length_overrun", "BadLength", "a section length overrun (the ticket's outcome)")]:
     if c in _cats:
         check("AC4", need in outcome_tokens(_cats[c][1]), f"{why} is outcome {need}")
-_reasons_md = set(t for row in ROWS for t in outcome_tokens(row[1]) if t in MEMBERS)
+# Sections of one version that disagree name exactly one Reject reason.
+_disagree = [r for r in ROWS if re.search(r"disagree|differ", r[0], re.I)]
+check("AC4", bool(_disagree) and all(len(set(row_members(r))) == 1 for r in _disagree),
+      "every row whose sections disagree names exactly one Reject reason"
+      + (f"; found {[r[0][:40] for r in _disagree]}" if _disagree else " (no such row)"))
+# An identical repeat of a section held is one stated outcome: not a rejection, the held section kept.
+_ident_rows = [r for r in ROWS if re.search(r"identical", r[0], re.I)]
+_ident_row_ok = any(not row_members(r) and NONREJ_RE.search(r[1]) and re.search(r"kept|held", r[1], re.I)
+                    for r in _ident_rows)
+_ident_sent = [t for k, t in STAMP_PROSE if k == "p" and re.search(r"identical", t, re.I)
+               and re.search(r"repeat", t, re.I) and re.search(r"not a rejection|never a rejection", t, re.I)
+               and re.search(r"kept|held", t, re.I) and not [x for x in outcome_tokens(t) if x in MEMBERS]]
+check("AC4", all(not row_members(r) for r in _ident_rows) and (_ident_row_ok or bool(_ident_sent)),
+      "one stated outcome for an identical repeat of a held section of one version: not a rejection, the held section "
+      "kept (a table row or a tagged sentence), and no row for it names a Reject reason")
+_reasons_md = set(t for row in INVALID for t in outcome_tokens(row[1]) if t in MEMBERS)
 
 # --- AC 5: wire.toml ---
 try:
@@ -960,8 +1027,8 @@ check("AC5", len(SEC_TOML) >= 1,
 check("AC5", len(REQ_TOML) >= 1,
       "a wire.toml message without section_of carries the markdown request table row for row")
 for m in SEC_TOML:
-    check("AC5", m.get("section_of") in NAMES,
-          f"the section_of of '{m.get('name')}' names a message declared in wire.toml ({m.get('section_of')})")
+    check("AC5", isinstance(m.get("section_of"), str) and m.get("section_of").strip() != "",
+          f"the section_of of '{m.get('name')}' names its parent (a non-empty name; the parent need not be declared)")
 
 
 def check_toml_message(m, md_fl, md_total, ac_label):
