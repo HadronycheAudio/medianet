@@ -2,6 +2,9 @@
 name = "hadronyche-tools"
 version.workspace = true
 edition.workspace = true
+# Generates the registry of ported document checks from src/doccheck/checks/
+# (one file per port, so porters working in parallel never edit a shared list).
+build = "build.rs"
 
 [dependencies]
 # Document checks (src/doccheck): the scripts being ported are written in

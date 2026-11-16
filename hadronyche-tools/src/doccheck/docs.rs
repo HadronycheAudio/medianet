@@ -187,7 +187,21 @@ impl Docs {
     }
 
     /// Writes every file under each prefix (overrides applied) below `dest`.
+    /// A commit is exported with `git archive` (one process, not one per
+    /// file), then the overrides are written over it.
     pub fn export(&self, dest: &Path, prefixes: &[&str]) -> std::io::Result<()> {
+        if let Source::Git { repo, commit } = &self.source {
+            git_archive(repo, commit, prefixes, dest)?;
+            for (path, text) in self.overrides() {
+                match text {
+                    Some(t) => write_file(&dest.join(path), t.as_bytes())?,
+                    None => {
+                        let _ = fs::remove_file(dest.join(path));
+                    }
+                }
+            }
+            return Ok(());
+        }
         for prefix in prefixes {
             for path in self.files_under(prefix) {
                 let Some(text) = self.read(&path) else {
@@ -198,6 +212,38 @@ impl Docs {
             }
         }
         Ok(())
+    }
+}
+
+fn git_archive(repo: &Path, commit: &str, prefixes: &[&str], dest: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dest)?;
+    let archive = Command::new("git")
+        .args([
+            "--no-optional-locks",
+            "archive",
+            "--format=tar",
+            commit,
+            "--",
+        ])
+        .args(prefixes)
+        .current_dir(repo)
+        .output()?;
+    if !archive.status.success() {
+        return Err(std::io::Error::other(
+            String::from_utf8_lossy(&archive.stderr).into_owned(),
+        ));
+    }
+    let mut tar = Command::new("tar")
+        .args(["-x", "-C"])
+        .arg(dest)
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
+    std::io::Write::write_all(tar.stdin.as_mut().expect("piped"), &archive.stdout)?;
+    let status = tar.wait()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("tar -x failed"))
     }
 }
 

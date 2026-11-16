@@ -19,6 +19,13 @@ pub enum Edit {
     DeleteLines { lo: usize, hi: usize },
     /// Remove the tag `[tag]` (with its backticks, if any) from a line.
     StripTag { line: usize, tag: String },
+    /// Replace the bytes `start..end` of a line by `to`.
+    ReplaceSpan {
+        line: usize,
+        start: usize,
+        end: usize,
+        to: String,
+    },
     /// Replace the `nth` (0-based) occurrence of `from` on a line by `to`.
     Replace {
         line: usize,
@@ -50,6 +57,15 @@ impl Mutation {
                 lines[*line] = l
                     .replace(&format!("`[{tag}]`"), "")
                     .replace(&format!("[{tag}]"), "");
+            }
+            Edit::ReplaceSpan {
+                line,
+                start,
+                end,
+                to,
+            } => {
+                let l = &lines[*line];
+                lines[*line] = format!("{}{}{}", &l[..*start], to, &l[*end..]);
             }
             Edit::Replace {
                 line,
@@ -93,8 +109,11 @@ fn drop_lines(text: &str, lo: usize, hi: usize) -> String {
 
 /// Deletes the first table row (a line starting with `|`) matching `pattern`.
 pub fn delete_row(text: &str, pattern: &str) -> String {
-    let pat = format!(r"^\s*\|.*(?:{pattern})");
-    let i = first_line(text, &pat, "delete_row");
+    let re = rx(pattern);
+    let i = split_nl(text)
+        .iter()
+        .position(|l| l.trim_start().starts_with('|') && re.is_match(l))
+        .unwrap_or_else(|| panic!("delete_row: no table row matches {pattern:?}"));
     drop_lines(text, i, i)
 }
 
@@ -207,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "no line matches")]
+    #[should_panic(expected = "no table row matches")]
     fn a_missing_target_panics() {
         delete_row(T, "r9");
     }

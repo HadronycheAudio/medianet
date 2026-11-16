@@ -5,30 +5,34 @@
 //! space). Each has one implementation here so every port reads text the same
 //! way.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use regex::Regex;
 
-thread_local! {
-    static CACHE: RefCell<HashMap<String, Regex>> = RefCell::new(HashMap::new());
-}
+static CACHE: OnceLock<Mutex<HashMap<String, &'static Regex>>> = OnceLock::new();
 
-/// A compiled regular expression, cached per thread by pattern text.
+/// A compiled regular expression, cached by pattern text for the process.
 ///
 /// Patterns are written as in the scripts; prefix `(?i)` for `re.I`. A bad
 /// pattern is a programming error in a check and panics with the pattern.
-pub fn rx(pattern: &str) -> Regex {
-    CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some(found) = cache.get(pattern) {
-            return found.clone();
-        }
-        let compiled =
-            Regex::new(pattern).unwrap_or_else(|e| panic!("bad pattern {pattern:?}: {e}"));
-        cache.insert(pattern.to_string(), compiled.clone());
-        compiled
-    })
+/// The compiled regex is shared, not cloned: a clone of a [`Regex`] starts
+/// with an empty match cache, which made every call rebuild its automaton.
+/// The cache holds one leaked regex per distinct pattern text, a set bounded
+/// by the patterns written in the checks, and is shared by test threads.
+pub fn rx(pattern: &str) -> &'static Regex {
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
+        return found;
+    }
+    let compiled: &'static Regex = Box::leak(Box::new(
+        Regex::new(pattern).unwrap_or_else(|e| panic!("bad pattern {pattern:?}: {e}")),
+    ));
+    cache
+        .lock()
+        .expect("regex cache")
+        .entry(pattern.to_string())
+        .or_insert(compiled)
 }
 
 /// `re.search(pattern, text)` as a boolean.
