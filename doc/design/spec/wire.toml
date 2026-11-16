@@ -204,7 +204,7 @@ meaning = "the stream number names no stream this consumer admits; on the measur
 [[reject]]
 name = "UnadmittedSource"
 value = 6
-meaning = "the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply); on the measurement layer, a receiver report whose bundle identity is not the receiving producer's module id or whose sender has no admitted connection for the bundle its rows name, a probe request from a module that shares no admitted connection with the responder, or a probe reply without matching fields (Receiver report, One-way probe)"
+meaning = "the source's module id has no admitted connection at this consumer; on the sync layer, a reply whose holder module id is not the holder the follower follows (Sync request and reply); on the measurement layer, a receiver report whose bundle identity is not the receiving producer's module id or whose reporter identity names no module with an admitted connection for the bundle its rows name, a probe request from a module that shares no admitted connection with the responder, or a probe reply without matching fields (Receiver report, One-way probe)"
 
 [[reject]]
 name = "BadLength"
@@ -1134,21 +1134,22 @@ valid = "any 16-bit value; acceptance at a follower per wire.md, Sync request an
 # copy of wire.md's "Receiver report" and "One-way probe" sections, which
 # are the authority. Neither message carries the C-12 authentication
 # reservation (wire.md, Receiver report, Authentication reservation). The
-# report is a 30-byte fixed part followed by one 25-byte member row per
+# report is a 38-byte fixed part followed by one 37-byte member row per
 # admitted member, counted by member_count with max_count = 32 (C-08), so
-# max_size = 30 + 32 x 25 = 830 bytes, inside the 1 252-byte bound wire.md
+# max_size = 38 + 32 x 37 = 1 222 bytes, inside the 1 252-byte bound wire.md
 # adopts for the measurement layer. The schema has no struct or blob type,
-# so the counted 200-bit member row is declared "uint", the schema's one
+# so the counted 296-bit member row is declared "uint", the schema's one
 # type without a fixed width; the row's own layout is the [[message]]
 # "receiver report member" below (the sparse keyed entry's precedent).
 # The probe request and reply are both 48 bytes; the request reaches the
-# reply's size by explicit padding.
+# reply's size by explicit padding, and the reply's byte 7 carries the
+# responder's clock state.
 
 [[message]]
 name = "receiver report"
 layer = "measurement"
 dscp = 40
-max_size = 830
+max_size = 1222
 rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "ReservedNonZero", "UnadmittedSource", "UnknownStream"]
 
 [[message.field]]
@@ -1200,16 +1201,24 @@ meaning = "bundle identity: the module id (C-11) of the bundle's source; with th
 valid = "any 64-bit value; a producer accepts only its own module id"
 
 [[message.field]]
-name = "report_number"
+name = "reporter_identity"
 offset = 128
+width = 64
+type = "u64"
+meaning = "reporter identity: the module id (C-11) of the consumer that sends the report"
+valid = "any 64-bit value; a producer accepts only a module with an admitted connection for the bundle"
+
+[[message.field]]
+name = "report_number"
+offset = 192
 width = 16
 type = "u16"
-meaning = "report number: incremented by one for every report the consumer sends for this bundle; wraps modulo 2^16"
+meaning = "report number: 0 for the connection's first report after admission, then incremented by one per report; wraps modulo 2^16; compared in serial order over half the range"
 valid = "any 16-bit value"
 
 [[message.field]]
 name = "socket_drop"
-offset = 144
+offset = 208
 width = 32
 type = "u32"
 meaning = "socket drop: datagrams the kernel dropped at the consumer's receiving socket of this bundle for lack of buffer room; cumulative, wraps modulo 2^32"
@@ -1217,7 +1226,7 @@ valid = "any 32-bit value"
 
 [[message.field]]
 name = "interface_drop"
-offset = 176
+offset = 240
 width = 32
 type = "u32"
 meaning = "interface drop: packets the consumer's receiving interface dropped, the low 32 bits of the interface's own drop count; cumulative, wraps modulo 2^32"
@@ -1225,19 +1234,19 @@ valid = "any 32-bit value"
 
 [[message.field]]
 name = "current_a"
-offset = 208
+offset = 272
 width = 32
 type = "u32"
-meaning = "current A: the consumer's current A (C-198), its own or the one it inherited (C-142), in nanoseconds; 0 = the consumer holds no A"
-valid = "0 to 4 294 967 295 ns: every value is valid; 0 = no A"
+meaning = "current A: the consumer's current A (C-198), its own or the one it inherited (C-142), in nanoseconds; 0 = no A known to the reporter"
+valid = "0 to 4 294 967 295 ns: every value is valid; 0 = no A known"
 
 [[message.field]]
 name = "member"
-offset = 240
-width = 200
+offset = 304
+width = 296
 type = "uint"
-meaning = "one 25-byte member row, laid out as the [[message]] receiver report member below: stream number, the eleven C-159 counters (16 bits each), the observed bit, one padding bit and the observed DSCP; rows back to back in the order of the consumer's admission"
-valid = "member_count rows, at most 32 (800 bytes)"
+meaning = "one 37-byte member row, laid out as the [[message]] receiver report member below: stream number, the eleven C-159 counters (six of 32 bits, five of 16 bits), the observed bit, one padding bit and the observed DSCP; rows back to back in the order of the consumer's admission"
+valid = "member_count rows, at most 32 (1 184 bytes)"
 count = "member_count"
 max_count = 32
 
@@ -1245,7 +1254,7 @@ max_count = 32
 name = "receiver report member"
 layer = "measurement"
 dscp = 40
-max_size = 25
+max_size = 37
 rejection_reasons = ["UnknownStream", "ReservedNonZero"]
 
 [[message.field]]
@@ -1259,70 +1268,70 @@ valid = "0 to 255 (C-09); the member admitted to this consumer at this row; any 
 [[message.field]]
 name = "received"
 offset = 16
-width = 16
-type = "u16"
-meaning = "received: slices of this member accepted with content, neither late, missing nor a marked gap; cumulative, wraps modulo 2^16"
-valid = "any 16-bit value"
+width = 32
+type = "u32"
+meaning = "received: slices of this member accepted with content, neither late, missing nor a marked gap; cumulative, wraps modulo 2^32"
+valid = "any 32-bit value"
 
 [[message.field]]
 name = "late"
-offset = 32
-width = 16
-type = "u16"
-meaning = "late: slices counted missing at their deadline that arrived later within the ring span and were reclassified late (C-108); cumulative, wraps modulo 2^16"
-valid = "any 16-bit value"
+offset = 48
+width = 32
+type = "u32"
+meaning = "late: slices counted missing at their deadline that arrived later within the ring span and were reclassified late (C-108); cumulative, wraps modulo 2^32"
+valid = "any 32-bit value"
 
 [[message.field]]
 name = "missing"
-offset = 48
-width = 16
-type = "u16"
-meaning = "missing: slices absent at their deadline and not reclassified late since; decreases by one on every reclassification (C-108); cumulative, wraps modulo 2^16"
-valid = "any 16-bit value"
+offset = 80
+width = 32
+type = "u32"
+meaning = "missing: slices absent at their deadline and not reclassified late since; decreases by one on every reclassification (C-108); cumulative, wraps modulo 2^32"
+valid = "any 32-bit value"
 
 [[message.field]]
 name = "marked_gap"
-offset = 64
+offset = 112
 width = 16
 type = "u16"
-meaning = "marked gap: positions the producer marked with a gap slice (rule 10); cumulative, wraps modulo 2^16"
+meaning = "marked gap: positions the producer marked with a gap slice (rule 10), in slices; cumulative, wraps modulo 2^16"
 valid = "any 16-bit value"
 
 [[message.field]]
 name = "other_epoch"
-offset = 80
-width = 16
-type = "u16"
-meaning = "other-epoch: slices on another timeline epoch, never a miss (C-135, C-102); cumulative, wraps modulo 2^16"
-valid = "any 16-bit value"
+offset = 128
+width = 32
+type = "u32"
+meaning = "other-epoch: packets on another timeline epoch, never a miss (C-135, C-102); cumulative, wraps modulo 2^32"
+valid = "any 32-bit value"
 
 [[message.field]]
 name = "too_early"
-offset = 96
-width = 16
-type = "u16"
-meaning = "too-early: slices that arrived too early for the consumer to place them and were discarded (epic 009 classifies); cumulative, wraps modulo 2^16"
-valid = "any 16-bit value"
+offset = 160
+width = 32
+type = "u32"
+meaning = "too-early: packets that arrived too early for the consumer to place their slice and were discarded (epic 009 classifies); cumulative, wraps modulo 2^32"
+valid = "any 32-bit value"
 
 [[message.field]]
 name = "duplicates"
-offset = 112
-width = 16
-type = "u16"
-meaning = "duplicates: packets discarded as duplicates by stream, position and packet index (rule 9); cumulative, wraps modulo 2^16"
-valid = "any 16-bit value"
+offset = 192
+width = 32
+type = "u32"
+meaning = "duplicates: packets discarded as duplicates by stream, position and packet index (rule 9); cumulative, wraps modulo 2^32"
+valid = "any 32-bit value"
 
 [[message.field]]
 name = "incomplete_reassemblies"
-offset = 128
+offset = 224
 width = 16
 type = "u16"
-meaning = "incomplete reassemblies: multi-packet slices not complete at their reassembly deadline (C-15, C-110); cumulative, wraps modulo 2^16"
+meaning = "incomplete reassemblies: multi-packet slices not complete at their reassembly deadline (C-15, C-110), in slices; cumulative, wraps modulo 2^16"
 valid = "any 16-bit value"
 
 [[message.field]]
 name = "demoted_rounds"
-offset = 144
+offset = 240
 width = 16
 type = "u16"
 meaning = "demoted rounds: rounds, one per slice period, in which this member was Demoted and treated as gapped (C-109); cumulative, wraps modulo 2^16"
@@ -1330,7 +1339,7 @@ valid = "any 16-bit value"
 
 [[message.field]]
 name = "interrupted_events"
-offset = 160
+offset = 256
 width = 16
 type = "u16"
 meaning = "interrupted events: entries of this member into Interrupted (C-38, C-102); cumulative, wraps modulo 2^16"
@@ -1338,7 +1347,7 @@ valid = "any 16-bit value"
 
 [[message.field]]
 name = "dead"
-offset = 176
+offset = 272
 width = 16
 type = "u16"
 meaning = "dead: entries of this member into Dead (C-39, C-111); cumulative, wraps modulo 2^16"
@@ -1346,27 +1355,27 @@ valid = "any 16-bit value"
 
 [[message.field]]
 name = "observed"
-offset = 192
+offset = 288
 width = 1
 type = "uint"
-meaning = "observed, bit 0 of byte 24: 1 = the observed DSCP holds a value read from a received packet of this member, 0 = none read yet or the consumer cannot read it"
+meaning = "observed, bit 0 of byte 36: 1 = the observed DSCP holds a value read from a received packet of this member, 0 = none read yet or the consumer cannot read it"
 valid = "0 or 1"
 
 [[message.field]]
 name = "padding"
-offset = 193
+offset = 289
 width = 1
 type = "pad"
-meaning = "padding, bit 1 of byte 24: senders write zero (004-05 general rule)"
+meaning = "padding, bit 1 of byte 36: senders write zero (004-05 general rule)"
 valid = "0 only"
 reserved = "0"
 
 [[message.field]]
 name = "observed_dscp"
-offset = 194
+offset = 290
 width = 6
 type = "uint"
-meaning = "observed DSCP, bits 7..2 of byte 24: the DSCP of the IPv4 header of the last packet of this member the consumer received (C-13)"
+meaning = "observed DSCP, bits 7..2 of byte 36: the DSCP of the IPv4 header of the last packet of this member the consumer received (C-13)"
 valid = "0 to 63; 0 when observed is 0"
 
 [[message]]
@@ -1482,11 +1491,19 @@ meaning = "message type, scoped to the measurement layer: 3 = one-way probe repl
 valid = "3 only"
 
 [[message.field]]
-name = "header_padding"
+name = "usable_time"
 offset = 56
-width = 8
+width = 1
+type = "uint"
+meaning = "usable time, bit 0 of byte 7: the responder's clock state when it stamped; 1 = Locked or in holdover with its alignment claim not lapsed (C-213, C-65), 0 = acquiring or Unlocked with time unusable (C-162)"
+valid = "0 or 1"
+
+[[message.field]]
+name = "clock_state_reserved"
+offset = 57
+width = 7
 type = "pad"
-meaning = "padding: senders write zero (004-05 general rule)"
+meaning = "reserved, bits 7..1 of byte 7: senders write zero (004-05 general rule)"
 valid = "0 only"
 reserved = "0"
 
