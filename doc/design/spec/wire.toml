@@ -5279,7 +5279,7 @@ name = "message_counter"
 offset = 64
 width = 64
 type = "u64"
-meaning = "message counter (C-12): live (C-115); the tool adds one per control message it sends (Commissioning window messages)"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
 valid = "any 64-bit value"
 
 [[message.field]]
@@ -5366,7 +5366,7 @@ name = "message_counter"
 offset = 64
 width = 64
 type = "u64"
-meaning = "message counter (C-12): live (C-115); the tool adds one per control message it sends (Commissioning window messages)"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
 valid = "any 64-bit value"
 
 [[message.field]]
