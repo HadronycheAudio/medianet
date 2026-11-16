@@ -38,8 +38,13 @@
 #       ("802.3-2018", "802.3an-2006", "802.3ab-1999", "802.3 (2018 edition)",
 #       "IEEE Std 802.3, 2018"), a working-group draft ("P802.3ab Draft 4.0",
 #       "802.3ab D4.0"), or a named comment record or test suite with its
-#       designation ("comment #155", "PMA test suite v2.5"). A bare date, or a
-#       year outside such a designation, does not count. Design owner's
+#       designation ("comment #155", "PMA test suite v2.5"), or a working-group
+#       document with all of: a named 802.3 group ("Study Group", "Task Force",
+#       "Working Group"), a title or kind ("Objectives", "comment", "minutes",
+#       "presentation"), and a month-and-year or place-and-year date
+#       ("IEEE 802.3 10GBASE-T Study Group, Objectives, Portonovo, Italy,
+#       September 2003"). A bare date, or a year outside such a designation,
+#       does not count. Design owner's
 #       decision of 2026-11-16: working-group text is accepted for [standard]
 #       provided it is named as what it is (draft, comment record or test
 #       suite), never as the published edition. A citation of a draft, comment
@@ -315,6 +320,23 @@ EDITION_RES = [
 ]
 
 
+# A working-group document (design owner, 2026-11-16: accepted for [standard] when
+# named as what it is). It needs ALL of: (i) a named IEEE 802.3 group, "Study
+# Group", "Task Force" or "Working Group", with "802.3" in the same citation;
+# (ii) a document title or kind; (iii) a month-and-year or a place-and-year
+# date. A bare date fails (no group or title), and a group with no date fails.
+MONTHS = r'(?:January|February|March|April|May|June|July|August|September|October|November|December)'
+WG_GROUP_RE = re.compile(r'\b(?:Study Group|Task Force|Working Group)\b')
+WG_KIND_RE = re.compile(r'\b(?:Objectives?|comments?|minutes|presentations?|contributions?|proposals?|straw ?polls?|agendas?|drafts?)\b', re.I)
+WG_DATE_RE = re.compile(r'\b' + MONTHS + r'\s+(?:19|20)\d{2}\b'
+                        r'|\b[A-Z][a-z]+,\s*[A-Z][a-z]+\b[^.;]{0,20}?\b(?:19|20)\d{2}\b')
+
+
+def wg_designated(u):
+    return bool(re.search(r'802\.3', u) and WG_GROUP_RE.search(u)
+                and WG_KIND_RE.search(u) and WG_DATE_RE.search(u))
+
+
 def missing(u):
     m = []
     if not ber_exps(u):
@@ -323,8 +345,8 @@ def missing(u):
         m.append('"BER" or "bit error" wording')
     if not (re.search(r'IEEE', u) and re.search(r'802\.3', u)):
         m.append('the IEEE 802.3 standard name')
-    if not any(re.search(p, u) for p in EDITION_RES):
-        m.append('an edition designation (802.3-YYYY, "802.3 (YYYY edition)", a draft such as "P802.3ab Draft 4.0", or a named comment record or test suite with its designation; a bare date does not count)')
+    if not (any(re.search(p, u) for p in EDITION_RES) or wg_designated(u)):
+        m.append('an edition designation (802.3-YYYY, "802.3 (YYYY edition)", a draft such as "P802.3ab Draft 4.0", a named comment record or test suite with its designation, or a working-group document with a 802.3 group, a title or kind, and a date; a bare date does not count)')
     if not SUBCL_RE.search(u):
         m.append('a clause with a subclause (a dotted number, e.g. Clause 55.4.2)')
     if '[standard]' not in u:
