@@ -764,6 +764,10 @@ for key, t in TYPES.items():
             pos += f["bits"] * (f["maxc"] or 1) // 8
     fixed_bits = sum(f["bits"] for f in fl_main if not f["maxc"])
     lists = [f for f in fl_main if f["maxc"]]
+    elem_sums = [sum(f["bits"] for f in fields_of(tb, "AC1", t["title"])) for tb in field_tables[1:]]
+    for f in lists:
+        if elem_sums and f["bits"] not in elem_sums:
+            fail("AC1", f"the {key} entry table sums to {sorted(set(elem_sums))} bits, but the list row declares {f['bits']} bits per entry")
     per_bits = fixed_bits + sum(f["bits"] * f["maxc"] for f in lists)
     sec_max = 58 + cdiv(per_bits, 8)
     t["sec_max"] = sec_max
