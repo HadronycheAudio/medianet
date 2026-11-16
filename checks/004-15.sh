@@ -331,8 +331,8 @@ DIFF_R = RATE_STREAM - C21
 PCT_R = DIFF_R / C21 * 100
 EXCEEDS = max(abs(PCT_B), abs(PCT_R)) > 5
 HDR_ALLOWED = {PKT + SLICE + ANN_COUNT + CW + CKSUM,           # 46 mandatory headers and checksum
-               PKT + SLICE + ANN_COUNT + ENTRY + CKSUM,        # 64: one announcement, no content header
-               ANN_MAX_PAY - AUDIO - 0,                        # 103 maximum occupancy
+               PKT + SLICE + ANN_COUNT + ENTRY + EXT + CKSUM,  # 64: a controller member's headers (no audio)
+               ANN_MAX_PAY - AUDIO,                            # 103 maximum occupancy
                CAP}                                            # the C-137 header cap
 HDR_ALLOWED |= {PKT + SLICE + ANN_COUNT + ENTRY * k + EXT * e + CW + CKSUM
                 for k in range(ENTRY_MAX + 1) for e in (0, 1)}
