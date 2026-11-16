@@ -5208,7 +5208,7 @@ offset = 376
 width = 64
 type = "i64"
 meaning = "maximum of the input's lateness since its connection went live (C-182), kept across a re-alignment and restarted only by a new admission (C-229), in nanoseconds"
-valid = "any 64-bit signed value other than -2^63; at least the window maximum"
+valid = "any 64-bit signed value; -2^63 = no live sample yet, only while the four window figures are also -2^63; at least the window maximum"
 
 [[message.field]]
 name = "reclaimable_latency"
