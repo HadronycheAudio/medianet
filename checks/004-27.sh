@@ -796,8 +796,12 @@ for kind, fl, text in MSG_FL:
         code_bad.append(f"{kind}: message type {code} is outside the probe block")
     else:
         codes_seen[kind] = code
-    if not any(re.search(r"pad", f["meaning"], re.I) and re.search(r"\b0\b|zero", f["valid"], re.I) for f in fl):
-        pad_bad.append(kind)
+    if kind == "request":
+        if not any(re.search(r"pad", f["meaning"] + " " + f["type"], re.I) and re.search(r"\b0\b|zero", f["valid"], re.I)
+                   for f in fl):
+            pad_bad.append("the request has no zero-valued padding row")
+    elif any(re.search(r"pad", f["meaning"] + " " + f["type"], re.I) for f in fl):
+        pad_bad.append("the reply has a padding row")
     if kind == "request":
         if not any(re.search(r"probe\s+identifier|request\s+id", f["meaning"], re.I) for f in fl):
             id_bad.append("request has no probe identifier or request id row")
@@ -805,8 +809,11 @@ for kind, fl, text in MSG_FL:
                    and f["bits"] == REQ_INTENDED[0]["bits"] for f in fl):
             id_bad.append("request has no intended packet size row at the admission request's width")
     else:
-        if not any(re.search(r"echo|probe\s+identifier|request\s+id", f["meaning"], re.I) for f in fl):
-            id_bad.append("reply has no row that echoes the probe's identifier")
+        if not any(re.search(r"request\s+id", f["meaning"], re.I) for f in fl):
+            id_bad.append("reply has no request id row")
+        if not any(re.search(r"echo", f["meaning"], re.I) and re.search(r"size", f["meaning"], re.I)
+                   and REQ_INTENDED and f["bits"] == REQ_INTENDED[0]["bits"] for f in fl):
+            id_bad.append("reply has no echoed size row at the request's intended packet size width")
 check("AC1", bool(REQ_FL) and bool(REP_FL) and not hdr_bad,
       "each probe message starts with the seven common control header rows in the hello's order, offset, width and type"
       + (f" (failing: {hdr_bad})" if hdr_bad else ""))
@@ -815,30 +822,43 @@ check("AC1", bool(REQ_FL) and bool(REP_FL) and not tile_bad,
 check("AC1", bool(REQ_FL) and bool(REP_FL) and not size_bad,
       "each probe message states a maximum size equal to the sum of its rows at their maximum count"
       + (f": {size_bad}" if size_bad else ""))
+_rsz = re.search(r"maximum\s+size[^.]*?(\d+)\s*bytes", rep_text, re.I)
+check("AC1", bool(_rsz) and CTRL_BOUND is not None and int(_rsz.group(1)) <= CTRL_BOUND,
+      f"the probe reply states a size of at most the {CTRL_BOUND}-byte control bound (C-17)")
 check("AC1", bool(REQ_FL) and bool(REP_FL) and not code_bad and len(set(codes_seen.values())) == 2,
       "each probe message's Message type is a code inside the block the hello gives the probe pair, and the two differ"
       + (f": {code_bad}" if code_bad else ""))
-check("AC1", bool(REQ_FL) and bool(REP_FL) and not pad_bad,
-      "each probe message has a padding row whose required value is zero" + (f" (missing in {pad_bad})" if pad_bad else ""))
+check("AC1", bool(REQ_FL) and bool(REP_FL) and not pad_bad and not any(f["maxc"] for f in REP_FL),
+      "the probe request has a zero-valued padding row; the probe reply has no padding row and its rows are of fixed size "
+      "(no counted row)" + (f": {pad_bad}" if pad_bad else ""))
 check("AC1", bool(REQ_FL) and bool(REP_FL) and not id_bad,
-      "the request carries the intended packet size and an identifier of the probe; the reply echoes an identifier"
+      "the request carries the intended packet size and an identifier of the probe; the reply carries the request id "
+      "and echoes the intended packet size"
       + (f": {id_bad}" if id_bad else ""))
 
 MATCH_TEXT = [x for t, x in PSUBS if re.search(r"match|binding|identif", t, re.I)]
-check("AC1", bool(MATCH_TEXT) and any(re.search(r"reply", x, re.I) and re.search(r"request\s+id|probe\s+identifier", x, re.I)
+check("AC1", bool(MATCH_TEXT) and any(re.search(r"reply", x, re.I) and re.search(r"request\s+id|probe\s+identifier|intended\s+packet\s+size", x, re.I)
                                        for x in MATCH_TEXT),
-      "a matching subsection says how a reply identifies its probe, naming the reply and the request id or probe identifier")
+      "a matching subsection says how a reply identifies its probe, naming the reply and an identifier of the probe "
+      "(request id, probe identifier or intended packet size)")
 
 PARAS = prose_blocks(PROBE)
 check("AC1", any(k == "p" and re.search(r"intended", t, re.I) and re.search(r"probe", t, re.I)
                  and re.search(r"packet\s+size", t, re.I) for k, t in PARAS),
       "a prose paragraph states the probe size rule: the probe is sent at the intended media packet size")
-check("AC1", bool(re.search(r"don\W{0,2}t[\s-]+fragment", PROBE, re.I)) and bool(re.search(r"rule\s+11", PROBE, re.I))
+check("AC1", bool(re.search(r"don\W{0,2}t[\s-]+fragment|\bDF\b", PROBE, re.I)) and bool(re.search(r"rule\s+11", PROBE, re.I))
       and bool(re.search(r"fragmentation", PROBE, re.I)),
       "the DF requirement is stated: every probe is sent with don't-fragment set and fragmentation is forbidden (rule 11)")
 check("AC1", "IPv4" in PROBE and "C-100" in PROBE and bool(re.search(r"CS5\s*\(40\)", PROBE)) and "C-13" in PROBE,
       "the probe pair is IPv4 only (C-100) and travels at CS5 (40) (C-13)")
-check("AC1", bool(re.search(r"no\s+reply|does\s+not\s+arrive|no\s+answer|not\s+answered|never\s+arrives", PROBE, re.I)),
+_dec = [t for k, t in PARAS if k == "p" and re.search(r"small\s+acknowledg", t, re.I)
+        and re.search(r"only\s+the\s+probe\s+is\s+padded|the\s+probe\s+alone\s+is\s+padded", t, re.I)
+        and re.search(r"exempt", t, re.I) and "[decision]" in t]
+check("AC1", bool(_dec), "a [decision] paragraph states the owner's ruling: the reply is a small acknowledgement, and only "
+      "the probe is padded and exempt from C-17")
+check("AC1", bool(rep_text) and not re.search(r"\bis\s+padded\b|as\s+long\s+as\s+the\s+probe", rep_text, re.I),
+      "the probe reply subsection does not say the reply is padded or as long as the probe")
+check("AC1", bool(re.search(r"no\s+reply|does\s+not\s+arrive|no\s+answer|no\s+response|not\s+answered|never\s+arrives|silence", PROBE, re.I)),
       "the outcome when no reply arrives is stated")
 p_int = re.search(r"intended", PROBE, re.I)
 p_fb = re.search(r"\b%d\b" % (FALLBACK_MTU or 0), PROBE)
@@ -853,12 +873,13 @@ check("AC1", bool(re.search(r"\b%d\b" % (CTRL_BOUND or 0), PROBE)) and "C-06" in
 PROBE_TOML = [m for m in TMSGS if "probe" in str(m.get("name", "")).lower()
               and not re.search(r"one[\s_-]*way", str(m.get("name", "")), re.I)]
 EXEMPT_ALL = [m.get("name") for m in TMSGS if "exempt_from_control_bound" in m]
-PROBE_NAMES = [m.get("name") for m in PROBE_TOML]
-check("AC2", len(PROBE_NAMES) >= 2 and sorted(EXEMPT_ALL) == sorted(PROBE_NAMES),
-      f"exactly the probe messages of wire.toml carry the exemption from C-17, and they are the only ones "
-      f"(probe messages {PROBE_NAMES}; exempt messages {EXEMPT_ALL})")
-check("AC2", bool(PROBE_TOML) and all(m.get("exempt_from_control_bound") == "C-116" for m in PROBE_TOML),
-      "each probe message's exemption cites C-116")
+REQ_TOML = [m for m in PROBE_TOML if "request" in str(m.get("name", "")).lower()]
+REP_TOML = [m for m in PROBE_TOML if "reply" in str(m.get("name", "")).lower()]
+check("AC2", len(REQ_TOML) == 1 and EXEMPT_ALL == [REQ_TOML[0].get("name")],
+      f"exactly one message of wire.toml carries the exemption from C-17, the probe request (exempt messages {EXEMPT_ALL})")
+check("AC2", len(REQ_TOML) == 1 and REQ_TOML[0].get("exempt_from_control_bound") == "C-116"
+      and len(REP_TOML) == 1 and "exempt_from_control_bound" not in REP_TOML[0],
+      "the probe request's exemption cites C-116, and the probe reply carries no exemption")
 _sents = re.split(r"(?<=[.;])\s+", re.sub(r"```.*?```", "", PROBE, flags=re.S))
 _ex = [s for s in _sents if re.search(r"exempt", s, re.I)]
 check("AC2", PROBE_SPAN is not None and "to be filled" not in PROBE.lower() and bool(_ex) and all("C-116" in s and set(re.findall(r"C-\d+", s)) <= {"C-116", "C-17"} for s in _ex),
@@ -915,6 +936,13 @@ check("AC3", bool(REPLY_ROWS) and all(
     ctrl_reason(o) or (re.search(r"not a parse rejection|not a rejection", o, re.I) and re.search(r"\d{3}-\d{2}|epic", o, re.I))
     for _f, o in REPLY_ROWS),
       "a reply that matches no outstanding probe has an outcome: a control-layer reason, or not a rejection with its owner")
+_len_row = any(re.search(r"reply", f, re.I) and re.search(r"size|length|datagram|bytes", f, re.I) and "BadLength" in o
+               and re.search(r"other\s+than|differs|not\s+the|does\s+not", f, re.I) for f, o in VROWS)
+_len_sent = any(re.search(r"reply", x, re.I) and "BadLength" in x and re.search(r"fixed\s+size|length", x, re.I)
+                and re.search(r"shared|Validity\s+rules|Hello|Admission\s+messages|Rejection\s+reasons", x)
+                for x in re.split(r"(?<=[.;])\s+|\n", PROBE))
+check("AC3", _len_row or _len_sent, "a reply whose length differs from its fixed size is dropped and counted under BadLength, "
+      "by a row or by the shared rule the section cites")
 check("AC3", bool(GENERIC_ROWS) and all(ctrl_reason(o) for _f, o in GENERIC_ROWS),
       "the generic control violations (magic, message type, domain, scheme or tag, oversize, too short) have control-layer outcomes")
 
@@ -947,8 +975,15 @@ for kind, fl, _text in MSG_FL:
     check("AC4", tm.get("layer") == "control" and tm.get("dscp") == DSCP_CONTROL,
           f"toml '{tm.get('name')}' is layer control at dscp {DSCP_CONTROL} (C-13)")
     ms = tm.get("max_size")
-    check("AC4", isinstance(ms, int) and CTRL_BOUND is not None and ms > CTRL_BOUND,
-          f"toml '{tm.get('name')}' declares a max_size above the {CTRL_BOUND}-byte bound, so its exemption is not vacuous")
+    if kind == "request":
+        check("AC4", isinstance(ms, int) and CTRL_BOUND is not None and ms > CTRL_BOUND,
+              f"toml '{tm.get('name')}' declares a max_size above the {CTRL_BOUND}-byte bound, so its exemption is not vacuous")
+    else:
+        check("AC4", isinstance(ms, int) and CTRL_BOUND is not None and ms <= CTRL_BOUND,
+              f"toml '{tm.get('name')}' declares a max_size at most the {CTRL_BOUND}-byte bound: it is not exempt")
+        check("AC4", not any("max_count" in f or "count" in f or f.get("type") == "pad"
+                             for f in tm.get("field", []) if isinstance(f, dict)),
+              f"toml '{tm.get('name')}' has no padding and no counted field")
     tfields = [f for f in tm.get("field", []) if isinstance(f, dict)]
     cur, probs = 0, []
     for f in tfields:
