@@ -36,7 +36,7 @@ With t1 = follower send, t2 = holder receive, t3 = holder send and t4 = follower
 - Lock: at least 8 windows and smoothed error below max(20 µs, path delay / 4) (P-04).
 - Step: error above 2 ms resets the servo. Drift estimate clamped to ±500 ppm; no slew limit.
 - Holdover: entered after 2 s without updates, never expires, no growing bound.
-- Pacing by a 5 ms socket receive timeout: 36.1 exchanges/s at a configured 50 and 71.4 at a configured 1 000 on a `CONFIG_HZ=250` kernel `[measured]` (P-02, P-03).
+- Pacing at `poc-untouched` by a 5 ms socket receive timeout (replaced by a deadline-paced wait in `poc-baseline`, task 003, P-07): 36.1 exchanges/s at a configured 50 and 71.4 at a configured 1 000 on a `CONFIG_HZ=250` kernel `[measured]` (P-02, P-03).
 - A wall-clock step between `CLOCK_REALTIME` stamp and read is clamped to look like zero delay.
 - Handover: the new holder switches to its own crystal at once, a rate step of up to the crystal difference.
 

@@ -1,0 +1,584 @@
+#!/usr/bin/env bash
+# checks/003-10.sh — acceptance check for ticket 003-10 "Update design set with
+# baseline" (epic 003, deliverable 8).
+#
+# Ticket: doc/design/tickets/003/003-10-Update-design-set-with-baseline.md
+#
+# The design set (doc/design) must carry the post-fix sync rates of the POC tag
+# poc-baseline: one POC reference row next to P-02 in 02-constants.md, the same
+# figures in 06-evidence-appendix.md, the freeze after the tag in
+# 01-architecture.md, and the lock sub-question answered.  Read-only and
+# unprivileged (C-146): nothing is created or modified, the POC is only read
+# through git with --no-optional-locks.
+#
+# Overrides (used for the throwaway fixture only):
+#   DESIGN_DIR=/path/to/doc/design   (default: this tree's doc/design)
+#   HADROPOC=/path/to/poc            (default: /home/dorian/workspace/hadropoc)
+#
+# RULINGS (lead, 003-10 brief L1-L8 and the review R1-R7):
+#   L1  the two post-fix rates are READ from the sync table of BASELINE.md at
+#       the tag poc-baseline (column "After"), never pinned.  The new P row and
+#       one appendix entry each carry both figures, [measured], poc-baseline,
+#       the machine (hackrobustus or i7-1365U) and CONFIG_HZ=250.  A commit named
+#       in such a paragraph must be an ancestor of the tag.
+#   L2  P-02 and P-03 rows are pinned by sha256 of their exact text.  Exactly
+#       one POC row names poc-baseline; it sits next to P-02; P-01 and P-04..P-06
+#       still exist.  37 / 77 is not asserted.
+#   L4  lock: a [measured] paragraph records LOCKED at 4.1 s within the 25 s run.
+#       Known-inert: none (BASELINE.md section 5).
+#   L6  the appendix discloses the HADROPOC_BIN pass-through wrapper (tagged).
+#   L8  doc/kickoff/check-design.py passes on the design set.
+#   R1  02-constants.md: C-130 is pinned by sha256 (a decided constant, never
+#       edited) and must still say "except by task 003"; the file minus the lines
+#       naming the tag is byte-identical to today (sha256 and line count), so
+#       ONE added P row is the only permitted change.
+#   R2  doc/design/reports/ is an archive: never scanned by any rule.
+#   R3  loss: a paragraph that mentions the tag may carry a loss number only with
+#       "not citable"; the appendix has one [decision] paragraph (owner,
+#       2026-11-16) saying POC loss figures, including "0 lost", are not citable
+#       because the loss counter defect was kept at poc-baseline.  Pre-existing,
+#       unchanged descriptions of the defect are exempt by sha256.
+#   R4  freeze: only non-modification assertions (NONMOD_RE) in a paragraph about
+#       the POC are scanned; the paragraph needs task 003 or C-130.  Quotations in
+#       C-125 paragraphs are not scanned.  01-architecture.md must say the POC is
+#       frozen after the tag (tagged, with task 003 or C-130).
+#   R5  every paragraph that mentions the tag carries a tag, except unchanged
+#       pre-existing paragraphs (sha256 embedded).
+#   R6  implementation/003-POC-smoke-fixes.md:19 must not say headless "when there
+#       is no terminal" (headless only with --no-tui).
+#   R7  everything else as in L1-L8.
+#
+# Scope decisions (reported, not silent):
+#   - tickets/ and reports/ are never scanned.
+#   - implementation/003-POC-smoke-fixes.md is excluded from the R4 freeze scan
+#     (it is the task that owns the exception); it is scanned for R6 and R5.
+#   - .csv and .diff data files are not scanned.
+
+set -u
+cd "$(dirname "$0")/.."
+
+exec python3 - <<'PY'
+import hashlib
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+DESIGN = Path(os.environ.get("DESIGN_DIR") or (ROOT / "doc" / "design"))
+POC = os.environ.get("HADROPOC") or "/home/dorian/workspace/hadropoc"
+TAG = "poc-baseline"
+CONSTANTS = DESIGN / "02-constants.md"
+APPENDIX = DESIGN / "06-evidence-appendix.md"
+ARCH = DESIGN / "01-architecture.md"
+EPIC003 = "implementation/003-POC-smoke-fixes.md"
+
+P_KEEP = ["P-01", "P-02", "P-03", "P-04", "P-05", "P-06"]
+# T1: row-level pins of the frozen constants rows (sha256 of the exact line).
+# The whole file is not pinned: a later ticket may add a constants row.
+FROZEN_ROW_SHA = {
+    "P-01": "7465b6516948da18b1dc6c9db74c8cb251454ca0d3ff238901ed159061130c5b",
+    "P-02": "bd9b54d70227a6e567df073e55338e5dc540455d1029b12ea7dff9de9641d900",
+    "P-03": "efa69476086bc34c84f08ca4c4eca981e1c59edb5c47042e35b46646a28b3e7c",
+    "P-04": "e4c6da1c75ee29970142037d7200782595fdc4be6d8fce190e7ee0357ed92aef",
+    "P-05": "c7617da689dfa8dde75897d5f069de51929f522c7980728c037cb3f5c5527256",
+    "P-06": "bbed1c843f8ff7e737f3b551f6557a22a80e7c935c67d076dcfd04f6392bef9d",
+}
+C130_SHA = "5f717dc8b082d6ed50c7075629c208648821c1c30b5d9065d83cdcfbee089882"
+
+TAG_RE = re.compile(r"\[(code|measured|decision|kernel-doc|memory|standard)\]")
+EXC_RE = re.compile(r"task 003|tasks? [\d ,and]*003|epic 003|\bC-130\b|003-(AC|\d)", re.I)
+POC_RE = re.compile(r"\bpoc\b|hadropoc|proof of concept", re.I)
+NONMOD_RE = re.compile(
+    r"no code goes into|nothing (else )?is written into|nothing else writes"
+    r"|not modified|never modified|is not changed"
+    r"|only change (the POC )?ever receives|POC ever receives|goes into (the )?(hadropoc|POC)",
+    re.I,
+)
+QUOTE_RE = re.compile(r'"[^"]*"')
+LOSS_NUM_RE = re.compile(
+    r"\b(lost|loss)\b[\"'`*]?\s*(?:\w+\s+){0,2}\d"
+    r"|\d[\d ,.]*\s*(million|datagrams?|packets?)?\s*(lost|loss)\b"
+    r"|\bzero\b[\w\s-]{0,20}\b(lost|loss)\b"
+    r"|\b(lost|loss)\b[\w\s-]{0,20}\bzero\b",
+    re.I,
+)
+NOT_CITABLE_RE = re.compile(r"not (citable|citeable)", re.I)
+HEADLESS_NO_TERM_RE = re.compile(r"\bno terminal\b|\bwithout (a )?terminal\b", re.I)
+
+results = []  # (group, ok, message)
+
+
+def ok(group, msg):
+    results.append((group, True, msg))
+
+
+def bad(group, msg):
+    results.append((group, False, msg))
+
+
+def git(*args):
+    return subprocess.run(
+        ["git", "--no-optional-locks", "-C", POC, *args],
+        capture_output=True, text=True,
+    )
+
+
+def cells_of(line):
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def read_blocks(path):
+    """Split a file into paragraphs: blank-line blocks, one block per table row,
+    one block per list item, one block per heading.  Each block knows the
+    nearest heading above it."""
+    md = path.suffix == ".md"
+    out = []
+    heading = ""
+    cur = None
+
+    def flush():
+        nonlocal cur
+        if cur is not None and cur["text"].strip():
+            out.append(cur)
+        cur = None
+
+    for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+        if not line.strip():
+            flush()
+            continue
+        if md:
+            hm = re.match(r"^#{1,6}\s+(.*)$", line)
+            if hm:
+                flush()
+                heading = hm.group(1)
+                out.append({"file": path, "line": i, "text": line, "heading": heading})
+                continue
+            if line.startswith("|"):
+                flush()
+                out.append({"file": path, "line": i, "text": line, "heading": heading})
+                continue
+            if re.match(r"^\s*([-*]|\d+\.)\s", line):
+                flush()
+                cur = {"file": path, "line": i, "text": line, "heading": heading}
+                continue
+        if cur is None:
+            cur = {"file": path, "line": i, "text": line, "heading": heading}
+        else:
+            cur["text"] += "\n" + line
+    flush()
+    return out
+
+
+ARCHIVE = "reports"   # R2: an archive, never edited by this ticket, never scanned
+
+
+def corpus(exclude=(), suffixes=(".md", ".toml", ".sh", ".py", ".log")):
+    blocks = []
+    for p in sorted(DESIGN.rglob("*")):
+        if not p.is_file() or p.suffix not in suffixes:
+            continue
+        rel = p.relative_to(DESIGN).as_posix()
+        top = rel.split("/")[0]
+        if top in ("tickets", ARCHIVE) or any(rel == x or rel.startswith(x + "/") for x in exclude):
+            continue
+        blocks += read_blocks(p)
+    return blocks
+
+
+def rel(b):
+    return b["file"].relative_to(DESIGN).as_posix()
+
+
+def quote(b, n=110):
+    s = " ".join(b["text"].split())
+    return s[:n] + ("..." if len(s) > n else "")
+
+
+def fig_re(s):
+    return re.compile(r"(?<![\d.])" + re.escape(s) + r"(?![\d])")
+
+
+def is_ancestor(sha):
+    r = git("cat-file", "-e", sha + "^{commit}")
+    if r.returncode != 0:
+        return False, "commit %s does not exist in the POC" % sha
+    r = git("merge-base", "--is-ancestor", sha, TAG)
+    if r.returncode == 0:
+        return True, ""
+    return False, "commit %s is not an ancestor of %s" % (sha, TAG)
+
+
+def hex_commits(text):
+    out = []
+    for tok in re.findall(r"\b[0-9a-f]{7,40}\b", text):
+        if re.search(r"\d", tok) and re.search(r"[a-f]", tok) and tok not in out:
+            out.append(tok)
+    return out
+
+
+def read_baseline_figures():
+    r = git("show", "%s:BASELINE.md" % TAG)
+    if r.returncode != 0:
+        return None, "cannot read BASELINE.md at %s: %s" % (TAG, r.stderr.strip())
+    lines = r.stdout.split("\n")
+    start = next((i for i, l in enumerate(lines) if l.startswith("## 3. Sync rate")), None)
+    if start is None:
+        return None, "BASELINE.md has no section '## 3. Sync rate'"
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    sec = lines[start:end]
+    hdr = next((l for l in sec if l.startswith("| Configured rate")), None)
+    if hdr is None:
+        return None, "BASELINE.md sync table header not found"
+    col = next((k for k, c in enumerate(cells_of(hdr)) if c.startswith("After")), None)
+    if col is None:
+        return None, "BASELINE.md sync table has no 'After' column"
+    figs = {}
+    for l in sec:
+        m = re.match(r"^\|\s*`--sync-hz (50|1000)`\s*\|", l)
+        if m:
+            c = cells_of(l)
+            n = re.search(r"\d+(?:\.\d+)?", c[col])
+            figs[m.group(1)] = n.group(0) if n else None
+    if figs.get("50") is None or figs.get("1000") is None:
+        return None, "BASELINE.md 'After' figures for --sync-hz 50 and 1000 not found"
+    return (figs["50"], figs["1000"]), ""
+
+
+def p_rows(text):
+    rows = []
+    in_sec = False
+    for i, l in enumerate(text.split("\n"), 1):
+        if l.startswith("## POC reference values"):
+            in_sec = True
+            continue
+        if in_sec and l.startswith("## "):
+            in_sec = False
+        if in_sec and re.match(r"^\| P-\d\d \|", l):
+            rows.append((i, l, cells_of(l)[0]))
+    return rows
+
+
+def baseline_text():
+    r = git("show", "%s:BASELINE.md" % TAG)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def subsection(path):
+    """Heading naming the tag, up to the next heading of the same or higher level."""
+    lines = path.read_text(encoding="utf-8").split("\n")
+    heads = []
+    for i, l in enumerate(lines, 1):
+        m = re.match(r"^(#{1,6})\s+(.*)$", l)
+        if m:
+            heads.append((i, len(m.group(1)), l))
+    named = [h for h in heads if TAG in h[2]]
+    if not named:
+        return None
+    start, lvl, _ = named[0]
+    end = next((h[0] for h in heads if h[0] > start and h[1] <= lvl), len(lines) + 1)
+    return start, end, "\n".join(lines[start - 1:end - 1])
+
+
+def runs_ok(text, n):
+    return ("%s s" % n) in text and re.search(r"\b(two|2|both)\b[^.\n]{0,25}\bruns?\b", text, re.I) is not None
+
+
+def run():
+    G_SETUP = "setup"
+    if not DESIGN.is_dir():
+        bad(G_SETUP, "design directory missing: %s" % DESIGN)
+        return report()
+    for f in (CONSTANTS, APPENDIX, ARCH):
+        if not f.is_file():
+            bad(G_SETUP, "missing design file: %s" % f)
+    if results and not all(ok_ for _, ok_, _ in results):
+        return report()
+    constants = CONSTANTS.read_text(encoding="utf-8")
+    appendix_blocks = read_blocks(APPENDIX)
+    arch_blocks = read_blocks(ARCH)
+    figs, err = read_baseline_figures()
+    base_txt = baseline_text()
+    mh = re.search(r"^Machine: host (\S+?),", base_txt, re.M)
+    mc = re.search(r"^Machine: .*?(i\d-\d+[A-Z]*)\b", base_txt, re.M)
+    mr = re.search(r"runs were (\d+) s long", base_txt)
+    HOST = mh.group(1) if mh else None
+    CPU = mc.group(1) if mc else None
+    RUN_S = mr.group(1) if mr else None
+    if figs is None:
+        bad(G_SETUP, err)
+        fig50 = fig1000 = None
+    else:
+        fig50, fig1000 = figs
+        ok(G_SETUP, "figures read from BASELINE.md at %s: 50 -> %s, 1000 -> %s" % (TAG, fig50, fig1000))
+    git_ok = git("rev-parse", "--verify", "-q", TAG + "^{commit}").returncode == 0
+    if git_ok:
+        ok(G_SETUP, "tag %s exists in the POC" % TAG)
+    else:
+        bad(G_SETUP, "tag %s does not exist in the POC at %s" % (TAG, POC))
+
+    # ---- AC1: POC reference row next to P-02; frozen rows unchanged ----
+    G1 = "AC1 constants table"
+    rows = p_rows(constants)
+    p02 = [r for r in rows if r[2] == "P-02"]
+    for rid, want in sorted(FROZEN_ROW_SHA.items()):
+        cand = [r for r in rows if r[2] == rid]
+        if len(cand) != 1:
+            bad("AC1 frozen rows", "%s row found %d times" % (rid, len(cand)))
+        elif hashlib.sha256(cand[0][1].encode("utf-8")).hexdigest() == want:
+            ok("AC1 frozen rows", "%s row (line %d) is byte-identical to the frozen row" % (rid, cand[0][0]))
+        else:
+            bad("AC1 frozen rows", "%s row (line %d) changed: sha256 %s" % (rid, cand[0][0], hashlib.sha256(cand[0][1].encode("utf-8")).hexdigest()))
+    c130 = [l for l in constants.split("\n") if l.startswith("| C-130 |")]
+    if len(c130) == 1 and hashlib.sha256(c130[0].encode("utf-8")).hexdigest() == C130_SHA:
+        ok("AC3 rule", "C-130 row is unchanged (pinned) and states the exception 'except by task 003'")
+    else:
+        bad("AC3 rule", "C-130 row changed or missing: it is a decided constant and is never edited")
+    ids = [r[2] for r in rows]
+    missing = [k for k in P_KEEP if ids.count(k) != 1]
+    if not missing:
+        ok("AC1 P-02 unchanged", "rows P-01 to P-06 each present once (no existing id removed or renamed)")
+    else:
+        bad("AC1 P-02 unchanged", "existing POC rows missing or duplicated: %s" % ", ".join(missing))
+
+    new = [r for r in rows if TAG in r[1]]
+    if len(new) != 1:
+        bad(G1, "exactly one POC reference row must name %s (found %d)" % (TAG, len(new)))
+    else:
+        ln, line, rid = new[0]
+        if rid in P_KEEP:
+            bad(G1, "the %s row reuses an existing id %s" % (TAG, rid))
+        else:
+            ok(G1, "new POC row %s names %s" % (rid, TAG))
+        if p02 and abs(ln - p02[0][0]) == 1:
+            ok(G1, "new row %s sits next to P-02 (lines %d and %d)" % (rid, ln, p02[0][0]))
+        else:
+            bad(G1, "new row %s is not next to P-02 (line %d vs %d)" % (rid, ln, p02[0][0] if p02 else -1))
+        if fig50 and fig1000:
+            for f in (fig50, fig1000):
+                if fig_re(f).search(line):
+                    ok(G1, "new row %s carries figure %s (read from BASELINE.md)" % (rid, f))
+                else:
+                    bad(G1, "new row %s lacks figure %s from BASELINE.md at %s" % (rid, f, TAG))
+        if "[measured]" in line:
+            ok(G1, "new row %s is tagged [measured]" % rid)
+        else:
+            bad(G1, "new row %s is not tagged [measured]" % rid)
+        if "CONFIG_HZ=250" in line and HOST and HOST in line:
+            ok(G1, "new row %s names the host %s and CONFIG_HZ=250" % (rid, HOST))
+        else:
+            bad(G1, "new row %s lacks the host %s and CONFIG_HZ=250" % (rid, HOST))
+        if RUN_S and runs_ok(line, RUN_S):
+            ok(G1, "new row %s states the run count and %s s length of BASELINE.md" % (rid, RUN_S))
+        else:
+            bad(G1, "new row %s must state the run count (two) and %s s length as BASELINE.md does" % (rid, RUN_S))
+        for sha in hex_commits(line):
+            good, why = is_ancestor(sha)
+            if good:
+                ok(G1, "commit %s named in the new row is an ancestor of %s" % (sha, TAG))
+            else:
+                bad(G1, "new row %s: %s" % (rid, why))
+
+    # ---- AC2: evidence appendix carries the same figures ----
+    G2 = "AC2 evidence appendix"
+    entry = None
+    for b in appendix_blocks:
+        if TAG in b["text"] and fig50 and fig1000 and fig_re(fig50).search(b["text"]) and fig_re(fig1000).search(b["text"]):
+            entry = b
+            break
+    if entry is None:
+        bad(G2, "no appendix paragraph carries both figures (%s, %s) with %s" % (fig50, fig1000, TAG))
+    else:
+        miss = []
+        if "[measured]" not in entry["text"]:
+            miss.append("[measured]")
+        if not (HOST and CPU and HOST in entry["text"] and CPU in entry["text"]):
+            miss.append("machine: host %s and CPU %s" % (HOST, CPU))
+        if not (RUN_S and runs_ok(entry["text"], RUN_S)):
+            miss.append("run count and %s s length" % RUN_S)
+        if "CONFIG_HZ=250" not in entry["text"]:
+            miss.append("CONFIG_HZ=250")
+        if miss:
+            bad(G2, "appendix line %d lacks: %s" % (entry["line"], "; ".join(miss)))
+        else:
+            ok(G2, "appendix line %d carries both figures, [measured], %s, machine and CONFIG_HZ=250" % (entry["line"], TAG))
+        for sha in hex_commits(entry["text"]):
+            good, why = is_ancestor(sha)
+            if good:
+                ok(G2, "commit %s named in the appendix is an ancestor of %s" % (sha, TAG))
+            else:
+                bad(G2, "appendix line %d: %s" % (entry["line"], why))
+    unpriv = [b for b in appendix_blocks if re.search(r"unprivileged", b["text"], re.I)
+              and re.search(r"\bnot\b[^.\n]{0,30}\bstrict\b", b["text"], re.I) and "C-147" in b["text"]]
+    if unpriv:
+        ok(G2, "appendix states the runs were unprivileged and not strict mode (C-147)")
+    else:
+        bad(G2, "appendix must state that the POC runs were unprivileged and not in strict mode (C-147)")
+    wrap = [b for b in appendix_blocks if "HADROPOC_BIN" in b["text"]
+            and re.search(r"wrapper|pass-through|passthrough", b["text"], re.I)
+            and re.search(r"standard output|stdout", b["text"], re.I)
+            and TAG_RE.search(b["text"])]
+    if wrap:
+        ok("L6 wrapper disclosure", "appendix line %d discloses the HADROPOC_BIN pass-through wrapper" % wrap[0]["line"])
+    else:
+        bad("L6 wrapper disclosure", "appendix lacks a tagged paragraph that discloses the HADROPOC_BIN wrapper (pass-through, stdout only) of the three poc-baseline runs")
+    fixes_ok = {
+        "deadline-paced sync (fix 2)": r"deadline",
+        "one process-owned writer per metrics file (fix 1)": r"one writer|single[- ]writer|process-owned",
+        "non-zero exit on a zero-sample family (fix 3)": r"non-zero|zero[- ](sample|window)",
+    }
+    for what, pat in fixes_ok.items():
+        if any(TAG in b["text"] and re.search(pat, b["text"], re.I) for b in appendix_blocks):
+            ok(G2, "appendix records the baseline fix: %s" % what)
+        else:
+            bad(G2, "appendix does not record the baseline fix: %s" % what)
+    if any(TAG in b["text"] and re.search(r"loss counter", b["text"], re.I)
+           and re.search(r"not fixed|unfixed|kept|keeps|still", b["text"], re.I) for b in appendix_blocks):
+        ok(G2, "appendix records that the loss-counter bug is kept at %s" % TAG)
+    else:
+        bad(G2, "appendix must record that the loss-counter bug is kept (not fixed) at %s" % TAG)
+    if any(TAG in b["text"] and re.search(r"0 lost|zero lost", b["text"], re.I)
+           and NOT_CITABLE_RE.search(b["text"]) and re.search(r"loss counter", b["text"], re.I)
+           and "[decision]" in b["text"] and "2026-11-16" in b["text"] and re.search(r"owner", b["text"], re.I)
+           for b in appendix_blocks):
+        ok("L5 loss figures", "appendix: owner decision (2026-11-16) makes POC loss figures, incl. 0 lost, not citable")
+    else:
+        bad("L5 loss figures", "appendix needs one [decision] paragraph (owner, 2026-11-16) stating POC loss figures incl. '0 lost' are not citable because the loss counter defect was kept at %s" % TAG)
+
+    # the architecture (C-171's home) says the POC is frozen after the tag
+    if any(TAG in b["text"] and re.search(r"frozen|freeze", b["text"], re.I) and re.search(r"\bafter\b", b["text"], re.I)
+           and TAG_RE.search(b["text"]) and EXC_RE.search(b["text"]) for b in arch_blocks):
+        ok("AC3 rule", "01-architecture.md says the POC is frozen after %s" % TAG)
+    else:
+        bad("AC3 rule", "01-architecture.md must say the POC is frozen after %s (C-171 home)" % TAG)
+
+    # ---- AC3 / L3: the unqualified rule ----
+    G3 = "AC3 rule"
+    offenders = []
+    for b in corpus(exclude=(EPIC003,)):
+        # R4: only non-modification assertions; quotations of the DoD title in
+        # C-125 paragraphs are checklist quotations, not new statements
+        scan = QUOTE_RE.sub("", b["text"]) if "C-125" in b["text"] else b["text"]
+        if NONMOD_RE.search(scan) and (POC_RE.search(b["text"]) or "frozen tree" in b["text"]):
+            if not EXC_RE.search(b["text"]):
+                offenders.append(b)
+    if not offenders:
+        ok(G3, "every freeze or no-code statement carries task 003 or C-130")
+    for b in offenders:
+        bad(G3, "%s:%d: freeze or no-code statement without task 003 or C-130: \"%s\"" % (rel(b), b["line"], quote(b)))
+
+    # ---- scope of the loss and tag rules (T2): what this ticket owns ----
+    sub = subsection(APPENDIX)
+    scope = []
+    if sub is None:
+        bad("AC2 evidence appendix", "no heading of the appendix names %s (the baseline subsection)" % TAG)
+    else:
+        scope += [b for b in appendix_blocks if sub[0] < b["line"] < sub[1]]
+    scope += [b for b in read_blocks(CONSTANTS) if b["text"].startswith("| P-") and TAG in b["text"]]
+    scope += [b for b in arch_blocks if TAG in b["text"] and "frozen" in b["text"]]
+
+    # ---- (a) the baseline subsection cites no untracked working notes ----
+    G6 = "AC6 baseline subsection sources"
+    if sub is None:
+        bad(G6, "cannot check sources: no baseline subsection")
+    else:
+        text = sub[2]
+        if "swarm/" in text or re.search(r"working notes", text, re.I):
+            bad(G6, "the baseline subsection cites swarm/ working notes (untracked) as a source")
+        else:
+            ok(G6, "the baseline subsection cites no swarm/ or working notes")
+        for tok in re.findall(r"`([^`\s]+)`", text):
+            if "/" not in tok or tok.startswith("/") or tok.startswith("http"):
+                continue
+            here = (ROOT / tok).exists()
+            there = git("cat-file", "-e", "%s:%s" % (TAG, tok)).returncode == 0
+            if here or there:
+                ok(G6, "source path %s exists in the repository or at %s" % (tok, TAG))
+            else:
+                bad(G6, "source path %s named by the baseline subsection exists neither here nor at %s" % (tok, TAG))
+
+    # ---- L4: lock sub-question and known-inert answer ----
+    G4 = "L4 lock and known-inert"
+    lock_ok = [b for b in corpus(exclude=())
+               if re.search(r"(?<![0-9.])4\.1 ?s\b", b["text"]) and re.search(r"LOCK", b["text"], re.I)
+               and re.search(r"25 ?s\b", b["text"]) and "[measured]" in b["text"]
+               and (TAG in b["text"] or POC_RE.search(b["text"]))]
+    if lock_ok:
+        ok(G4, "%s:%d records LOCKED at 4.1 s within the 25 s run, [measured]" % (rel(lock_ok[0]), lock_ok[0]["line"]))
+    else:
+        bad(G4, "no [measured] paragraph records that deadline pacing still reaches LOCKED at 4.1 s within the 25 s run")
+    inert_ok = [b for b in corpus(exclude=(EPIC003,))
+                if "known-inert" in b["text"] and TAG_RE.search(b["text"])
+                and re.search(r"\b(none|not|no)\b", b["text"], re.I) and TAG in b["text"]]
+    if inert_ok:
+        ok(G4, "%s:%d records that no in-scope check family is known-inert at %s" % (rel(inert_ok[0]), inert_ok[0]["line"], TAG))
+    else:
+        bad(G4, "no tagged paragraph records, for %s, that no in-scope check family is known-inert" % TAG)
+
+    # ---- headless: only the epic 003 file (T2) ----
+    G5 = "L5 headless and loss"
+    epic_blocks = [b for b in corpus(exclude=()) if rel(b) == EPIC003]
+    for b in epic_blocks:
+        if HEADLESS_NO_TERM_RE.search(b["text"]):
+            bad(G5, "%s:%d: says headless when there is no terminal (headless is --no-tui only): \"%s\"" % (rel(b), b["line"], quote(b)))
+    if epic_blocks and not any(HEADLESS_NO_TERM_RE.search(b["text"]) for b in epic_blocks):
+        ok(G5, "epic 003 does not say the POC runs headless when there is no terminal")
+
+    # ---- L5: loss numbers in the ticket's own text only (T2) ----
+    for b in scope:
+        if TAG in b["text"] and LOSS_NUM_RE.search(b["text"]) and not NOT_CITABLE_RE.search(b["text"]):
+            bad(G5, "%s:%d: POC loss figure with no 'not citable' statement: \"%s\"" % (rel(b), b["line"], quote(b)))
+
+    # ---- AC4: tags on the ticket's own paragraphs (T2) ----
+    G7 = "AC4 tags"
+    for b in scope:
+        if b["text"].lstrip().startswith("#"):
+            continue
+        if TAG in b["text"] and not TAG_RE.search(b["text"]):
+            bad(G7, "%s:%d: paragraph mentions %s without an evidence tag: \"%s\"" % (rel(b), b["line"], TAG, quote(b)))
+    ok(G7, "%d paragraphs of the ticket's own text checked for tags" % len(scope))
+    G5b = "AC5 open items"
+    for b in corpus(exclude=(EPIC003,)):
+        t = b["text"].lstrip().lstrip("*_ ").lower()
+        if t.startswith("open item") and (TAG in b["text"] or "003" in b["text"]):
+            if not (re.search(r"\bowner\b", b["text"], re.I) and re.search(r"\bfalsifier\b", b["text"], re.I)):
+                bad(G5b, "%s:%d: open item for %s without owner and falsifier: \"%s\"" % (rel(b), b["line"], "task 003 or " + TAG, quote(b)))
+
+    # ---- L8: the design-set checker ----
+    G8 = "L8 kickoff check"
+    checker = ROOT / "doc" / "kickoff" / "check-design.py"
+    if checker.is_file():
+        r = subprocess.run([sys.executable, str(checker), str(DESIGN)], capture_output=True, text=True)
+        if r.returncode == 0:
+            ok(G8, "doc/kickoff/check-design.py passes on the design set")
+        else:
+            bad(G8, "doc/kickoff/check-design.py fails: %s" % (r.stdout + r.stderr).strip()[:300])
+    else:
+        bad(G8, "doc/kickoff/check-design.py not found")
+
+    ok("scope", "doc/design/reports/ is an archive: not scanned by any rule (R2)")
+    report()
+
+
+def report():
+    print("003-10: design set updated with the poc-baseline sync rates")
+    print("  design: %s" % DESIGN)
+    print("  poc:    %s (tag %s)" % (POC, TAG))
+    current = None
+    for group, passed, message in results:
+        if group != current:
+            print("  %s" % group)
+            current = group
+        print("    %s %s" % ("OK  " if passed else "FAIL", message))
+    failures = sum(1 for _, p, _ in results if not p)
+    if failures == 0:
+        print("RESULT: PASS (%d checks)" % len(results))
+        sys.exit(0)
+    print("RESULT: FAIL (%d of %d checks failed)" % (failures, len(results)))
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    run()
+PY
