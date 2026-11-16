@@ -37,7 +37,7 @@ With t1 = follower send, t2 = holder receive, t3 = holder send and t4 = follower
 - Step: error above 2 ms on a wired network resets the servo.
 - Drift estimate clamped to ±500 ppm; this is a clamp on the estimate, not a slew limit, and no slew limit exists.
 - Holdover: entered after 2 s without updates, **never expires**, and stays "usable" with no growing bound.
-- Pacing: requests are paced by a 5 ms socket receive timeout; measured 36.1 exchanges/s at a configured 50 and 71.4 at a configured 1 000 on a `CONFIG_HZ=250` kernel `[measured]` (P-02, P-03).
+- Pacing: at `poc-untouched` requests are paced by a 5 ms socket receive timeout (task 003 replaced it by a deadline-paced wait in `poc-baseline`, P-07); measured 36.1 exchanges/s at a configured 50 and 71.4 at a configured 1 000 on a `CONFIG_HZ=250` kernel `[measured]` (P-02, P-03).
 - Receive time is derived from a `CLOCK_REALTIME` kernel stamp `[kernel-doc]`; a wall-clock step between stamp and read corrupts the sample and is clamped to look like zero delay.
 - Handover: the new holder carries the phase on but switches to its own crystal, a rate step of up to the crystal difference.
 - Publication: a seqlock (`SharedSync`) with one writer, read by the data threads.
