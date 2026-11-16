@@ -17,14 +17,15 @@
 #                              calibration, commissioning, injection, capability,
 #                              timestamp); the placeholder is gone
 #   each type subsection       its first field table (Offset | Width | Type | Meaning | Valid range) is the
-#                              section table; further field tables (entry tables) are read for the counters
-#                              and the enumerations; the section table's first row starts at 0 (body-relative) or 58
-#                              (section-relative); a "type code N" sentence with N inside the
-#                              block the merged section type codes give 004-25; a sentence
-#                              "maximum ... N bytes" equal to the table's section size; for
-#                              each repeated list row "E × max F" a statement ⌈M / F⌉ = N
-#                              (M the type's total maximum, F the row's maximum per section,
-#                              N the sections); evidence tags on the subsection and on each
+#                              section table. A list row ("E × max F") is followed, in document order and
+#                              depth-first, by its element table, which may itself list a nested element table;
+#                              each element table sums to E bytes, its rows tile with no gap or overlap (bit rows
+#                              name their bit range "bit [hi:lo] of byte N"), and the section's maximum is
+#                              computed from the stated structure at the declared maxima (T3: nesting is allowed).
+#                              The section table's first row starts at 0 (body-relative) or 58 (section-relative);
+#                              a "type code N" sentence with N inside the block the merged section type codes give
+#                              004-25; a sentence "maximum ... N bytes" equal to the computed section size; for each
+#                              root list row a statement ⌈M / F⌉ = N; evidence tags on the subsection and on each
 #                              prose paragraph of 5 or more words
 #   capability subsection      a table of exactly the four C-129 states; control isolation
 #   timestamp subsection       a table of exactly the four C-131 sources; a C-129 capability state
@@ -32,7 +33,9 @@
 #                              rule and a unit; the observed DSCP
 #   injection subsection       module id or nonce, epoch, raw packets, and the panic hook
 #   Invalid form table         rows "Invalid form | Required outcome" for the new forms
-#   wire.toml                  one [[message]] per type with section_of = "regime stamp",
+#   wire.toml                  one [[message]] per type with section_of = "regime stamp", and one entry [[message]]
+#                              per element table (T1: rows, offsets, widths, counts and total size compared bit for bit)
+#   wire.toml (entries)        as above, without section_of, in document order of the element tables,
 #                              layer control, dscp 40, max_size equal to the table's size,
 #                              fields agreeing with the table row for row
 #
@@ -44,6 +47,13 @@
 #   AC 4  control isolation in the capability section, the panic hook in the injection section
 #   AC 5  at least five invalid forms of the new types with outcomes naming control reasons
 #   AC 6  wire.toml agrees with the tables; wire-check clean; wire_tables 0 failed, at least 12 passed
+#   DoD   review findings (PR 35): C1 the overflow report is complete (the total, Open item 1, exceeded and the design
+#         owner, merged sender rule 7 with "no stamp", the entry threshold, the health maximum equal to the constants'
+#         product); C2 a capability named with a ticket id in a sentence has a numbered row in the capability table;
+#         C3 no hand-back of a Manifest open item owned by 004-25; C4 a health entry distinguishes admissions by a
+#         field or a tagged sentence; T2 counters and DSCP are matched only in the entry tables
+#         Declared limits: the health maximum is checked against the constants only when the report is required (sum above 64);
+#         the threshold uses the other six types' computed sections; the capability vocabulary is the list in review.py
 #   DoD   merged tables unchanged, reserved fields recorded, evidence tags, open items, no ref to the main branch,
 #         no sibling check run
 set -u
@@ -738,45 +748,112 @@ STMT = re.compile(r"(?:⌈|ceil\s*\()\s*(\d+)\s*/\s*(\d+)\s*(?:⌉|\))\s*=\s*(\d
 SIZE_MAX_RE = re.compile(r"maximum[^.;]{0,120}?(\d+)\s*bytes", re.I)
 TYPE_CODE_RE = re.compile(r"type code\D{0,20}?(\d+)|\bcode (\d+)\b|section type\D{0,20}?(\d+)\b", re.I)
 
+def lo_of(f):
+    m = re.search(r"bits?\s*\[(\d+):(\d+)\]", f["meaning"])
+    return min(int(m.group(1)), int(m.group(2))) if m else None
+
+
+def build_tree(ft):
+    """Each list row consumes the next field table in document order as its element (depth-first)."""
+    ptr = [1]
+    used = {0}
+
+    def node(i):
+        rows = []
+        for f in ft[i]:
+            child = None
+            if f["maxc"] and ptr[0] < len(ft):
+                c = ptr[0]
+                ptr[0] += 1
+                used.add(c)
+                child = node(c)
+            rows.append((f, child))
+        return {"rows": rows}
+
+    root = node(0)
+    return root, [k for k in range(len(ft)) if k not in used]
+
+
+def tile_node(node, start_bits, title, label):
+    """Rows tile with no gap or overlap; returns the end position in bits."""
+    pos = start_bits
+    for f, child in node["rows"]:
+        lo = lo_of(f)
+        if lo is not None:
+            s = f["off"] * 8 + lo
+        elif f["bits"] % 8 != 0:
+            s = pos
+        else:
+            s = f["off"] * 8
+        if s != pos:
+            fail(label, f"the {title} table does not tile: a row at bit {s} follows bit {pos}")
+            pos = s
+        f["_start"] = s
+        pos = s + f["bits"] * (f["maxc"] or 1)
+        if child is not None:
+            tile_node(child, 0, title + " (entry)", label)
+    return pos
+
+
+def size_node(node, title):
+    total = 0
+    for f, child in node["rows"]:
+        if f["maxc"]:
+            if child is not None:
+                e = size_node(child, title)
+                child["size"] = e
+                if e != f["bits"]:
+                    fail("AC1", f"the {title} entry table sums to {e} bits, but its list row declares {f['bits']} bits per entry")
+            total += f["bits"] * f["maxc"]
+        else:
+            total += f["bits"]
+    node["size"] = total
+    return total
+
+
+def entry_nodes(node, out=None):
+    out = [] if out is None else out
+    for f, child in node["rows"]:
+        if child is not None:
+            out.append(child)
+            entry_nodes(child, out)
+    return out
+
+
 for key, t in TYPES.items():
     text = t["text"]
     tables = parse_tables(text)
     field_tables = [tb for tb in tables if is_field_table(tb[1])]
-    fl_all = []
+    fl_all, ft = [], []
     for tb in field_tables:
-        fl_all += fields_of(tb, "AC1", t["title"])
-    fl_main = fields_of(field_tables[0], "AC1", t["title"]) if field_tables else []
-    t["fl_all"], t["fl_main"] = fl_all, fl_main
-    if not fl_main:
+        fl = fields_of(tb, "AC1", t["title"])
+        ft.append(fl)
+        fl_all += fl
+    t["fl_all"] = fl_all
+    if not ft or not ft[0]:
         fail("AC1", f"the {key} section type has no field table of Offset, Width, Type, Meaning, Valid range")
-        t["sec_max"], t["Nt"] = None, None
+        t["sec_max"], t["Nt"], t["root"] = None, None, None
         continue
-    off0 = fl_main[0]["off"]
+    root, unused = build_tree(ft)
+    if unused:
+        fail("AC1", f"the {key} section type has {len(unused)} field table(s) that no list row of it names as its entry")
+    t["root"] = root
+    t["fl_main"] = [f for f, _ in root["rows"]]
+    off0 = t["fl_main"][0]["off"]
     body_rel = off0 != 58
     if off0 not in (0, 58):
         fail("AC1", f"the {key} table starts at offset {off0}: a body starts at 0 and a section at 58")
-    if all(f["bits"] % 8 == 0 for f in fl_main):
-        pos = off0
-        for f in fl_main:
-            if f["off"] != pos:
-                fail("AC1", f"the {key} table does not tile: a row at {f['off']} follows bytes up to {pos}")
-                break
-            pos += f["bits"] * (f["maxc"] or 1) // 8
-    fixed_bits = sum(f["bits"] for f in fl_main if not f["maxc"])
-    lists = [f for f in fl_main if f["maxc"]]
-    elem_sums = [sum(f["bits"] for f in fields_of(tb, "AC1", t["title"])) for tb in field_tables[1:]]
-    for f in lists:
-        if elem_sums and f["bits"] not in elem_sums:
-            fail("AC1", f"the {key} entry table sums to {sorted(set(elem_sums))} bits, but the list row declares {f['bits']} bits per entry")
-    per_bits = fixed_bits + sum(f["bits"] * f["maxc"] for f in lists)
-    sec_max = 58 + cdiv(per_bits, 8)
-    t["sec_max"] = sec_max
+    tile_node(root, off0 * 8 + (lo_of(t["fl_main"][0]) or 0), t["title"], "AC1")
+    t["entries"] = entry_nodes(root)
+    rbits = size_node(root, t["title"])
+    sec_max = 58 + cdiv(rbits, 8)
+    t["sec_max"], t["body_rel"] = sec_max, body_rel
     check("AC1", sec_max <= CTRL_BOUND,
           f"the {key} section at its maxima is {sec_max} bytes, no more than the control bound (C-17) of {CTRL_BOUND} bytes"
           + ("" if sec_max <= CTRL_BOUND else f": over the control bound by {sec_max - CTRL_BOUND}"))
     stmts = [(int(a), int(b), int(c)) for a, b, c in STMT.findall(text)]
     Nt = 1
-    for f in lists:
+    for f in [f for f, _ in root["rows"] if f["maxc"]]:
         F = f["maxc"]
         cand = [s for s in stmts if s[1] == F]
         if not cand:
@@ -787,14 +864,13 @@ for key, t in TYPES.items():
             fail("AC1", f"the {key} section count is wrong: ⌈{M} / {F}⌉ = {cdiv(M, F)}, the text states {N}")
         Nt = max(Nt, cdiv(M, F))
     t["Nt"] = Nt
+    t["M_stated"] = [s[0] for s in stmts if s[1] in [f["maxc"] for f, _ in root["rows"] if f["maxc"]]]
     stated = [int(x) for x in SIZE_MAX_RE.findall(text)]
     check("AC1", sec_max in stated,
           f"a sentence of the {key} subsection states its maximum section size as {sec_max} bytes (the table's sum)"
           + ("" if sec_max in stated else f"; stated {stated}"))
     _code = TYPE_CODE_RE.search(text)
-    code = None
-    if _code:
-        code = int([g for g in _code.groups() if g][0])
+    code = int([g for g in _code.groups() if g][0]) if _code else None
     t["code"] = code
     check("AC1", code is not None and CODE_LO is not None and CODE_LO <= code <= CODE_HI,
           f"the {key} section type has a type code inside the block of 004-25 ({CODE_LO} to {CODE_HI}) (found {code})")
@@ -907,7 +983,7 @@ if "timestamp" in TYPES and TS_SOURCES:
 
 # AC 3: the health section has the eleven C-159 counters and the observed DSCP
 if "health" in TYPES and len(C159) == 11:
-    hf = TYPES["health"]["fl_all"]
+    hf = [f for n in TYPES["health"]["entries"] for f, _ in n["rows"]]
     ht = [f["meaning"] for f in hf]
     n, assign = max_match([counter_re(c) for c in C159], ht)
     check("AC3", n == 11, f"each of the eleven C-159 counters has its own row of the health section (matched {n})")
@@ -1009,17 +1085,140 @@ for key, pat in TYPE_SPECS:
           f"the {key} message of wire.toml is control, DSCP {DSCP_CONTROL} (C-13), and its max_size is the table's {t['sec_max']} bytes")
     reasons = set(m.get("rejection_reasons", []))
     check("AC6", reasons <= CONTROL_MEMBERS, f"the {key} message names only control reasons (found {sorted(reasons)})")
-    body_rel = t["fl_main"][0]["off"] == 0
+    body_rel = t["body_rel"]
     tf = [f for f in m.get("field", []) if int(f.get("offset", 0)) >= 464]
-    md = t["fl_main"]
+    md = [f for f, _ in t["root"]["rows"]]
     agree = len(tf) == len(md)
     for f, g in zip(tf, md):
-        exp_off = (g["off"] + (58 if body_rel else 0)) * 8
+        exp_off = g["_start"] + (464 if body_rel else 0)
         if int(f["offset"]) != exp_off or int(f["width"]) != g["bits"]:
             agree = False
         if bool(g["maxc"]) != ("count" in f) or (g["maxc"] and int(f.get("max_count", -1)) != g["maxc"]):
             agree = False
     check("AC6", agree, f"the {key} fields of wire.toml agree with its table row for row (offset, width, count)")
+    # T1: every entry table (any depth) against its wire.toml entry message, row for row, bit for bit
+    ent_msgs = [x for x in msgs if re.search(pat, str(x.get("name", "")), re.I) and "entry" in str(x.get("name", "")).lower() and "section_of" not in x]
+    ents = t.get("entries", [])
+    check("AC6", len(ent_msgs) == len(ents), f"wire.toml declares one entry message per entry table of the {key} section (tables {len(ents)}, messages {len(ent_msgs)})")
+    for n, em in zip(ents, ent_msgs):
+        efs = em.get("field", [])
+        ok = len(efs) == len(n["rows"]) and int(em.get("max_size", -1)) == cdiv(n["size"], 8)
+        pos = 0
+        for (f, child), g in zip(n["rows"], efs):
+            if int(g.get("offset", -1)) != f["_start"] or int(g.get("width", -1)) != f["bits"]:
+                ok = False
+            if bool(f["maxc"]) != ("count" in g) or (f["maxc"] and int(g.get("max_count", -1)) != f["maxc"]):
+                ok = False
+            pos = f["_start"] + f["bits"] * (f["maxc"] or 1)
+        ends = [int(g["offset"]) + int(g["width"]) * (int(g.get("max_count", 1)) if "count" in g else 1) for g in efs]
+        if ends and ends[-1] != n["size"]:
+            ok = False
+        check("AC6", ok, f"the entry table of {em.get('name')} agrees with wire.toml row for row (offset, width, count) and tiles to its size ({n['size']} bits)")
+
+# ---------------------------------------------------------------------------
+# Review findings (PR 35, round 1). They are labelled DoD with the finding named.
+# ---------------------------------------------------------------------------
+def has_num(text, n):
+    return re.search(rf"(?<!\d){n}(?!\d)", text) is not None
+
+
+def sentences(text):
+    pieces = [s for s in re.split(r"(?<=[.;])\s+|\n\s*\n|\n(?=[|*#-])", text) if s.strip()]
+    out = []
+    for s in pieces:
+        if out and re.match(r"\s*[\[`]", s):
+            out[-1] = out[-1] + " " + s
+        else:
+            out.append(s)
+    return out
+
+
+# C1: the overflow report is complete. The merged sender rule 7 reads: "a stamp that needs more cannot be sent".
+RULE7 = "a stamp that needs more cannot be sent"
+check("DoD", RULE7 in STAMP, "review C1: the merged sender rule 7 is quoted by the report: \"" + RULE7 + "\"")
+HEALTH = TYPES.get("health")
+C09_MAX = int(re.search(r"at most (\d+)", const_row("C-09")).group(1)) if re.search(r"at most (\d+)", const_row("C-09")) else None
+PEERS = int(re.search(r"(\d+) peers", const_row("C-217")).group(1)) if re.search(r"(\d+) peers", const_row("C-217")) else None
+if _S > (SECTION_MAX or 64):
+    if HEALTH is not None and HEALTH.get("entries"):
+        F_H = [f["maxc"] for f, _ in HEALTH["root"]["rows"] if f["maxc"]][0]
+        PRODUCT = 2 * C09_MAX * PEERS if (C09_MAX and PEERS) else None
+        M_H = HEALTH["M_stated"][0] if HEALTH.get("M_stated") else None
+        check("DoD", PRODUCT is not None and M_H == PRODUCT,
+              f"review C1: the health maximum equals the constants' product: {C09_MAX} streams (C-09) × {PEERS} peers (C-217) "
+              f"× 2 directions = {PRODUCT} (stated {M_H})")
+        htext = HEALTH["text"]
+        check("DoD", PRODUCT is not None and has_num(norm(htext), PRODUCT) and "C-09" in htext and "C-217" in htext,
+              "review C1: the health subsection states the product with its constants C-09 and C-217")
+        S_other = _S - HEALTH["Nt"]
+        T = ((SECTION_MAX or 64) - S_other) * F_H
+        paras = [x for k, x in prose_blocks(STAMP) if k == "p" and re.search(r"Open item 1(?!\d)", x)]
+        def score(p):
+            return sum([has_num(p, _S), bool(re.search(r"exceed|falsif", p, re.I)), "design owner" in p.lower(),
+                        RULE7 in p.lower() and "cannot be sent" in p.lower(), bool(re.search(r"no stamp", p, re.I)),
+                        has_num(p, T) and bool(re.search(r"threshold|fit", p, re.I)), has_evidence(p)])
+        best = max(paras, key=score) if paras else ""
+        check("DoD", has_num(best, _S) and bool(paras),
+              f"review C1: one tagged report paragraph names Open item 1 and states the total {_S} sections against the bound 64")
+        check("DoD", bool(re.search(r"exceed|falsif", best, re.I)) and "design owner" in best.lower(),
+              "review C1: the report says the bound is exceeded or falsified, and that it goes to the design owner")
+        check("DoD", RULE7 in best.lower() and "cannot be sent" in best.lower(),
+              "review C1: the report cites merged sender rule 7 (a stamp that needs more cannot be sent)")
+        check("DoD", bool(re.search(r"no stamp", best, re.I)),
+              "review C1: the report says that above the bound a module sends no stamp at all")
+        check("DoD", has_num(best, T) and bool(re.search(r"threshold|fit", best, re.I)),
+              f"review C1: the report gives the threshold in entries, (64 − {S_other}) × {F_H} = {T}, below which a stamp still fits")
+        check("DoD", has_evidence(best), "review C1: the report paragraph carries an evidence tag")
+
+# C2: a capability the text names as needed by a ticket has an id in the capability table.
+CAP_VOCAB = ["drop accounting", "dscp marking", "fault injection", "holder-eligible", "holder eligible",
+             "real-time scheduling", "memory lock", "control isolation", "idle states"]
+TICKET_ID = re.compile(r"\b\d{3}[a-z]?-\d{2}\b")
+CAP_T = TYPES.get("capability")
+if CAP_T is not None:
+    cap_rows = []
+    for tb in parse_tables(CAP_T["text"]):
+        for r in tb[2]:
+            if r and re.fullmatch(r"\d+", r[0].strip()):
+                cap_rows.append(" ".join(r).lower())
+    needs = set()
+    for s in sentences(STAMP):
+        sl = s.lower()
+        if TICKET_ID.search(s):
+            for term in CAP_VOCAB:
+                if term in sl:
+                    needs.add(term)
+    for term in sorted(needs):
+        check("DoD", any(term in row for row in cap_rows),
+              f"review C2: the capability \"{term}\" named as needed by a ticket has an id (a numbered row) in the capability table")
+
+# C3: no circular hand-back of a Manifest open item whose owner is 004-25.
+MAN = span_of(r"^manifest$", 2)
+man_text = "\n".join(body(MAN))
+owned = set()
+for k, x in prose_blocks(man_text):
+    if k == "p" and re.search(r"Owner:[^.]*\b004-25\b", x):
+        mo = re.search(r"Open item (\d+)", x)
+        if mo:
+            owned.add(mo.group(1))
+bad_handback = []
+for s in sentences(STAMP):
+    for mo in re.finditer(r"Manifest,? Open item (\d+)", s):
+        if mo.group(1) in owned and re.search(r"owner|hands|left to|belongs to", s, re.I):
+            bad_handback.append(f"Manifest, Open item {mo.group(1)}")
+check("DoD", not bad_handback,
+      f"review C3: the regime stamp section does not hand a Manifest open item owned by 004-25 back to it undecided"
+      + (f": {bad_handback}" if bad_handback else f" (owned by 004-25: {sorted(owned)})"))
+
+# C4: a health entry distinguishes one admission of a connection from the next, by a field or a tagged sentence.
+if HEALTH is not None:
+    ent_meanings = [f["meaning"] for n in HEALTH["entries"] for f, _ in n["rows"]]
+    has_field = any(re.search(r"request id|admission|generation|epoch of the connection", x, re.I) for x in ent_meanings)
+    has_sentence = any(re.search(r"reset", s, re.I) and re.search(r"wrap", s, re.I) and has_evidence(s)
+                       for s in sentences(HEALTH["text"]))
+    check("DoD", has_field or has_sentence,
+          "review C4: a health entry has a field that tells one admission from the next, or a tagged sentence tells a counter reset on re-admission from a wrap")
+
 
 # AC 6: the 004-02 checker, the repository level
 if not overridden:
