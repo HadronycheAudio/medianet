@@ -810,6 +810,13 @@ if not any(all(re.search(re.escape(n), t) for n in DISCOVERY) and re.search(r"di
 if not ad_para(r"C-185"):
     fail(2, "no sentence in the Admission messages section cites C-185 for the refusal enumeration")
 
+# AC 2 (review finding C3): the refusal values are 0..17 in the order of the closed set of C-185
+# (read from the constants file; the list is not copied here)
+for _i, _n in enumerate(REFUSAL_SET):
+    if REF.get(_n) != _i:
+        fail(2, f"wire.md gives refusal reason {_n} the value {REF.get(_n)}; C-185's order gives {_i} "
+             "(the refusal values are 0..17 in the order of the closed set)")
+
 # Admission messages: field tables and invalid-form tables
 ADM_MSGS = []
 ADM_SHARED = []
@@ -873,12 +880,12 @@ for m in ADM_MSGS:
     m["total"] = cur
     _ms = re.search(r"maximum\s+size[^.;\n]*?(" + NUM + r")\s*bytes", strip_fences(m["text"]), re.I)
     if _ms is None:
-        fail(1, f"'{t}': no sentence states its maximum size in bytes ('maximum size ... N bytes')")
+        fail(4, f"'{t}': no sentence states its maximum size in bytes ('maximum size ... N bytes')")
     elif to_int(_ms.group(1)) != cur:
-        fail(1, f"'{t}': states a maximum size of {to_int(_ms.group(1))} bytes; its table sums to {cur} "
+        fail(4, f"'{t}': states a maximum size of {to_int(_ms.group(1))} bytes; its table sums to {cur} "
              "(counted rows at their maximum counts)")
     if K["bound"] and cur > K["bound"]:
-        fail(1, f"'{t}': its maximum size {cur} bytes is above the {K['bound']}-byte control bound (C-17)")
+        fail(4, f"'{t}': its maximum size {cur} bytes is above the {K['bound']}-byte control bound (C-17)")
     _tr = [f for f in fl if key_of(f["meaning"]) == "type"]
     code = None
     if _tr:
@@ -1020,6 +1027,50 @@ for _c in ("C-17", "C-103", "C-142", "C-185", "C-209", "C-219"):
     if _c not in AD_PLAIN:
         fail("Settled", f"{_c} is not cited in the Admission messages section")
 
+# C1 (review finding): in the request's own invalid-form table, every row whose outcome is a drop
+# (decided from the datagram's own bytes) comes before every row whose outcome is a refusal (which
+# depends on receiver state); the order among refusals is handed to 005-14.
+_req = [m for m in ADM_MSGS if re.search(r"request", m["title"], re.I)]
+if not _req:
+    fail(6, "no admission request message: its invalid-form table cannot be checked for drops before refusals")
+else:
+    _kinds = []
+    for f_, o_ in _req[0]["forms"]:
+        if re.search(r"\bdrop\b|\bignore\b", o_, re.I):
+            _kinds.append(("drop", f_))
+        elif re.search(r"refus", o_, re.I):
+            _kinds.append(("refusal", f_))
+    if any(k == "drop" for k, _ in _kinds) and any(k == "refusal" for k, _ in _kinds):
+        _last_drop = max(i for i, (k, _) in enumerate(_kinds) if k == "drop")
+        _first_ref = min(i for i, (k, _) in enumerate(_kinds) if k == "refusal")
+        if _last_drop > _first_ref:
+            fail(6, "the admission request's invalid-form table lists a refusal before a drop: every drop "
+                 "(decided from the datagram's bytes) must come before every refusal (receiver state, C-164)")
+if not ad_para(r"005-14", r"order"):
+    fail(6, "no sentence in the Admission messages section hands the order among refusals to 005-14")
+
+# C6 (review finding): the ForeignDomain refusal row, or a prose sentence (not an Open item paragraph),
+# cites an open item by number or singular 'Open item'; a plural 'Open items' section is not a citation.
+_OPEN_ITEM = re.compile(r"open\s+item(?!s)", re.I)
+_fd_cited = False
+for _, _h, _rows in parse_tables(AD_PLAIN):
+    for _row in _rows:
+        if any(c.strip().strip("`*_ ") == "ForeignDomain" for c in _row) and _OPEN_ITEM.search(" | ".join(_row)):
+            _fd_cited = True
+for _p in AD_PARAS:
+    if re.search(r"\bForeignDomain\b", _p) and _OPEN_ITEM.search(_p) \
+            and not re.match(r"\s*\*{0,2}\s*open\s+items?\b", clean_start(_p), re.I):
+        _fd_cited = True
+if not _fd_cited:
+    fail(6, "the ForeignDomain refusal row (or a sentence naming it) does not cite an open item by number "
+         "('Open item N'): its 'where raised' cell must say that discovery is epic 005's and admission is per 012-06, "
+         "with the open item that settles the conflict")
+
+# Hand-off (review C3/C4): the section names 012-01, which fixes the refusal discriminants
+if not re.search(r"012-01", AD_PLAIN):
+    fail("Hand-off", "the Admission messages section does not mention 012-01, which fixes RefuseReason's discriminants "
+         "(0..=17 in the order of C-185)")
+
 # AC 6: invalid forms with outcomes
 ADM_EXACT = {"short": "TooShort", "magic": "BadMagic", "version": "VersionMismatch", "domain0": "UnconfiguredDomain",
              "foreign": "ForeignDomain", "oversize": "OversizeControl", "length": "BadLength",
@@ -1078,42 +1129,42 @@ CATS_SEEN = set()
 def check_form(form, outcome, where):
     for mm in re.findall(r"count\s+under\s+`?([A-Za-z]+)`?", outcome):
         if mm not in UNION:
-            fail(4, f"{where}: the form '{form[:50]}' counts under '{mm}', which is in neither closed enumeration")
+            fail(6, f"{where}: the form '{form[:50]}' counts under '{mm}', which is in neither closed enumeration")
     for name in CAMEL.findall(outcome):
         if name not in UNION and not re.search(r"\b(not|never|nor|no)\b[^|;.]*" + re.escape(name), outcome):
-            fail(4, f"{where}: the outcome names '{name}', which is in neither enumeration: no invented reason")
+            fail(6, f"{where}: the outcome names '{name}', which is in neither enumeration: no invented reason")
     cat = classify(form)
     if cat:
         CATS_SEEN.add(cat)
     named = named_in(outcome)
     if cat in ADM_EXACT:
         if not re.search(r"\b" + ADM_EXACT[cat] + r"\b", outcome):
-            fail(4, f"{where}: the form '{form[:50]}' must be counted under {ADM_EXACT[cat]}: {outcome[:70]}")
+            fail(6, f"{where}: the form '{form[:50]}' must be counted under {ADM_EXACT[cat]}: {outcome[:70]}")
     if cat == "member" and re.search(r"32|unknown|duplicate", form, re.I):
         if "BadMemberList" not in outcome:
-            fail(4, f"{where}: the member form '{form[:50]}' must be refused with BadMemberList (C-173, C-185)")
+            fail(6, f"{where}: the member form '{form[:50]}' must be refused with BadMemberList (C-173, C-185)")
     if cat == "discovery" and any(n in named for n in DISCOVERY):
-        fail(4, f"{where}: the form '{form[:50]}' is refused with a discovery-raised reason: "
+        fail(6, f"{where}: the form '{form[:50]}' is refused with a discovery-raised reason: "
              "VersionMismatch, NameTaken and ModuleCap are never an admission refusal")
     if not (named or NON_REJECTION.search(outcome)):
-        fail(4, f"{where}: the form '{form[:50]}' names no member of the closed enumerations and argues no non-rejection")
+        fail(6, f"{where}: the form '{form[:50]}' names no member of the closed enumerations and argues no non-rejection")
 
 
 for m in ADM_MSGS:
     total_forms = len(ADM_SHARED) + len(m["forms"])
     if total_forms < 6:
-        fail(4, f"'{m['title']}' has {total_forms} invalid forms with outcomes (the shared table and its own); at least 6")
+        fail(6, f"'{m['title']}' has {total_forms} invalid forms with outcomes (the shared table and its own); at least 6")
     for f_, o_ in m["forms"]:
         check_form(f_, o_, f"'{m['title']}'")
 for f_, o_ in ADM_SHARED:
     check_form(f_, o_, "the shared Validity rules")
 ALL_FORMS = ADM_SHARED + [x for m in ADM_MSGS for x in m["forms"]]
 if len(ALL_FORMS) < 8:
-    fail(4, f"the admission set has {len(ALL_FORMS)} invalid forms with outcomes; at least 8 are required (AC 6)")
+    fail(6, f"the admission set has {len(ALL_FORMS)} invalid forms with outcomes; at least 8 are required (AC 6)")
 for _c in ("short", "magic", "version", "foreign", "length", "reserved", "oversize", "domain0", "rate", "member",
            "address", "unknown_reason", "discovery", "downstream"):
     if _c not in CATS_SEEN:
-        fail(4, f"no invalid form covers the '{_c}' case of the ticket's list")
+        fail(6, f"no invalid form covers the '{_c}' case of the ticket's list")
 
 # Open item: owner (004, confirmed by 005) and the falsifier
 _opens = [t for t in AD_PARAS if re.match(r"\s*\*{0,2}\s*open\s+items?\b", clean_start(t), re.I)]
@@ -1146,12 +1197,12 @@ PRIM = {"u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128"}
 tables_text = read_text(tables_path)
 toml = None
 if tables_text is None:
-    fail(6, f"{tables_path} does not exist")
+    fail(7, f"{tables_path} does not exist")
 else:
     try:
         toml = parse_toml(tables_text)
     except TomlError as error:
-        fail(6, f"{tables_path} does not parse: {error}")
+        fail(7, f"{tables_path} does not parse: {error}")
 msgs_t = toml.get("message", []) if isinstance(toml, dict) else []
 if not isinstance(msgs_t, list):
     msgs_t = []
@@ -1159,44 +1210,44 @@ for m in ADM_MSGS:
     t = m["title"]
     cands = [x for x in msgs_t if isinstance(x, dict) and tname(str(x.get("name", ""))) == tname(t)]
     if not cands:
-        fail(6, f"wire.toml declares no [[message]] for the admission message '{t}'")
+        fail(7, f"wire.toml declares no [[message]] for the admission message '{t}'")
         continue
     T = cands[0]
     if T.get("layer") != "control":
-        fail(6, f"toml message '{T.get('name')}' has layer '{T.get('layer')}', not 'control'")
+        fail(7, f"toml message '{T.get('name')}' has layer '{T.get('layer')}', not 'control'")
     if K["dscp_control"] is not None and T.get("dscp") != K["dscp_control"]:
-        fail(6, f"toml message '{T.get('name')}' has dscp {T.get('dscp')}; C-13 fixes CS5 ({K['dscp_control']})")
+        fail(7, f"toml message '{T.get('name')}' has dscp {T.get('dscp')}; C-13 fixes CS5 ({K['dscp_control']})")
     if T.get("max_size") != m["total"]:
-        fail(6, f"toml message '{T.get('name')}' has max_size {T.get('max_size')}; the markdown table sums to {m['total']}")
+        fail(7, f"toml message '{T.get('name')}' has max_size {T.get('max_size')}; the markdown table sums to {m['total']}")
     tf = [x for x in (T.get("field") or []) if isinstance(x, dict)]
     if len(tf) != len(m["fields"]):
-        fail(6, f"toml message '{T.get('name')}' has {len(tf)} fields; the markdown table has {len(m['fields'])} rows")
+        fail(7, f"toml message '{T.get('name')}' has {len(tf)} fields; the markdown table has {len(m['fields'])} rows")
     total_bits = 0
     for mf, tfl in zip(m["fields"], tf):
         nm = md_name(mf["meaning"])
         if norm_name(nm) != norm_name(str(tfl.get("name", ""))):
-            fail(6, f"toml field '{tfl.get('name')}' is not named after the markdown row '{nm}'")
+            fail(7, f"toml field '{tfl.get('name')}' is not named after the markdown row '{nm}'")
         if tfl.get("offset") != mf["off"] * 8:
-            fail(6, f"toml field {tfl.get('name')}: offset {tfl.get('offset')} bits, markdown byte {mf['off']}")
+            fail(7, f"toml field {tfl.get('name')}: offset {tfl.get('offset')} bits, markdown byte {mf['off']}")
         if tfl.get("width") != mf["bits"]:
-            fail(6, f"toml field {tfl.get('name')}: width {tfl.get('width')} bits; markdown {mf['bits']} bits")
+            fail(7, f"toml field {tfl.get('name')}: width {tfl.get('width')} bits; markdown {mf['bits']} bits")
         if mf["maxc"] is not None and tfl.get("max_count") != mf["maxc"]:
-            fail(6, f"toml field {tfl.get('name')}: max_count {tfl.get('max_count')}; markdown says max {mf['maxc']}")
+            fail(7, f"toml field {tfl.get('name')}: max_count {tfl.get('max_count')}; markdown says max {mf['maxc']}")
         if mf["type"] in PRIM and tfl.get("type") != mf["type"]:
-            fail(6, f"toml field {tfl.get('name')}: type {tfl.get('type')}; markdown {mf['type']}")
+            fail(7, f"toml field {tfl.get('name')}: type {tfl.get('type')}; markdown {mf['type']}")
         if TIMER.search(str(tfl.get("name", ""))):
             fail("DoD", f"toml field '{tfl.get('name')}' is named like a timer")
         total_bits += (tfl.get("width", 0) or 0) * (tfl.get("max_count") or 1)
     if isinstance(T.get("max_size"), int) and total_bits != T["max_size"] * 8:
-        fail(6, f"the toml fields of '{T.get('name')}' compute {total_bits // 8} bytes; max_size is {T.get('max_size')}")
+        fail(7, f"the toml fields of '{T.get('name')}' compute {total_bits // 8} bytes; max_size is {T.get('max_size')}")
     need = set()
     for _, o_ in ADM_SHARED + m["forms"]:
         need.update(w for w in named_in(o_) if w in MEMBERS)
     have = set(T.get("rejection_reasons") or [])
     for r in sorted(need - have):
-        fail(6, f"toml message '{T.get('name')}' rejection_reasons does not list '{r}', which its invalid-form rows name")
+        fail(7, f"toml message '{T.get('name')}' rejection_reasons does not list '{r}', which its invalid-form rows name")
     for r in sorted(have - set(MEMBERS)):
-        fail(6, f"toml message '{T.get('name')}' rejection_reasons names '{r}', not a member of the closed Reject "
+        fail(7, f"toml message '{T.get('name')}' rejection_reasons names '{r}', not a member of the closed Reject "
              "enumeration (refusal reasons are not packet rejections)")
 
 TOML_REF = {}
@@ -1208,8 +1259,13 @@ if isinstance(toml, dict):
             if isinstance(_d, dict) and isinstance(_d.get("name"), str) and isinstance(_d.get("value"), int):
                 TOML_REF[_d["name"]] = _d["value"]
 if REF and TOML_REF != REF:
-    fail(6, "wire.toml declares no refusal enumeration equal to the one in wire.md's Admission messages section "
+    fail(7, "wire.toml declares no refusal enumeration equal to the one in wire.md's Admission messages section "
          f"(toml names and values: {sorted(TOML_REF.items())[:3]} ...; wire.md has {len(REF)})")
+
+# AC 2 (review finding C3), wire.toml: the refusal values are 0..17 in the order of the closed set of C-185
+for _i, _n in enumerate(REFUSAL_SET):
+    if TOML_REF.get(_n) != _i:
+        fail(7, f"wire.toml gives refusal reason {_n} the value {TOML_REF.get(_n)}; C-185's order gives {_i}")
 
 # AC 7 (repository level): the wire-check binary and the wire_tables tests
 if not overridden:
@@ -1218,22 +1274,22 @@ if not overridden:
                               capture_output=True, text=True, timeout=900)
         out = proc.stdout + proc.stderr
         if proc.returncode != 0 or "checks clean" not in out:
-            fail(6, "cargo run --bin wire-check did not pass:\n" + "\n".join(out.strip().splitlines()[-8:]))
+            fail(7, "cargo run --bin wire-check did not pass:\n" + "\n".join(out.strip().splitlines()[-8:]))
     except (OSError, subprocess.TimeoutExpired) as error:
-        fail(6, f"could not run cargo run --bin wire-check: {error}")
+        fail(7, f"could not run cargo run --bin wire-check: {error}")
     try:
         proc = subprocess.run(["cargo", "test", "-p", "hadronyche-tools", "--test", "wire_tables"],
                               capture_output=True, text=True, timeout=900)
         out = proc.stdout + proc.stderr
         result = [ln.strip() for ln in out.splitlines() if "test result:" in ln]
         if proc.returncode != 0 or not result:
-            fail(6, "cargo test -p hadronyche-tools --test wire_tables failed:\n" + "\n".join(out.strip().splitlines()[-12:]))
+            fail(7, "cargo test -p hadronyche-tools --test wire_tables failed:\n" + "\n".join(out.strip().splitlines()[-12:]))
         else:
             mm = re.search(r"(\d+)\s+passed;\s*(\d+)\s+failed;", result[-1])
             if not mm or int(mm.group(2)) != 0 or int(mm.group(1)) < 12:
-                fail(6, "wire_tables must stay green with 0 failed and at least the 12 tests that stood before 004-18; got: " + result[-1])
+                fail(7, "wire_tables must stay green with 0 failed and at least the 12 tests that stood before 004-18; got: " + result[-1])
     except (OSError, subprocess.TimeoutExpired) as error:
-        fail(6, f"could not run the wire_tables tests: {error}")
+        fail(7, f"could not run the wire_tables tests: {error}")
 else:
     print("NOTE AC7: document paths overridden; cargo checks (wire-check, wire_tables) skipped")
 
