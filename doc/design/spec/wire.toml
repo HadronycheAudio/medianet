@@ -368,6 +368,14 @@ width = 8
 value = "unused"
 meaning = "v1 senders write content-message kind codes 0 to 3; codes 4 to 255 are unused in v1, the hello's code space and receiver rule [decision]"
 outcome = "a v1 receiver ignores the code and keeps the port; never a rejection"
+
+[[reserved]]
+name = "regime_stamp_section_type_codes_unassigned"
+message = "regime stamp section (004-24)"
+width = 16
+value = "unused"
+meaning = "section type codes not assigned in v1 (32 to 65535, and any code of the 004-25 and 004-28 blocks they leave unassigned): v1 senders write an assigned code; an accept-any field, because adding a section type is a minor change [decision]"
+outcome = "a v1 receiver skips the section's body by its section length and keeps the section for the completeness test; never a rejection"
 # The protocol version fields (ticket 004-04): see the [versioning] schema
 # documentation above. wire.md's "Versioning" section is the authority.
 
@@ -3302,6 +3310,222 @@ width = 16
 type = "u16"
 meaning = "echoed intended packet size: the probe's intended packet size, echoed verbatim, at the request's width; it names which probe of the handshake this reply acknowledges"
 valid = "any 16-bit value as far as parsing goes; a value no outstanding probe carries matches none (Matching a reply to its probe)"
+
+# Regime stamp (ticket 004-24): the machine-readable copy of wire.md's
+# "Regime stamp" field tables, which are the authority. The stamp is a
+# dedicated control message split into sections that each fit the 1 252-byte
+# control bound (C-17, C-18): codes 36 (stamp section) and 37 (stamp request)
+# of the block 36 to 47 the hello reserves for 004-24; 38 to 47 are unused.
+#
+# The stamp itself is not a datagram: it is the set of sections that share
+# one sender module id, instance nonce, stamp version and section count, at
+# most 64 sections, 64 x 1 252 = 80 128 bytes. section_of names it as the
+# parent, "regime stamp", without declaring it: the current schema can
+# declare no control message above 1 252 bytes and has no notion of a
+# payload joined from several messages (the tooling gap owned by ticket
+# 004-23, as for the manifest) [decision]. The section types (the bodies)
+# are laid out by 004-25, 004-28 and later epics, each as its own table.
+
+[[message]]
+name = "regime stamp section"
+layer = "control"
+dscp = 40
+max_size = 1252
+section_of = "regime stamp"
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 36 = regime stamp section (Control message type codes)"
+valid = "36 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "sender_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "sender module id (C-11): the module whose stamp this section carries"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "instance_nonce"
+offset = 320
+width = 64
+type = "u64"
+meaning = "instance nonce (C-11) of the sender: with the module id, the instance whose stamp this is, as in the hello"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "stamp_version"
+offset = 384
+width = 32
+type = "u32"
+meaning = "stamp version number (C-18): the version of the stamp this section belongs to, the hello's regime stamp version number"
+valid = "any 32-bit value"
+
+[[message.field]]
+name = "section_index"
+offset = 416
+width = 8
+type = "u8"
+meaning = "section index: this section's place in the stamp, counted from 0"
+valid = "0 to section count − 1"
+
+[[message.field]]
+name = "section_count"
+offset = 424
+width = 8
+type = "u8"
+meaning = "section count: how many sections make up this stamp"
+valid = "1 to 64"
+
+[[message.field]]
+name = "section_type"
+offset = 432
+width = 16
+type = "u16"
+meaning = "section type: the code of the body's layout (Regime stamp, Section type codes)"
+valid = "1 to 65535; codes not assigned in v1 are skipped by their length"
+
+[[message.field]]
+name = "section_length"
+offset = 448
+width = 16
+type = "u16"
+meaning = "section length: how many body bytes follow"
+valid = "0 to 1 194"
+
+[[message.field]]
+name = "body"
+offset = 464
+width = 8
+type = "u8"
+meaning = "body: the section's typed content, laid out by the table of its section type (004-25, 004-28, later epics)"
+valid = "section length bytes, at most 1 194"
+count = "section_length"
+max_count = 1194
+
+[[message]]
+name = "regime stamp request"
+layer = "control"
+dscp = 40
+max_size = 40
+rejection_reasons = ["TooShort", "BadMagic", "VersionMismatch", "BadLength", "UnconfiguredDomain", "ForeignDomain", "OversizeControl", "ReservedNonZero"]
+
+[[message.field]]
+name = "magic"
+offset = 0
+width = 16
+type = "u16"
+meaning = "magic 0x4d4e, the ASCII letters M and N, fixed by 004-04"
+valid = "0x4d4e only"
+
+[[message.field]]
+name = "protocol_version"
+offset = 16
+width = 16
+type = "u16"
+meaning = "protocol version, major in the high byte (bits 15..8), minor in the low byte; v1 packs 1.0 as 0x0100 (004-04)"
+valid = "major 1, any minor (Versioning, Receiver behaviour); senders write 0x0100"
+
+[[message.field]]
+name = "domain_id"
+offset = 32
+width = 16
+type = "u16"
+meaning = "domain id (C-11); 0 is the unconfigured domain"
+valid = "1 to 65535; 0 = unconfigured, ignored and counted (C-173)"
+
+[[message.field]]
+name = "message_type"
+offset = 48
+width = 8
+type = "u8"
+meaning = "message type: 37 = regime stamp request (Control message type codes)"
+valid = "37 only"
+
+[[message.field]]
+name = "authentication_scheme"
+offset = 56
+width = 8
+type = "u8"
+meaning = "authentication scheme (C-12); 0 = none in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "message_counter"
+offset = 64
+width = 64
+type = "u64"
+meaning = "message counter (C-12): live (C-115), the sender's data-plane liveness counter (Hello, Liveness counter)"
+valid = "any 64-bit value"
+
+[[message.field]]
+name = "authentication_tag"
+offset = 128
+width = 128
+type = "u128"
+meaning = "authentication tag (C-12): 128 zero bits in v1 (C-115)"
+valid = "0 only"
+
+[[message.field]]
+name = "requested_module_id"
+offset = 256
+width = 64
+type = "u64"
+meaning = "requested module id (C-11): the module whose stamp is requested"
+valid = "the receiving module's own module id"
 
 
 # The refusal reasons (ticket 004-18, C-185): the closed set of 18, values
