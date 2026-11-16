@@ -55,7 +55,8 @@
 #
 # Builds and tests are quiet (logs captured, tails printed on failure) and
 # bounded by `timeout ${CHECK_TIMEOUT:-300}` seconds each. This script needs
-# only bash, git, rustup/cargo, coreutils, awk and grep.
+# only bash, git, rustup/cargo, python3 (T1 and the example-id lookup run
+# `python3 -I`), coreutils, awk, sed and grep.
 #
 # Exit status: 0 all criteria pass, 1 otherwise (one FAIL line per failure).
 
