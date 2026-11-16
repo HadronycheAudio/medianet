@@ -65,7 +65,10 @@ mkdir -p "$TMPROOT" 2>/dev/null || TMPROOT=/tmp
 TMP="$(mktemp -d "$TMPROOT/007a-03.XXXXXX")" || { echo "FAIL  cannot create temp dir"; exit 1; }
 trap 'rm -rf "$TMP"' EXIT
 
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$TMPROOT/target/007a-03}"
+# Keyed by checkout path: cargo's artifact hashes for path packages do not
+# cover the absolute path, so two checkouts with the same layout (a worktree
+# and a scratch copy) sharing one target dir reuse each other's builds.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$TMPROOT/target/007a-03-$(printf '%s' "$REPO" | cksum | cut -d' ' -f1)}"
 export CARGO_TERM_COLOR=never
 mkdir -p "$CARGO_TARGET_DIR" 2>/dev/null || true
 
