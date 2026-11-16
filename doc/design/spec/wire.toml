@@ -394,11 +394,11 @@ meaning = "bits 7..6 of byte 64 of a per-connection health entry, above the obse
 outcome = "a non-zero bit drops the section, counted as ReservedNonZero"
 
 [[reserved]]
-name = "regime_stamp_capability_ids_9_255"
+name = "regime_stamp_capability_ids_10_255"
 message = "regime stamp capability entry (004-25)"
 width = 8
 value = "unused"
-meaning = "capability ids 9 to 255 are unused in v1: v1 senders write the ids 1 to 8; an accept-any field, so that a later ticket adds a capability as a minor change [decision]"
+meaning = "capability ids 10 to 255 are unused in v1: v1 senders write the ids 1 to 9; an accept-any field, so that a later ticket adds a capability as a minor change [decision]"
 outcome = "a v1 receiver checks the entry's state and order and otherwise ignores the entry; never a rejection"
 # The protocol version fields (ticket 004-04): see the [versioning] schema
 # documentation above. wire.md's "Versioning" section is the authority.
@@ -4622,7 +4622,7 @@ offset = 464
 width = 8
 type = "u8"
 meaning = "entry count: how many capability entries follow"
-valid = "8 to 255"
+valid = "9 to 255"
 
 [[message.field]]
 name = "capability_entries"
@@ -4646,8 +4646,8 @@ name = "capability_id"
 offset = 0
 width = 8
 type = "u8"
-meaning = "capability id: 1 real-time scheduling on the data and clock threads, 2 memory locked, 3 CPU idle states restricted (C-127), 4 control isolation (C-161), 5 drop accounting, 6 DSCP marking, 7 fault injection, 8 holder-eligible (01-architecture.md 11.1); the key, each id at most once"
-valid = "1 to 255; 1 to 8 in v1, 9 to 255 unused and accept-any"
+meaning = "capability id: 1 real-time scheduling on the data and clock threads, 2 memory locked, 3 CPU idle states restricted (C-127), 4 control isolation (C-161), 5 drop accounting, 6 DSCP marking, 7 fault injection, 8 holder-eligible (01-architecture.md 11.1), 9 bounded real-time (01-architecture.md 10.1); the key, each id at most once"
+valid = "1 to 255; 1 to 9 in v1, 10 to 255 unused and accept-any"
 
 [[message.field]]
 name = "state"
