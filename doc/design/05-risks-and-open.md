@@ -54,8 +54,11 @@ Every item has an owner that is a milestone or a verification, and a falsifier. 
 | O-20 | MTU probe pair on a real switch; batch receive behaviour; published bit-error figure | Pre-implementation (task 001), L1 (task 019) | Probe gives a false pass on a smaller hop |
 | O-21 | Commissioning tools: A proposal, trunk validation, group-E certification | Commissioning tooling (task 028) | — |
 | O-22 | Checklists: per-OS chatter and firewall, coalescing, switch QoS and burst test | Commissioning tooling (task 028) | — |
-| O-23 | Wire layouts, state-machine tables, conformance vectors | Specification drafting (tasks 004 to 007) | Does not fit device memory or the control message bound |
+| O-23 | Wire layouts, state-machine tables, conformance vectors. Epic 004's layouts are in spec/wire.md and every open sub-question of epic 004 is answered there (Close-out, Open sub-questions of the epic, ticket 004-23); its confirmations owned elsewhere are O-25 to O-27 | Specification drafting (tasks 004 to 007) | Does not fit device memory or the control message bound |
 | O-24 | Loss alarm threshold | L1 (task 019) | — |
+| O-25 | Epic 004's proposals that epic 005 confirms (ticket 004-23 keeps them open): the election message set (004-17), the admission message set (004-18), the transport role values (004-16), the re-alignment and transport reference change payloads (004-09) and the plausible timeline epoch bump rate (004-07) | Control state machines (task 005: 005-09, 005-10, 005-13, 005-14) | Epic 005's state machines need a message, field or value these proposals lack, or a bump rate faster than one every 10 minutes |
+| O-26 | Regime stamp section types beyond those the constants table names (epic 004's gap R8, open): the path MTU of each connection, the alignment regime section, the timeline epoch per record set, each module's current A | Each task that stamps state, as a minor change (tasks 006 and 013) | A state that must be stamped cannot be added as a section type of a minor version, or its sections no longer fit the 64-section stamp at the connection cap |
+| O-27 | Epic 001's report on receive timestamps and don't-fragment per OS, integrated into the per-OS notes of spec/wire.md (open, owner as stated) | Pre-implementation (task 001: 001-13, with 001-02, 001-04, 001-06, 001-09) | A supported platform has a receive-timestamp source outside the four of C-131, or a UDP socket that cannot set don't-fragment |
 
 ## Retired items
 
