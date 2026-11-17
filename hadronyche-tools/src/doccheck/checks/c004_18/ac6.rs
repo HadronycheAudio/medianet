@@ -3,20 +3,18 @@
 
 use std::collections::BTreeSet;
 
-use crate::doccheck::wp7::common::is_open_item;
-use crate::doccheck::wp7::py;
-use super::{CAMEL, Ctx, DISCOVERY};
+use super::{Ctx, DISCOVERY};
 use crate::doccheck::Report;
-
-/// 004-18's `NON_REJECTION` (with `never a miss` and `not a refusal`).
-pub(crate) const NON_REJECTION: &str = r"not\s+a\s+(?:parse\s+)?rejection|never\s+a\s+rejection|is\s+not\s+counted|cannot\s+occur|ignored|never\s+a\s+miss|not\s+a\s+refusal";
+use crate::doccheck::rejection_members::reasons::{CAMEL_REFUSAL_004_18, LOOKBACK_004_16, NON_REJECTION_004_18, named_reasons};
+use crate::doccheck::text::{has, has_i, head, rx};
+use crate::doccheck::units::clean_start;
 
 /// `classify(form)` (004-18's categories).
 pub(crate) fn classify(form: &str) -> Option<&'static str> {
     let f = form.to_lowercase();
-    let has = |p: &str| py::has(p, &f);
+    let has = |p: &str| has(p, &f);
     let refus = has("refus");
-    Some(if refus && py::has_i(r"VersionMismatch|NameTaken|ModuleCap|version\s+mismatch|name\s+taken|module\s+cap", form) {
+    Some(if refus && has_i(r"VersionMismatch|NameTaken|ModuleCap|version\s+mismatch|name\s+taken|module\s+cap", form) {
         "discovery"
     } else if refus && has(r"unknown|outside|not\s+in|not\s+a\s+(known|member|valid)") {
         "unknown_reason"
@@ -66,31 +64,18 @@ fn exact(cat: &str) -> Option<&'static str> {
 /// `named_in(outcome)`: names of either enumeration not negated in the 24
 /// characters before them.
 pub(crate) fn named_in(outcome: &str, ctx: &Ctx) -> Vec<String> {
-    let mut found = Vec::new();
-    for m in py::finditer(r"\b[A-Za-z]+\b", outcome, false) {
-        let w = m.all();
-        if !ctx.in_union(w) {
-            continue;
-        }
-        let at = py::char_index(outcome, m.start);
-        let before = py::slice(outcome, at.saturating_sub(24), at);
-        if py::has_i(r"\b(not|never|nor|no|neither)\b[^|;.]*$", before) {
-            continue;
-        }
-        found.push(w.to_string());
-    }
-    found
+    named_reasons(outcome, |w| ctx.in_union(w), LOOKBACK_004_16)
 }
 
 fn check_form(form: &str, outcome: &str, place: &str, ctx: &Ctx, seen: &mut BTreeSet<&'static str>, report: &mut Report) {
-    for h in py::finditer(r"count\s+under\s+`?([A-Za-z]+)`?", outcome, false) {
-        if !ctx.in_union(h.g(1)) {
-            report.fail("AC6", format!("{place}: the form '{}' counts under '{}', which is in neither closed enumeration", py::head(form, 50), h.g(1)));
+    for h in rx(r"count\s+under\s+`?([A-Za-z]+)`?").captures_iter(outcome) {
+        if !ctx.in_union(h.get(1).map_or("", |m| m.as_str())) {
+            report.fail("AC6", format!("{place}: the form '{}' counts under '{}', which is in neither closed enumeration", head(form, 50), h.get(1).map_or("", |m| m.as_str())));
         }
     }
-    for h in py::finditer(CAMEL, outcome, false) {
-        let name = h.all();
-        if !ctx.in_union(name) && !py::has(&format!(r"\b(not|never|nor|no)\b[^|;.]*{}", regex::escape(name)), outcome) {
+    for h in rx(CAMEL_REFUSAL_004_18).find_iter(outcome) {
+        let name = h.as_str();
+        if !ctx.in_union(name) && !has(&format!(r"\b(not|never|nor|no)\b[^|;.]*{}", regex::escape(name)), outcome) {
             report.fail("AC6", format!("{place}: the outcome names '{name}', which is in neither enumeration: no invented reason"));
         }
     }
@@ -100,18 +85,18 @@ fn check_form(form: &str, outcome: &str, place: &str, ctx: &Ctx, seen: &mut BTre
     }
     let named = named_in(outcome, ctx);
     if let Some(reason) = cat.and_then(exact)
-        && !py::has(&format!(r"\b{reason}\b"), outcome)
+        && !has(&format!(r"\b{reason}\b"), outcome)
     {
-        report.fail("AC6", format!("{place}: the form '{}' must be counted under {reason}: {}", py::head(form, 50), py::head(outcome, 70)));
+        report.fail("AC6", format!("{place}: the form '{}' must be counted under {reason}: {}", head(form, 50), head(outcome, 70)));
     }
-    if cat == Some("member") && py::has_i("32|unknown|duplicate", form) && !outcome.contains("BadMemberList") {
-        report.fail("AC6", format!("{place}: the member form '{}' must be refused with BadMemberList (C-173, C-185)", py::head(form, 50)));
+    if cat == Some("member") && has_i("32|unknown|duplicate", form) && !outcome.contains("BadMemberList") {
+        report.fail("AC6", format!("{place}: the member form '{}' must be refused with BadMemberList (C-173, C-185)", head(form, 50)));
     }
     if cat == Some("discovery") && named.iter().any(|n| DISCOVERY.contains(&n.as_str())) {
-        report.fail("AC6", format!("{place}: the form '{}' is refused with a discovery-raised reason: VersionMismatch, NameTaken and ModuleCap are never an admission refusal", py::head(form, 50)));
+        report.fail("AC6", format!("{place}: the form '{}' is refused with a discovery-raised reason: VersionMismatch, NameTaken and ModuleCap are never an admission refusal", head(form, 50)));
     }
-    if named.is_empty() && !py::has_i(NON_REJECTION, outcome) {
-        report.fail("AC6", format!("{place}: the form '{}' names no member of the closed enumerations and argues no non-rejection", py::head(form, 50)));
+    if named.is_empty() && !NON_REJECTION_004_18.is_match(outcome) {
+        report.fail("AC6", format!("{place}: the form '{}' names no member of the closed enumerations and argues no non-rejection", head(form, 50)));
     }
 }
 
@@ -139,8 +124,8 @@ pub(crate) fn forms(ctx: &Ctx, report: &mut Report) {
             report.fail("AC6", format!("no invalid form covers the '{c}' case of the ticket's list"));
         }
     }
-    let owned = ctx.ad_paras.iter().filter(|t| is_open_item(t)).any(|t| {
-        py::has_i("owner", t) && py::has(r"\b004\b", t) && py::has(r"\b005\b", t) && py::has_i("falsifier", t) && py::has_i(r"needs\s+a\s+message\s+or\s+field", t)
+    let owned = ctx.ad_paras.iter().filter(|t| rx(r"(?i)^\s*\*{0,2}\s*open\s+items?\b").is_match(&clean_start(t))).any(|t| {
+        has_i("owner", t) && has(r"\b004\b", t) && has(r"\b005\b", t) && has_i("falsifier", t) && has_i(r"needs\s+a\s+message\s+or\s+field", t)
     });
     if !owned {
         report.fail("DoD", "no paragraph starting 'Open item' in the Admission messages section names owner 004, epic 005 as the confirming owner, and the falsifier 'epic 005's admission state machine needs a message or field the set lacks'");
