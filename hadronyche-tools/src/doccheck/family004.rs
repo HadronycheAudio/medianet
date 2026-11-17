@@ -12,7 +12,9 @@
 //! M1-lib adds the other helpers every 004 script carries a copy of, each
 //! variant named: [`heading_index`], [`section_span`] ([`SpanRule`]),
 //! [`norm_name`] ([`NameNorm`]), [`width_to_bits`] ([`WidthRule`]),
-//! [`parse_int_token`], [`bit_positions`]. Each is
+//! [`parse_int_token`], [`bit_positions`], [`to_int`] ([`IntRule`]), the
+//! constants-table readers [`const_cell`], [`const_line`], [`const_int`]
+//! ([`ConstInt`]), [`md_name`], [`key_of`], [`tname`]. Each is
 //! proven against the scripts' own definitions, run by Python 3.10 and 3.13
 //! on `data/family004_corpus.txt` (`tools/gen_family004_corpus.py`; the test
 //! is `doccheck::proofs004`), which also records which script's copy is
@@ -20,7 +22,7 @@
 
 use super::markdown::{Markdown, Span};
 use super::policy::{HeadingMatch, TableRules};
-use super::pycompat::{IntError, PyStr, is_space, parse_int};
+use super::pycompat::{IntError, PyStr, is_space, parse_int, splitlines};
 use super::report::Report;
 use super::tables::{Row, Table};
 use super::text::{full, rx};
@@ -368,6 +370,135 @@ pub fn bit_positions(row_text: &str) -> Option<(i128, i128)> {
     }
     let c = rx(r"(?i)\bbit\s*(\d+)\b").captures(row_text)?;
     small(&c[1]).map(|b| (b, b))
+}
+
+/// `NUM` of 004-16, 17, 18, 24, 25, 28, 29: an integer with digit groups
+/// separated by a space or a no-break space.
+pub const NUM_004_16: &str = "(?:\\d{1,3}(?:[ \u{a0}]\\d{3})+|\\d+)";
+/// `NUM` of 004-26: also a `0x` hex literal; groups also by U+202F.
+pub const NUM_004_26: &str = "(?:0x[0-9a-fA-F]+|\\d{1,3}(?:[ \u{a0}\u{202f}]\\d{3})+|\\d+)";
+
+/// The `to_int(s)` variants of the 004 family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntRule {
+    /// 004-16, 17, 18, 24, 25, 28, 29: `int(re.sub(r"[ \xa0]", "", s))`.
+    Spaces004_16,
+    /// 004-26: stripped; `0x…` read as hex (`int(s, 16)`); else
+    /// `int(re.sub(r"[ \xa0\u202f,]", "", s))` (commas dropped too).
+    HexCommas004_26,
+}
+
+/// `to_int(s)` under `rule`: `Err(NotInt)` where Python raises
+/// `ValueError`, `Err(Overflow)` beyond `i128`.
+pub fn to_int(s: &str, rule: IntRule) -> Result<i128, IntError> {
+    match rule {
+        IntRule::Spaces004_16 => parse_int(&s.replace([' ', '\u{a0}'], "")),
+        IntRule::HexCommas004_26 => {
+            let t = s.py_strip();
+            if t.to_lowercase().starts_with("0x") {
+                let digits = &t[2..];
+                if !full("(?:_?[0-9a-fA-F])+", digits) {
+                    return Err(IntError::NotInt(s.to_string()));
+                }
+                return i128::from_str_radix(&digits.replace('_', ""), 16)
+                    .map_err(|_| IntError::Overflow(s.to_string()));
+            }
+            parse_int(&t.replace([' ', '\u{a0}', '\u{202f}', ','], ""))
+        }
+    }
+}
+
+/// The third cell (`Value`) of the constants row `| cid |`, stripped, or
+/// `""`: `const_val(cid)` of 004-16, 17, 18, 24, 26 and `const_row(cid)` of
+/// 004-25, 28, 29 (the same function).
+pub fn const_cell(text: &str, cid: &str) -> String {
+    let lead = format!("| {cid} |");
+    splitlines(text)
+        .into_iter()
+        .find(|l| l.starts_with(&lead))
+        .map(|l| l.split('|').nth(3).map_or("", |c| c.py_strip()).to_string())
+        .unwrap_or_default()
+}
+
+/// The whole constants row `| cid |`, or `""`: `const_row(cid)` of 004-19
+/// and 004-20.
+pub fn const_line(text: &str, cid: &str) -> String {
+    let lead = format!("| {cid} |");
+    splitlines(text)
+        .into_iter()
+        .find(|l| l.starts_with(&lead))
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// The `const_int(cid, pattern)` variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConstInt {
+    /// 004-16, 17, 18: `re.search(pattern, const_val(cid), re.I)`, group 1
+    /// read by [`to_int`] ([`IntRule::Spaces004_16`]).
+    AnyCase004_16,
+    /// 004-28, 004-29: `re.search(pattern, const_row(cid))` (case-sensitive),
+    /// group 1 read by plain `int()` (a digit group with a space raises).
+    Exact004_28,
+}
+
+/// `const_int(cid, pattern)` under `rule`: `Ok(None)` when the pattern does
+/// not match, `Err` where Python raises.
+pub fn const_int(
+    text: &str,
+    cid: &str,
+    pattern: &str,
+    rule: ConstInt,
+) -> Result<Option<i128>, IntError> {
+    let cell = const_cell(text, cid);
+    let re = match rule {
+        ConstInt::AnyCase004_16 => rx(&format!("(?i){pattern}")),
+        ConstInt::Exact004_28 => rx(pattern),
+    };
+    let Some(c) = re.captures(&cell) else {
+        return Ok(None);
+    };
+    let group = c.get(1).map_or("", |m| m.as_str());
+    match rule {
+        ConstInt::AnyCase004_16 => to_int(group, IntRule::Spaces004_16).map(Some),
+        ConstInt::Exact004_28 => parse_int(group).map(Some),
+    }
+}
+
+/// `md_name(meaning)` of 004-16 to 004-18: the leading run of letters and
+/// spaces of a Meaning cell (ending on a letter), or the cell itself.
+pub fn md_name(meaning: &str) -> &str {
+    rx(r"^\s*([A-Za-z][A-Za-z ]*[A-Za-z]|[A-Za-z])")
+        .captures(meaning)
+        .and_then(|c| c.get(1))
+        .map_or(meaning, |m| m.as_str())
+}
+
+/// `KEY_RULES` of 004-16 to 004-18, in order.
+pub const KEY_RULES_004_16: [(&str, &str); 7] = [
+    ("magic", r"^magic"),
+    ("version", r"^(protocol\s+)?version"),
+    ("domain", r"^domain"),
+    ("type", r"^message\s+type"),
+    ("scheme", r"^(authentication\s+)?scheme"),
+    ("counter", r"^(message\s+)?counter"),
+    ("tag", r"^(authentication\s+)?tag"),
+];
+
+/// `key_of(meaning)` of 004-16 to 004-18: the first [`KEY_RULES_004_16`] key
+/// whose pattern matches the lower-cased Meaning after `clean_start`.
+pub fn key_of(meaning: &str) -> Option<&'static str> {
+    let m = super::units::clean_start(meaning).to_lowercase();
+    KEY_RULES_004_16
+        .iter()
+        .find(|(_, r)| rx(r).is_match(&m))
+        .map(|(k, _)| *k)
+}
+
+/// `tname(text)` of 004-17, 004-18: [`NameNorm::Spaced004_16`] without a
+/// trailing "message(s)".
+pub fn tname(text: &str) -> String {
+    rx(r"\s+messages?$").replace(&norm_name(text, NameNorm::Spaced004_16), "")
 }
 
 /// A document and the constants table, as the family reads them.

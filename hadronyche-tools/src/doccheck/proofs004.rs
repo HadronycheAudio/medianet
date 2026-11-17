@@ -16,8 +16,9 @@ use super::evidence::{
     subsections_with_table_untagged, untagged, untagged_lines, untagged_tables,
 };
 use super::family004::{
-    NameNorm, SpanRule, WidthRule, bit_positions, heading_index, norm_name, parse_int_token,
-    section_span, subsections, tables, width_to_bits,
+    ConstInt, IntRule, NameNorm, SpanRule, WidthRule, bit_positions, const_cell, const_int,
+    const_line, heading_index, key_of, md_name, norm_name, parse_int_token, section_span,
+    subsections, tables, tname, to_int, width_to_bits,
 };
 use super::items::{OpenItemPolicy, item_is_owned, open_items};
 use super::negation::{Lookback, negated};
@@ -180,6 +181,40 @@ fn opt_span(x: Option<(usize, usize)>) -> J {
 
 fn lvl(l: Option<usize>) -> J {
     l.map_or(J::N, int)
+}
+
+const CIDS: [&str; 8] = [
+    "C-01", "C-06", "C-17", "C-100", "C-13", "C-999", "C-1", "C-02",
+];
+
+fn int_or_raise(r: Result<i128, super::pycompat::IntError>) -> J {
+    match r {
+        Ok(n) => J::I(n),
+        Err(super::pycompat::IntError::NotInt(_)) => s("raises:ValueError"),
+        Err(e) => s(&format!("OVERFLOW {e}")),
+    }
+}
+
+fn const_ints(t: &str, rule: ConstInt) -> J {
+    let num = super::family004::NUM_004_16;
+    let pats = [
+        ("C-06", format!(r"({num})\s*bytes")),
+        ("C-17", format!("({num})")),
+        ("C-01", r"(\d[\d ]*)\s*hz".to_string()),
+        ("C-02", r"(\d+)\s*frames".to_string()),
+        ("C-999", r"(\d+)".to_string()),
+        ("C-13", "([0-9 ]+)".to_string()),
+        ("C-01", format!("({num}) Hz")),
+    ];
+    J::L(
+        pats.iter()
+            .map(|(c, p)| match const_int(t, c, p, rule) {
+                Ok(Some(n)) => J::I(n),
+                Ok(None) => J::N,
+                Err(e) => int_or_raise(Err(e)),
+            })
+            .collect(),
+    )
 }
 
 const PATTERNS: [&str; 8] = [
@@ -402,6 +437,30 @@ fn library(helper: &str, variant: &str, t: &str) -> J {
 /// items, look-backs).
 fn rules(helper: &str, variant: &str, t: &str, lines: &[&str]) -> J {
     match (helper, variant) {
+        ("const_val", _) | ("const_row", _) => strs(&CIDS.map(|c| const_cell(t, c))),
+        ("const_row_line", _) => strs(&CIDS.map(|c| const_line(t, c))),
+        ("const_int", "004-16") => const_ints(t, ConstInt::AnyCase004_16),
+        ("const_int", "004-28") => const_ints(t, ConstInt::Exact004_28),
+        ("to_int", "004-16") => J::L(
+            table_cells(t)
+                .iter()
+                .map(|c| int_or_raise(to_int(c, IntRule::Spaces004_16)))
+                .collect(),
+        ),
+        ("to_int", "004-26") => J::L(
+            table_cells(t)
+                .iter()
+                .map(|c| int_or_raise(to_int(c, IntRule::HexCommas004_26)))
+                .collect(),
+        ),
+        ("md_name", _) => J::L(table_cells(t).iter().map(|c| s(md_name(c))).collect()),
+        ("key_of", _) => J::L(
+            table_cells(t)
+                .iter()
+                .map(|c| key_of(c).map_or(J::N, s))
+                .collect(),
+        ),
+        ("tname", _) => per_line(t, tname),
         ("parse_int_token", _) => J::L(
             lines
                 .iter()

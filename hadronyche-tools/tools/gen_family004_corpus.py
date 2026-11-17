@@ -74,6 +74,7 @@ SYNTH = [
     "## Path-MTU probe pair\n### Path-MTU probe request\nRequest text. `[standard]`\n### Path-MTU probe reply\nReply text.\n## Regime stamp\n### Section types\ntext",
     "| Invalid form | Outcome |\n|---|---|\n| short | drop and count under TooShort |\n| bad magic | count under BadMagic |\n\n| Further rule | Result | Outcome |\n|---|---|---|\n| r1 | x | ignored |\n\n| Case | Notes |\n|---|---|\n| c | n |",
     "bits 7..6 | bit 3 | Bits 9..2 | bit 8 | BIT 0 | bits 3 .. 5 | bit12 | 2bit 7 | 99999999999999999999999999999999999999999 bit 1\n1 2_3 4 | _5 | x 0 y",
+    "| C-06 | Fallback | 1 280 bytes | decided |\n| C-17 | Max | 0x1F, 1,000 | x |\n| C-13 | n | 12 34 | y |\n| x | 0x_1f | +5 | -0x2 | 0xg | 1_000 | 1__0 | ٣ |\n| C-1 | short |\n| C-02 |\n| Magic number | Protocol version | Domain id | Message type | Authentication scheme | Counter | Authentication tag | 2nd thing | x9 y |\n| `**Magic**` | > tag |",
     "Width cells: 2 | 2 bytes | 16 bits | 6 bits 2 bytes | 1 byte | bits | 1 2 | 1_000 bits | 4 × max 12 | 3 BITS",
     "Name_With-Mixed  Case\tand_underscores\n  leading and trailing  \nµs² Δ — dash – en",
     "Text with `code [decision]` span and [CODE] upper-case tag.\n\n[measured] first word tag only\n\nfive words without any tag",
@@ -176,6 +177,38 @@ def namespace(src):
 
 
 # --- inputs -------------------------------------------------------------------
+
+CIDS = ["C-01", "C-06", "C-17", "C-100", "C-13", "C-999", "C-1", "C-02"]
+NUM_16 = r"(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)"
+CINT = [("C-06", r"(" + NUM_16 + r")\s*bytes"), ("C-17", r"(" + NUM_16 + r")"), ("C-01", r"(\d[\d ]*)\s*hz"),
+        ("C-02", r"(\d+)\s*frames"), ("C-999", r"(\d+)"), ("C-13", r"([0-9 ]+)"), ("C-01", r"(" + NUM_16 + r") Hz")]
+
+
+def const_excerpts(consts):
+    rows = [l for l in consts.splitlines() if l.startswith("| C-")]
+    return [("constants rows 1-40", "\n".join(rows[:40])), ("constants rows 80-120", "\n".join(rows[80:120]))]
+
+
+def per_item(f, items):
+    out = []
+    for it in items:
+        try:
+            out.append(f(it))
+        except ValueError as e:
+            out.append("raises:ValueError")
+    return out
+
+
+def const_cells(ns, t, var):
+    ns[var] = t
+    f = ns["const_val"] if "const_val" in ns else ns["const_row"]
+    return [f(c) for c in CIDS]
+
+
+def const_ints(ns, t, var):
+    ns[var] = t
+    return per_item(lambda ci: ns["const_int"](*ci), CINT)
+
 
 def excerpts(wire):
     lines = wire.splitlines()
@@ -516,6 +549,16 @@ HELPERS = [
     ("norm", "004-24", per_line(lambda ns, l: ns["norm"](l))),
     ("width_to_bits", "004-06", lambda ns, t: [ns["width_to_bits"](c) for c in cells(ns, t)]),
     ("width_to_bits", "004-20", lambda ns, t: [ns["width_to_bits"](c) for c in cells(ns, t)]),
+    ("const_val", "004-16", lambda ns, t: const_cells(ns, t, "CONST_TEXT")),
+    ("const_row", "004-25", lambda ns, t: const_cells(ns, t, "CONST")),
+    ("const_row_line", "004-19", lambda ns, t: const_cells(ns, t, "CONST_TEXT")),
+    ("const_int", "004-16", lambda ns, t: const_ints(ns, t, "CONST_TEXT")),
+    ("const_int", "004-28", lambda ns, t: const_ints(ns, t, "CONST")),
+    ("to_int", "004-16", lambda ns, t: per_item(ns["to_int"], cells(ns, t))),
+    ("to_int", "004-26", lambda ns, t: per_item(ns["to_int"], cells(ns, t))),
+    ("md_name", "004-16", lambda ns, t: [ns["md_name"](c) for c in cells(ns, t)]),
+    ("key_of", "004-16", lambda ns, t: [ns["key_of"](c) for c in cells(ns, t)]),
+    ("tname", "004-17", per_line(lambda ns, l: ns["tname"](l))),
     ("parse_int_token", "004-06", per_line(lambda ns, l: ns["parse_int_token"](l))),
     ("bit_positions", "004-06", per_line(lambda ns, l: ns["bit_positions"](l))),
     ("sentences", "004-20", lambda ns, t: ns["sentences"](t)),
@@ -585,6 +628,8 @@ def worker(commit):
         for i, op in enumerate(mutations(text, 1000 + k)):
             lines = apply_op(lines, op)
             inputs.append([f"{base}m{i}", "mutation", base, op, "\n".join(lines)])
+    for k, (name, text) in enumerate(const_excerpts(git_show(commit, "doc/design/02-constants.md"))):
+        inputs.append([f"c{k:02}", "excerpt", name, text])
     for k, text in enumerate(SYNTH):
         inputs.append([f"s{k:02}", "synthetic", text])
     for inp in inputs:
