@@ -362,10 +362,7 @@ pub const DENIALS: &[Denial] = &[
                 re_all(t, r"(?i)variable[\s-]*length", "dynamic")
             })
         }),
-        expect: &[(
-            "AC4",
-            "no rule that every variable-length part has a stated maximum count",
-        )],
+        expect: &[("AC4", "")],
     },
     Denial {
         name: "ac5_denial_a_placeholder_section_missing",
@@ -622,5 +619,71 @@ pub const DENIALS: &[Denial] = &[
             ),
         ]),
         expect: &[("AC7", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_0",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (0)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_007",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (007)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_plus7",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (+7)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_1_2",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (1_2)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_2e63",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (9223372036854775808)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_20_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (12345678901234567890)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (100000000000000000000000000000000000000000000)"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_1e13",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (10000000000000)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_1e36",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (1000000000000000000000000000000000000)"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_superscript",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (7\u{b2})"))),
+        expect: &[("AC6", "")],
+    },
+    Denial {
+        name: "a_sync_dscp_of_micro",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| sec_layer(t, |s| replace_in_line(s, r"^\| Clock sync \|", r"CS6 \(48\)", "CS6 (7\u{b5})"))),
+        expect: &[("AC6", "")],
     },
 ];

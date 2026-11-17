@@ -80,6 +80,17 @@ fn red_phase_tree_fails_every_criterion() {
 
 hadronyche_tools::denial_tests!(
     SPEC;
+    a_sync_dscp_of_0,
+    a_sync_dscp_of_007,
+    a_sync_dscp_of_plus7,
+    a_sync_dscp_of_1_2,
+    a_sync_dscp_of_2e63,
+    a_sync_dscp_of_20_digits,
+    a_sync_dscp_of_45_digits,
+    a_sync_dscp_of_1e13,
+    a_sync_dscp_of_1e36,
+    a_sync_dscp_of_superscript,
+    a_sync_dscp_of_micro,
     ac7_denial_an_id_without_a_value,
     denial_wire_md_missing,
     ac1_denial_no_byte_order_heading,

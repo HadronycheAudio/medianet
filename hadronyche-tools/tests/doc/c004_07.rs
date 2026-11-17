@@ -75,6 +75,17 @@ fn red_phase_tree_fails() {
 
 hadronyche_tools::denial_tests!(
     SPEC;
+    an_interval_of_0,
+    an_interval_of_007,
+    an_interval_of_plus7,
+    an_interval_of_1_2,
+    an_interval_of_2e63,
+    an_interval_of_20_digits,
+    an_interval_of_45_digits,
+    an_interval_of_1e13,
+    an_interval_of_1e36,
+    an_interval_of_superscript,
+    an_interval_of_micro,
     denial_wire_md_missing,
     denial_no_analysis_section,
     denial_the_placeholder,

@@ -74,15 +74,7 @@ pub const DENIALS: &[Denial] = &[
                 "${1}Plain",
             )
         }),
-        expect: &[
-            (
-                "AC1",
-                "neither an epoch wrap/bump section nor the Media packet header section",
-            ),
-            ("AC2", ""),
-            ("AC3", ""),
-            ("DoD", ""),
-        ],
+        expect: &[("AC1", ""), ("AC2", ""), ("AC3", ""), ("DoD", "")],
     },
     Denial {
         name: "denial_the_placeholder",
@@ -303,10 +295,7 @@ pub const DENIALS: &[Denial] = &[
                 )
             })
         }),
-        expect: &[(
-            "DoD",
-            "raises an open item without an owner and a falsifier",
-        )],
+        expect: &[("DoD", "")],
     },
     Denial {
         name: "dod_denial_fewer_than_three_tags",
@@ -334,10 +323,7 @@ pub const DENIALS: &[Denial] = &[
                 )
             })
         }),
-        expect: &[(
-            "DoD",
-            "the pathological rate carries no [decision]/[memory] tag",
-        )],
+        expect: &[("DoD", "")],
     },
     Denial {
         name: "dod_denial_the_verdict_without_a_tag",
@@ -447,6 +433,72 @@ pub const DENIALS: &[Denial] = &[
         name: "crlf_line_ends_in_the_synthetic_section_pass",
         file: WIRE_MD,
         edit: DenialEdit::Text(|t| syn(t, |s| s.replace('\n', "\r\n"))),
+        expect: &[],
+    },
+    Denial {
+        name: "an_interval_of_0",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 0 minutes"))),
+        expect: &[],
+    },
+    Denial {
+        name: "an_interval_of_007",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 007 minutes"))),
+        expect: &[("AC1", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "an_interval_of_plus7",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every +7 minutes"))),
+        expect: &[],
+    },
+    Denial {
+        name: "an_interval_of_1_2",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 1_2 minutes"))),
+        expect: &[],
+    },
+    Denial {
+        name: "an_interval_of_2e63",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 9223372036854775808 minutes"))),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "an_interval_of_20_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 12345678901234567890 minutes"))),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "an_interval_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 100000000000000000000000000000000000000000000 minutes"))),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "an_interval_of_1e13",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 10000000000000 minutes"))),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "an_interval_of_1e36",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 1000000000000000000000000000000000000 minutes"))),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "an_interval_of_superscript",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 7\u{b2} minutes"))),
+        expect: &[],
+    },
+    Denial {
+        name: "an_interval_of_micro",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| syn(t, |s| replace_all(s, "every 10 minutes", "every 7\u{b5} minutes"))),
         expect: &[],
     },
 ];

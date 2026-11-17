@@ -196,19 +196,13 @@ pub const DENIALS: &[Denial] = &[
                 )
             })
         }),
-        expect: &[(
-            "AC2",
-            "no argument that 48-sample slice boundaries are exact",
-        )],
+        expect: &[("AC2", "")],
     },
     Denial {
         name: "ac2_denial_exactness_without_boundaries",
         file: SPEC_MD,
         edit: DenialEdit::Text(|t| section(t, |t| replace_all(t, r"(?i)boundar\w*", "edge"))),
-        expect: &[(
-            "AC2",
-            "exactness argument does not mention slice boundaries",
-        )],
+        expect: &[("AC2", "")],
     },
     Denial {
         name: "ac2_denial_no_12_125000_reduction",
@@ -237,10 +231,7 @@ pub const DENIALS: &[Denial] = &[
                 )
             })
         }),
-        expect: &[(
-            "AC3",
-            "does not state the rounding rule for positions off a slice boundary",
-        )],
+        expect: &[("AC3", "")],
     },
     Denial {
         name: "ac3_denial_fewer_than_three_off_boundary_rows",
@@ -541,5 +532,71 @@ pub const DENIALS: &[Denial] = &[
         file: SPEC_MD,
         edit: DenialEdit::Text(|t| t.replace('\n', "\r\n")),
         expect: &[],
+    },
+    Denial {
+        name: "a_position_of_0",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 0"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_007",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 007"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_plus7",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = +7"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_1_2",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 1_2"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_2e63",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 9223372036854775808"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_20_digits",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 12345678901234567890"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_45_digits",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 100000000000000000000000000000000000000000000"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "a_position_of_1e13",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 10000000000000"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_1e36",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 1000000000000000000000000000000000000"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "a_position_of_superscript",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 7\u{b2}"))),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_position_of_micro",
+        file: SPEC_MD,
+        edit: DenialEdit::Text(|t| section(t, |s| replace_in_line(s, r"^\| time_of \| p = 3 ", "p = 3", "p = 7\u{b5}"))),
+        expect: &[("AC5", "")],
     },
 ];

@@ -84,6 +84,17 @@ fn red_phase_tree_fails() {
 
 hadronyche_tools::denial_tests!(
     SPEC;
+    a_position_of_0,
+    a_position_of_007,
+    a_position_of_plus7,
+    a_position_of_1_2,
+    a_position_of_2e63,
+    a_position_of_20_digits,
+    a_position_of_45_digits,
+    a_position_of_1e13,
+    a_position_of_1e36,
+    a_position_of_superscript,
+    a_position_of_micro,
     denial_timeline_missing,
     denial_no_heading,
     heading_is_case_sensitive,
