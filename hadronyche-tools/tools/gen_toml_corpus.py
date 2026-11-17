@@ -181,6 +181,11 @@ SNIPPETS = [
     ("line: unicode key", '[t]\n\u00b5 = "\u00b5s"\n'),
     ("line: duplicate table replaced", '[t]\na = 1\n[t]\nb = 2\n'),
     ("line: single-bracket message", '[message]\nname = "x"\n'),
+    ("line: bad array before any table", 'a = [040]\n[t]\nb = 1\n'),
+    ("line: unit separator around a value", '[t]\na = \x1f5\x1f\nb = "x"\x1f\n'),
+    ("line: unit separator around a header", '\x1f[t]\x1f\na = 1\n'),
+    ("line: int64 edge", '[t]\na = 9223372036854775807\nb = 9223372036854775808\nc = [9223372036854775808]\n'),
+    ("line: message keys order", '[[message]]\nlayer = "control"\nname = "a"\n'),
 ]
 
 FACTS = r'''

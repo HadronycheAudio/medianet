@@ -28,6 +28,10 @@ pub const KNOWN_DIFFERENCES: &[(&str, &str)] = &[
         "line: 4300 digits",
         "the same, at the longest decimal int Python converts.",
     ),
+    (
+        "line: int64 edge",
+        "the same, at 2^63 in a table and an array.",
+    ),
 ];
 
 /// A TOML value as `tomllib` returns it to Python.
