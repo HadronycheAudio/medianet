@@ -109,7 +109,15 @@ pub fn check_denial(spec: &CheckSpec, name: &str) {
 /// Panics unless the tested names and the spec's denial list are the same
 /// set (no denial without a test, no test of a removed denial).
 pub fn assert_all_denials_tested(spec: &CheckSpec, tested: &[&str]) {
-    let listed: std::collections::BTreeSet<&str> = spec.denials.iter().map(|d| d.name).collect();
+    let mut names: Vec<&str> = spec.denials.iter().map(|d| d.name).collect();
+    names.sort_unstable();
+    let dup: Vec<_> = names
+        .windows(2)
+        .filter(|w| w[0] == w[1])
+        .map(|w| w[0])
+        .collect();
+    assert!(dup.is_empty(), "{}: denials listed twice {dup:?}", spec.id);
+    let listed: std::collections::BTreeSet<&str> = names.iter().copied().collect();
     let tested: std::collections::BTreeSet<&str> = tested.iter().copied().collect();
     let untested: Vec<_> = listed.difference(&tested).collect();
     let unknown: Vec<_> = tested.difference(&listed).collect();
@@ -120,72 +128,40 @@ pub fn assert_all_denials_tested(spec: &CheckSpec, tested: &[&str]) {
     );
 }
 
-/// Panics unless every denial that expects `REGEX_LIMIT` (a backtracking
-/// input: seconds per test in a debug build) is listed in `slow`.
-pub fn assert_slow_denials_listed(spec: &CheckSpec, slow: &[&str]) {
-    let missing: Vec<&str> = spec
-        .denials
-        .iter()
-        .filter(|d| d.criteria().contains(crate::doccheck::docs::REGEX_LIMIT))
-        .map(|d| d.name)
-        .filter(|n| !slow.contains(n))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "{}: backtracking denials not in the `slow:` list of denial_tests! {missing:?}",
-        spec.id
-    );
-}
-
-/// The reason a slow denial test is ignored by the default run.
-pub const SLOW: &str = "slow denial (backtracking): run in release by CI's \
-     'Slow denials' step and the per-change suite: cargo test --release -p hadronyche-tools --test 'doc_*' -- --ignored";
-
 /// One `#[test]` per denial of a check, plus a test that the list and the
-/// tests agree. Denials after `; slow:` (every one that expects
-/// `REGEX_LIMIT`, and any other that takes seconds in a debug build) are
-/// `#[ignore]`d in the default `cargo test` and run in release by CI's
-/// "Slow denials" step and the per-change suite (`-- --ignored`):
+/// tests agree one to one.
+///
+/// Every denial test is ignored in a debug build and runs in a release
+/// build (`#[cfg_attr(debug_assertions, ignore)]`): the default debug
+/// `cargo test` keeps the criterion, red-phase and library tests; the
+/// release step `cargo test --release -p hadronyche-tools --test doc` runs
+/// every denial, exactly once. A denial is never skipped: the agreement
+/// test runs in both builds and fails on a denial without a test or a test
+/// without a denial. A `slow:` list (backtracking inputs) is accepted and
+/// runs in the same release step.
 ///
 /// ```ignore
-/// hadronyche_tools::denial_tests!(c004_27::SPEC; ac1_denial_no_probe_section, ac3_denial_fewer_than_four_forms; slow: review_r3_026_x);
+/// hadronyche_tools::denial_tests!(c004_27::SPEC; ac1_denial_no_probe_section, ac3_denial_fewer_than_four_forms);
 /// ```
 #[macro_export]
 macro_rules! denial_tests {
     ($spec:path; $($name:ident),+ $(,)? ; slow: $($slow:ident),+ $(,)?) => {
-        $(
-            #[test]
-            fn $name() {
-                $crate::doccheck::testing::check_denial(&$spec, stringify!($name));
-            }
-        )+
-        $(
-            #[test]
-            #[ignore = "slow denial (backtracking): cargo test --release -p hadronyche-tools --test 'doc_*' -- --ignored"]
-            fn $slow() {
-                $crate::doccheck::testing::check_denial(&$spec, stringify!($slow));
-            }
-        )+
-        #[test]
-        fn every_denial_of_the_list_has_a_test() {
-            $crate::doccheck::testing::assert_all_denials_tested(
-                &$spec,
-                &[$(stringify!($name)),+ , $(stringify!($slow)),+],
-            );
-            $crate::doccheck::testing::assert_slow_denials_listed(&$spec, &[$(stringify!($slow)),+]);
-        }
+        $crate::denial_tests!($spec; $($name),+ , $($slow),+);
     };
     ($spec:path; $($name:ident),+ $(,)?) => {
         $(
             #[test]
+            #[cfg_attr(
+                debug_assertions,
+                ignore = "denial: run by the release step (cargo test --release -p hadronyche-tools --test doc)"
+            )]
             fn $name() {
                 $crate::doccheck::testing::check_denial(&$spec, stringify!($name));
             }
         )+
         #[test]
-        fn every_denial_of_the_list_has_a_test() {
+        fn every_denial_of_the_list_has_exactly_one_test() {
             $crate::doccheck::testing::assert_all_denials_tested(&$spec, &[$(stringify!($name)),+]);
-            $crate::doccheck::testing::assert_slow_denials_listed(&$spec, &[]);
         }
     };
 }
@@ -305,8 +281,10 @@ mod source_rules {
 
     fn own_module(path: &Path) -> Option<String> {
         let s = path.to_string_lossy();
-        let r = regex::Regex::new(r"checks/(c\d+_\d+[a-z]?)|tests/doc_(\d+)_(\d+[a-z]?)\.rs")
-            .expect("pattern");
+        let r = regex::Regex::new(
+            r"(?:checks|tests/doc)/(c\d+_\d+[a-z]?)|tests/doc_(\d+)_(\d+[a-z]?)\.rs",
+        )
+        .expect("pattern");
         let c = r.captures(&s)?;
         Some(c.get(1).map_or_else(
             || format!("c{}_{}", &c[2], &c[3]),
@@ -515,12 +493,9 @@ mod source_rules {
         let mut checks = Vec::new();
         files(&root.join("src/doccheck/checks"), &mut checks);
         checks.retain(|p| own_module(p).is_some());
-        let tests: Vec<PathBuf> = std::fs::read_dir(root.join("tests"))
-            .expect("tests/")
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| own_module(p).is_some())
-            .collect();
+        let mut tests = Vec::new();
+        files(&root.join("tests"), &mut tests);
+        tests.retain(|p| own_module(p).is_some());
         assert!(
             checks.len() >= 2 && tests.len() >= 2,
             "the scan found no port"

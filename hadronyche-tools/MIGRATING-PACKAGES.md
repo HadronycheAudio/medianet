@@ -44,8 +44,15 @@ deletes its private layer, applies the mapping below, and reruns
 6. **State and threads.** A check module may not hold any of: `static`,
    `OnceLock`, `LazyLock`, `thread_local!`, `Mutex`, threads (source test
    and clippy).
-7. **Denials.** Any denial expecting `REGEX_LIMIT` is listed after
-   `; slow:` in `denial_tests!`.
+7. **Test files.** Move each check's test file `tests/doc_<id>.rs` to
+   `tests/doc/c<id>.rs`, unchanged. It becomes one module of the single
+   test binary `tests/doc.rs`; `build.rs` lists the modules, so no shared
+   file is edited.
+   - Denial tests run in the release step (`cargo test --release -p
+     hadronyche-tools --test doc`); the debug `cargo test` ignores them.
+   - Write CI and suite filters with `--test doc`, not `--test 'doc_*'`.
+   - A `slow:` list in `denial_tests!` is optional: every denial runs in
+     the release step.
 8. **No module is named after a work package**, and no port imports
    another (with any prefix: `super::c004_14::` included).
 9. **`CheckSpec` has a new required field, `fail_reader`.**
@@ -63,6 +70,7 @@ deletes its private layer, applies the mapping below, and reruns
 
 | Private item | Library item |
 |---|---|
+| `tests/doc_004_16.rs`, `tests/doc_004_17.rs`, `tests/doc_004_18.rs`, `tests/doc_004_19.rs`, `tests/doc_004_20.rs` | `tests/doc/c004_NN.rs` (same content; one module of `tests/doc.rs`) |
 | `doccheck::wp7::pytoml::parse`, `PyVal`, `PyDict` | `tomlsubset::parse` → `pyvalue::Dict` / `PyValue` |
 | `Fail::Error` / `Fail::Crash` | an `Err` whose type prefix is `TomlError:` / any other type prefix |
 | `HUGE` clamping (10^36) | `PyValue::BigInt` → `INT_LIMIT` when read as an int |
@@ -130,6 +138,7 @@ from the branch; the library has both.
 
 | Private item | Library item |
 |---|---|
+| `tests/doc_004_24.rs`, `tests/doc_004_25.rs`, `tests/doc_004_26.rs`, `tests/doc_004_28.rs`, `tests/doc_004_29.rs` | `tests/doc/c004_NN.rs` (same content; one module of `tests/doc.rs`) |
 | `c004_24::pytoml::parse_toml`, `toml::Value` | `tomlsubset::parse` → `PyValue` (big ints become `BigInt`, not `Float`) |
 | its single `Err(String)` | the `Err`'s type prefix decides crash versus caught, as each script's `except` names it |
 | `py_iter`, `dicts`, `tables_strict`, `names`, `eq_int`, `as_int` | `PyValue::{py_iter_str, py_dicts, eq_int, py_int}` |
@@ -203,6 +212,7 @@ Not taken:
 
 | Private item | Library item |
 |---|---|
+| `tests/doc_004_01.rs` … `tests/doc_006_02.rs` | `tests/doc/c004_01.rs` … `tests/doc/c006_02.rs` (same content; one module of `tests/doc.rs`) |
 | `c004_14::pytoml::parse(src, Flavor::Budget)` | `tomlline::parse(src, Variant::V004_14)` (`TomlReader::Line004_14`) |
 | `Flavor::Capacity` (004-15) | `Variant::V004_15` (`TomlReader::Line004_15`) |
 | `Parsed{messages, others}` | `tomlline::Doc{messages, others}`; a message is the Python dict itself (`"name"` starts as `Value::None`, `"fields"` is a `Value::List` of `Value::Dict`) |
@@ -270,6 +280,7 @@ Not taken:
 
 | Private item | Library item |
 |---|---|
+| `tests/doc_004_06.rs`, `tests/doc_004_08.rs`, `tests/doc_004_09.rs`, `tests/doc_004_10.rs` | `tests/doc/c004_NN.rs` (same content; one module of `tests/doc.rs`) |
 | `checks/wp5/pytoml::parse`, `Value`, `Dict`, `Value::Int(Big)` | `tomlsubset::parse` → `PyValue` / `Dict`, `PyValue::Int` / `BigInt` |
 | `Fail` | as wp7 (the `Err`'s type prefix) |
 | `big::Big` | `i128` plus `INT_LIMIT` (red by rule beyond `i128`) |

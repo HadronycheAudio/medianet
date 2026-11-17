@@ -1,6 +1,6 @@
 //! The denial list of 004-22: the real documents with one edit, and what
 //! the port (and the old script) must report. Consumed by
-//! `tests/doc_004_22.rs` (one test each) and by `doccheck-equiv 004-22
+//! `tests/doc/c004_22.rs` (one test each) and by `doccheck-equiv 004-22
 //! --denials`. The last two are the review's port-weaker findings 1a and 1b
 //! (PR #42, round 1).
 
