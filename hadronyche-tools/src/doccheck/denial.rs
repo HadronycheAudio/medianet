@@ -22,6 +22,19 @@ pub enum DenialEdit {
     Text(fn(&str) -> String),
     /// Delete the file.
     Delete,
+    /// Edit several documents together (a multi-file denial): each
+    /// `(path, edit)` applies in order; [`Denial::file`] names the first,
+    /// for messages only. Nested `Files` are not allowed.
+    Files(&'static [(&'static str, FileEdit)]),
+}
+
+/// One file's edit inside [`DenialEdit::Files`].
+#[derive(Debug, Clone, Copy)]
+pub enum FileEdit {
+    /// Replace the file's text by `f(text)`.
+    Text(fn(&str) -> String),
+    /// Delete the file.
+    Delete,
 }
 
 /// One denial.
@@ -43,31 +56,64 @@ pub struct Denial {
 }
 
 impl Denial {
-    /// `docs` with the denial applied; `Err` when the file to edit is
+    /// `docs` with the denial applied; `Err` when a file to edit is
     /// missing (a stale denial must fail, not pass vacuously).
     pub fn apply(&self, docs: &Docs) -> Result<Docs, String> {
+        let mut out = docs.clone();
+        for (path, text) in self.edits(docs)? {
+            out = match text {
+                Some(t) => out.with(&path, t),
+                None => out.without(&path),
+            };
+        }
+        Ok(out)
+    }
+
+    /// Every file the denial changes, with its new text (`None`: deleted),
+    /// in order. A later edit of the same file sees the earlier one.
+    pub fn edits(&self, docs: &Docs) -> Result<Vec<(String, Option<String>)>, String> {
+        let single = [(self.file, self.file_edit())];
+        let list: &[(&str, FileEdit)] = match self.edit {
+            DenialEdit::Files(list) => list,
+            _ => &single,
+        };
+        let mut cur = docs.clone();
+        let mut out: Vec<(String, Option<String>)> = Vec::new();
+        for (path, edit) in list {
+            let text = match edit {
+                FileEdit::Delete => None,
+                FileEdit::Text(f) => {
+                    let t = cur
+                        .read(path)
+                        .ok_or_else(|| format!("denial {}: {path} does not exist", self.name))?;
+                    Some(f(&t))
+                }
+            };
+            cur = match &text {
+                Some(t) => cur.with(path, t.clone()),
+                None => cur.without(path),
+            };
+            out.retain(|(p, _)| p != path);
+            out.push((path.to_string(), text));
+        }
+        Ok(out)
+    }
+
+    fn file_edit(&self) -> FileEdit {
         match self.edit {
-            DenialEdit::Delete => Ok(docs.without(self.file)),
-            DenialEdit::Text(f) => {
-                let text = docs
-                    .read(self.file)
-                    .ok_or_else(|| format!("denial {}: {} does not exist", self.name, self.file))?;
-                Ok(docs.with(self.file, f(&text)))
-            }
+            DenialEdit::Text(f) => FileEdit::Text(f),
+            _ => FileEdit::Delete,
         }
     }
 
-    /// The edited text of the file (`None` for a deletion).
+    /// The edited text of [`Denial::file`] (`None` for a deletion); for a
+    /// multi-file denial use [`Denial::edits`].
     pub fn edited(&self, docs: &Docs) -> Result<Option<String>, String> {
-        match self.edit {
-            DenialEdit::Delete => Ok(None),
-            DenialEdit::Text(f) => {
-                let text = docs
-                    .read(self.file)
-                    .ok_or_else(|| format!("denial {}: {} does not exist", self.name, self.file))?;
-                Ok(Some(f(&text)))
-            }
-        }
+        let edits = self.edits(docs)?;
+        Ok(edits
+            .into_iter()
+            .find(|(p, _)| p == self.file)
+            .and_then(|(_, t)| t))
     }
 
     /// The expectations the report does not meet, as messages.
@@ -106,5 +152,44 @@ impl Denial {
             .filter(|(c, _)| *c != CRASH)
             .map(|(c, _)| c.to_string())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BOTH: Denial = Denial {
+        name: "two_documents_together",
+        file: "doc/a.md",
+        edit: DenialEdit::Files(&[
+            ("doc/a.md", FileEdit::Text(|t| t.replace("one", "uno"))),
+            ("doc/b.md", FileEdit::Delete),
+            ("doc/a.md", FileEdit::Text(|t| format!("{t}+"))),
+        ]),
+        expect: &[],
+    };
+
+    #[test]
+    fn a_multi_file_denial_edits_every_document_in_order() {
+        let docs = Docs::dir("/nonexistent-doccheck-tree")
+            .with("doc/a.md", "one")
+            .with("doc/b.md", "two");
+        let edits = BOTH.edits(&docs).expect("both exist");
+        assert_eq!(
+            edits,
+            vec![
+                ("doc/b.md".to_string(), None),
+                ("doc/a.md".to_string(), Some("uno+".to_string()))
+            ]
+        );
+        let after = BOTH.apply(&docs).expect("applies");
+        assert_eq!(after.read("doc/a.md").as_deref(), Some("uno+"));
+        assert!(after.read("doc/b.md").is_none());
+        assert_eq!(BOTH.edited(&docs).expect("ok"), Some("uno+".to_string()));
+        assert!(
+            BOTH.apply(&docs.without("doc/a.md")).is_err(),
+            "a stale denial fails"
+        );
     }
 }

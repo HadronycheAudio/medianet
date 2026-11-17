@@ -356,7 +356,10 @@ port's equivalence.
 A denial is the real documents with one edit applied in memory, plus what
 the port must report on them (`Denial { name, file, edit, expect }`):
 - `edit` is a `DenialEdit::Text(fn)` built from `doccheck::mutate` helpers,
-  or `DenialEdit::Delete`;
+  `DenialEdit::Delete`, or `DenialEdit::Files(&[(path, FileEdit), …])`
+  for a denial that edits several documents together (applied in order;
+  `file` names the first). The harness writes and restores every file of
+  it around one script run (`Sandbox::run_edited_many`);
 - `expect` lists `(criterion, message substring)` pairs (`""` matches any
   message):
   - the port's failed criteria must EQUAL the criteria listed;

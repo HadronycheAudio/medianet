@@ -216,6 +216,7 @@ Not taken:
 
 | Private item | Library item |
 |---|---|
+| the three multi-document cases kept as plain tests | denials with `DenialEdit::Files(&[(path, FileEdit::Text(f)), …])`, so the harness runs them against the scripts too |
 | `tests/doc_004_01.rs` … `tests/doc_006_02.rs` | `tests/doc/c004_01.rs` … `tests/doc/c006_02.rs` (same content; one module of `tests/doc.rs`) |
 | `c004_14::pytoml::parse(src, Flavor::Budget)` | `tomlline::parse(src, Variant::V004_14)` (`TomlReader::Line004_14`) |
 | `Flavor::Capacity` (004-15) | `Variant::V004_15` (`TomlReader::Line004_15`) |
