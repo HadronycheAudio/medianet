@@ -72,6 +72,11 @@ pub enum DiffClass {
     /// rule. Applied by the harness itself whenever the port reports
     /// `REPERTOIRE`; never listed in `KNOWN`.
     OutsideRepertoire,
+    /// The port's regex engine failed (backtracking limit, refused
+    /// pattern): the port is red by rule ("port stricter (regex limit)",
+    /// R19). Applied by the harness itself whenever the port reports
+    /// `REGEX_LIMIT`; never listed in `KNOWN`.
+    RegexLimit,
 }
 
 /// How the two verdicts differ.
@@ -89,6 +94,11 @@ pub enum DiffKind {
     ScriptCrashPortRed,
     /// The script crashed; the port passes.
     ScriptCrashPortPass,
+    /// The script was still running at the harness's timeout; the port fails.
+    ScriptTimedOutPortRed,
+    /// The script was still running at the harness's timeout; the port
+    /// passes (nothing can be compared: never excused).
+    ScriptTimedOutPortPass,
 }
 
 impl DiffKind {
@@ -99,6 +109,7 @@ impl DiffKind {
             DiffKind::ScriptRedPortPass
                 | DiffKind::PortMissingCriteria
                 | DiffKind::ScriptCrashPortPass
+                | DiffKind::ScriptTimedOutPortPass
         )
     }
 
@@ -117,15 +128,19 @@ impl DiffKind {
             }
             DiffKind::PortMissingCriteria => matches!(class, ScriptWrong | SubsetTomlReader),
             DiffKind::ScriptCrashPortRed => class == ScriptCrashed,
+            DiffKind::ScriptTimedOutPortRed | DiffKind::ScriptTimedOutPortPass => false,
         };
-        by_kind || (class == OutsideRepertoire && !self.weaker_if_port_passes())
+        by_kind
+            || (matches!(class, OutsideRepertoire | RegexLimit) && !self.weaker_if_port_passes())
     }
 
     /// True for the kinds where the port passes (no rule makes those red).
     fn weaker_if_port_passes(self) -> bool {
         matches!(
             self,
-            DiffKind::ScriptRedPortPass | DiffKind::ScriptCrashPortPass
+            DiffKind::ScriptRedPortPass
+                | DiffKind::ScriptCrashPortPass
+                | DiffKind::ScriptTimedOutPortPass
         )
     }
 }

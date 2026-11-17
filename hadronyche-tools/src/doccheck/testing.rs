@@ -273,27 +273,157 @@ mod source_rules {
             "#[path",
             "disallowed_methods",
             "disallowed_types",
+            // R19: a check runs only through CheckSpec::evaluate, and never
+            // sees or clears the regex failure record
+            "run)(",
+            "take_failures",
+            "restore_failures",
         ];
         if is_check {
-            bad.extend(["testing::", ".parse(", ".parse::<", "unwrap_or(0)"]);
+            // whitespace-stripped: `.parse :: <usize>()`, `unwrap_or( 0 )`
+            bad.extend([
+                ".parse(",
+                "parse::<",
+                "from_str(",
+                "unwrap_or(0)",
+                ".evaluate(",
+            ]);
         }
+        let flat: String = code.chars().filter(|c| !c.is_whitespace()).collect();
         for b in bad {
-            if code.contains(b) {
+            if flat.contains(b) {
                 out.push(format!("{}: uses `{b}`", path.display()));
             }
         }
+        if is_check {
+            // an aliased import (`use … testing as t`) still names `testing`
+            for (word, why) in [
+                ("testing", "the test helpers are not for checks"),
+                (
+                    "rx_raw",
+                    "a port uses Python's semantics (text::rx), never rx_raw",
+                ),
+            ] {
+                if regex::Regex::new(&format!(r"\b{word}\b"))
+                    .expect("pattern")
+                    .is_match(code)
+                {
+                    out.push(format!("{}: names `{word}` ({why})", path.display()));
+                }
+            }
+        }
         let own = own_module(path);
-        let port = regex::Regex::new(r"checks::(c\d+_\d+[a-z]?)").expect("pattern");
+        // any path to another port: `checks::c004_27::`, `super::c004_27::`,
+        // `super::super::c004_27::`, `crate::…::c004_27::`
+        let port = regex::Regex::new(r"\b(c\d+_\d+[a-z]?)\s*::").expect("pattern");
         for c in port.captures_iter(code) {
             if Some(&c[1]) != own.as_deref() {
                 out.push(format!(
-                    "{}: imports another port, `checks::{}` (shared code belongs in the library)",
+                    "{}: imports another port, `{}::` (shared code belongs in the library)",
                     path.display(),
                     &c[1]
                 ));
             }
         }
         out
+    }
+
+    /// The string literal (plain or raw) at the start of `s`, unescaped
+    /// enough for a pattern (`\\` and `\"`), or `None`.
+    fn literal_at(s: &str) -> Option<String> {
+        let s = s.trim_start();
+        if let Some(rest) = s.strip_prefix('r') {
+            let hashes = rest.chars().take_while(|c| *c == '#').count();
+            let body = rest[hashes..].strip_prefix('"')?;
+            let close = format!("\"{}", "#".repeat(hashes));
+            return body.find(&close).map(|e| body[..e].to_string());
+        }
+        let body = s.strip_prefix('"')?;
+        let (mut out, mut chars) = (String::new(), body.chars());
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => return Some(out),
+                '\\' => match chars.next()? {
+                    'n' => out.push('\n'),
+                    't' => out.push('\t'),
+                    'r' => out.push('\r'),
+                    other => out.push(other),
+                },
+                c => out.push(c),
+            }
+        }
+        None
+    }
+
+    /// Every literal pattern passed to the pattern helpers in `src`.
+    fn literal_patterns(src: &str) -> Vec<String> {
+        let call = regex::Regex::new(r"\b(?:rx|has|has_i|starts|full)\(").expect("pattern");
+        call.find_iter(src)
+            .filter_map(|m| literal_at(&src[m.end()..]))
+            .collect()
+    }
+
+    /// R19: a pattern with a refused construct (`\Z`, `{,n}`,
+    /// back-references, look-behind) or that does not compile fails here,
+    /// at test time, for every literal pattern of the ports and the library
+    /// (a computed pattern that fails turns its check red, `REGEX_LIMIT`).
+    #[test]
+    fn every_literal_pattern_builds() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/doccheck");
+        let mut all = Vec::new();
+        files(&root, &mut all);
+        let (mut seen, mut hits) = (0, Vec::new());
+        // testing.rs holds this test's own refused example
+        for p in all.iter().filter(|p| !p.ends_with("testing.rs")) {
+            let src = std::fs::read_to_string(p).expect("readable");
+            for pat in literal_patterns(&src) {
+                seen += 1;
+                if let Some(e) = crate::doccheck::text::rx(&pat).compile_error() {
+                    hits.push(format!("{}: {pat:?}: {e}", p.display()));
+                }
+            }
+        }
+        assert!(seen > 100, "the scan found only {seen} patterns");
+        assert!(
+            hits.is_empty(),
+            "patterns that do not build:\n{}",
+            hits.join("\n")
+        );
+        assert_eq!(
+            literal_patterns(r#"has(r"a\Z", t)"#),
+            vec![r"a\Z".to_string()]
+        );
+        assert!(crate::doccheck::text::rx(r"a\Z").compile_error().is_some());
+    }
+
+    /// R19: the only caller of a check's `run` is `CheckSpec::evaluate`
+    /// (docs.rs), and only rx.rs and docs.rs touch the failure record.
+    #[test]
+    fn no_code_runs_a_check_around_evaluate() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut all = Vec::new();
+        files(&root.join("src"), &mut all);
+        files(&root.join("tests"), &mut all);
+        let mut hits = Vec::new();
+        for p in &all {
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if matches!(name.as_str(), "docs.rs" | "rx.rs" | "testing.rs") {
+                continue;
+            }
+            let flat: String = code_of(&std::fs::read_to_string(p).expect("readable"))
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            for b in ["run)(", "take_failures", "restore_failures"] {
+                if flat.contains(b) {
+                    hits.push(format!("{}: `{b}`", p.display()));
+                }
+            }
+        }
+        assert!(hits.is_empty(), "{}", hits.join("\n"));
     }
 
     #[test]
@@ -376,6 +506,20 @@ mod source_rules {
         );
         assert!(violations(p, "use crate::doccheck::checks::c004_22::X;", true).is_empty());
         assert!(!violations(p, "let n = x.parse::<i64>();", true).is_empty());
+        for bypass in [
+            "use super::super::c004_27::SPEC;",
+            "use super::c004_27::Field;",
+            "use crate::doccheck::testing as t; t::repo();",
+            "let n = str::parse::<u32>(\"7\");",
+            "let n = u32::from_str(\"7\");",
+            "let n = \"7\".parse :: <usize>();",
+            "let n = x.unwrap_or( 0 );",
+            "use crate::doccheck::text::rx_raw as rx;",
+            "let r = (SPEC.run)(docs);",
+            "let f = crate::doccheck::rx::take_failures();",
+        ] {
+            assert!(!violations(p, bypass, true).is_empty(), "missed: {bypass}");
+        }
         assert!(
             !violations(
                 Path::new("tests/doc_004_22.rs"),

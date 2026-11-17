@@ -31,9 +31,14 @@ pub enum ScriptOutcome {
     Pass,
     /// FAIL lines (exit 1, or exit 0: then [`ScriptVerdict::anomaly`]).
     Red,
-    /// A Python traceback, a non-zero exit with no FAIL line, or a timeout:
-    /// never matched to a port's red (lead ruling R6).
+    /// A Python traceback, or a non-zero exit with no FAIL line: never
+    /// matched to a port's red (lead ruling R6).
     Crash,
+    /// Still running after the harness's per-script timeout
+    /// ([`SCRIPT_TIMEOUT_S`], or [`Sandbox::with_timeout`]): Python has no
+    /// backtracking limit, so a pathological pattern takes minutes. Never
+    /// "same"; matched only to a port red under `REGEX_LIMIT` (R19).
+    TimedOut,
 }
 
 /// A script's verdict.
@@ -55,10 +60,11 @@ impl ScriptVerdict {
     }
 }
 
-/// Seconds a script may run under the harness before it counts as crashed
-/// (the scripts' own cargo timeouts were 900 s; their document part takes
-/// well under a second).
-pub const SCRIPT_TIMEOUT_S: u32 = 300;
+/// Seconds a script may run under the harness before it counts as
+/// [`ScriptOutcome::TimedOut`] (the scripts' document part takes well under
+/// a second on real documents; a backtracking pattern can take minutes,
+/// and must not stall a corpus).
+pub const SCRIPT_TIMEOUT_S: u32 = 60;
 
 /// An exported tree with one script in it; removed on drop.
 #[derive(Debug)]
@@ -66,6 +72,7 @@ pub struct Sandbox {
     pub root: PathBuf,
     script: String,
     env: Vec<(String, String)>,
+    timeout_s: u32,
 }
 
 impl Sandbox {
@@ -101,7 +108,14 @@ impl Sandbox {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            timeout_s: SCRIPT_TIMEOUT_S,
         })
+    }
+
+    /// The same sandbox with a per-script timeout of `seconds`.
+    pub fn with_timeout(mut self, seconds: u32) -> Sandbox {
+        self.timeout_s = seconds.max(1);
+        self
     }
 
     /// Runs the script on the sandbox as it stands.
@@ -109,7 +123,7 @@ impl Sandbox {
         let path = std::env::var("PATH").unwrap_or_default();
         let stub = self.root.join(".harness-bin");
         let out = Command::new("timeout")
-            .arg(SCRIPT_TIMEOUT_S.to_string())
+            .args(["--kill-after=5", &self.timeout_s.to_string()])
             .arg("bash")
             .arg(&self.script)
             .current_dir(&self.root)
@@ -117,6 +131,13 @@ impl Sandbox {
             .env("PATH", format!("{}:{path}", stub.display()))
             .output();
         match out {
+            // timeout(1): 124 when the command timed out, 137 when killed
+            Ok(o) if matches!(o.status.code(), Some(124 | 137)) => ScriptVerdict {
+                outcome: ScriptOutcome::TimedOut,
+                criteria: BTreeSet::new(),
+                anomaly: false,
+                tail: format!("timed out after {} s", self.timeout_s),
+            },
             Ok(o) => verdict(
                 o.status.success(),
                 &format!(
@@ -431,6 +452,16 @@ mod tests {
         let root = sb.root.clone();
         drop(sb);
         assert!(!root.exists());
+        let slow = Sandbox::new(&docs, "000-00", "echo 'FAIL AC1: late'\nsleep 30\n", &[])
+            .unwrap()
+            .with_timeout(1);
+        let v = slow.run();
+        assert_eq!(
+            v.outcome,
+            ScriptOutcome::TimedOut,
+            "a script past its timeout"
+        );
+        assert!(!v.passed() && v.criteria.is_empty());
     }
 
     #[test]

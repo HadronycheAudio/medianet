@@ -527,6 +527,97 @@ fn git_show(repo: &Path, commit: &str, path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::doccheck::policy::TomlReader;
+
+    fn spec(run: fn(&Docs) -> Report) -> CheckSpec {
+        CheckSpec {
+            id: "000-00",
+            run,
+            script_env: &[],
+            targets: &[],
+            keywords: &[],
+            known_differences: &[],
+            denials: &[],
+            toml: TomlReader::Tomllib,
+        }
+    }
+
+    /// Reads wire.md, then the file its first link names (wherever it
+    /// lies), and fails AC1 when the link target lacks "ok".
+    fn follows_a_link(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let target = docs.read("doc/design/spec/wire.md").and_then(|t| {
+            let link = t.split_once("](")?.1.split_once(')')?.0;
+            let rel = link.split('#').next()?.to_string();
+            docs.read(&join("doc/design/spec", &rel))
+        });
+        r.check("AC1", target.is_some_and(|t| t.contains("ok")), "target");
+        r
+    }
+
+    #[test]
+    fn every_text_a_check_reads_is_guarded() {
+        let base = Docs::dir("/nonexistent-doccheck-tree")
+            .with("doc/design/spec/wire.md", "see [r](../../../README.md#x)\n")
+            .with("README.md", "ok\n")
+            .with("doc/other.md", "caf\u{e9} never read\n");
+        let s = spec(follows_a_link);
+        assert!(
+            s.evaluate(&base).passed(),
+            "a file the check does not read is not its input"
+        );
+        let bad = base.with("README.md", "ok\nna\u{ef}ve\n");
+        let r = s.evaluate(&bad);
+        assert_eq!(r.failed_criteria(), ["REPERTOIRE".to_string()].into());
+        assert!(
+            r.render().contains("README.md:2:3: U+00EF"),
+            "{}",
+            r.render()
+        );
+        // with the character, the check's own verdict is not reported
+        let both = bad.with("README.md", "na\u{ef}ve\n");
+        assert_eq!(
+            s.evaluate(&both).failed_criteria(),
+            ["REPERTOIRE".to_string()].into()
+        );
+    }
+
+    fn backtracks(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let text = docs.read("doc/x.md").unwrap_or_default();
+        let line = text.lines().nth(1).unwrap_or_default();
+        let found = crate::doccheck::text::has(r"\b[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+\b", line);
+        r.check("AC3", !found, "no CamelCase word");
+        r
+    }
+
+    #[test]
+    fn a_regex_engine_failure_is_red_with_pattern_and_place() {
+        let s = spec(backtracks);
+        let ok = Docs::dir("/nonexistent-doccheck-tree").with("doc/x.md", "intro\nplain words\n");
+        assert!(s.evaluate(&ok).passed());
+        let hay = format!("intro\nAa{}_ x\n", "B".repeat(26));
+        let r = s.evaluate(&ok.with("doc/x.md", hay));
+        assert_eq!(
+            r.failed_criteria(),
+            [REGEX_LIMIT.to_string()].into(),
+            "{}",
+            r.render()
+        );
+        let f = &r.failures[0];
+        assert_eq!(
+            f.location,
+            Some(crate::doccheck::report::Loc {
+                file: "doc/x.md".into(),
+                line: 2
+            })
+        );
+        assert!(f.message.contains("[A-Z][a-z0-9]+"), "{}", f.message);
+        assert!(
+            crate::doccheck::rx::take_failures().is_empty(),
+            "evaluate leaves no record behind"
+        );
+    }
 
     #[test]
     fn paths_normalise_like_os_path() {

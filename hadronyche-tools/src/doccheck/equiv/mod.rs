@@ -52,6 +52,8 @@ pub struct Options {
     pub denials: bool,
     /// Sandboxes run in parallel for (c).
     pub jobs: usize,
+    /// Seconds a script may run before it counts as timed out.
+    pub script_timeout_s: u32,
 }
 
 impl Default for Options {
@@ -64,6 +66,7 @@ impl Default for Options {
             red_phase: true,
             denials: true,
             jobs: 4,
+            script_timeout_s: script::SCRIPT_TIMEOUT_S,
         }
     }
 }
@@ -170,9 +173,12 @@ pub fn diff_kind(
             ScriptOutcome::Crash => None,
             ScriptOutcome::Pass => Some(DiffKind::ScriptPassPortRed),
             ScriptOutcome::Red => Some(DiffKind::PortMissingCriteria),
+            ScriptOutcome::TimedOut => Some(DiffKind::ScriptTimedOutPortRed),
         };
     }
     match (script.outcome, port_passed) {
+        (ScriptOutcome::TimedOut, true) => Some(DiffKind::ScriptTimedOutPortPass),
+        (ScriptOutcome::TimedOut, false) => Some(DiffKind::ScriptTimedOutPortRed),
         (ScriptOutcome::Pass, true) => None,
         (ScriptOutcome::Pass, false) => Some(DiffKind::ScriptPassPortRed),
         (ScriptOutcome::Red, true) => Some(DiffKind::ScriptRedPortPass),
@@ -190,6 +196,11 @@ pub fn diff_kind(
 pub const OUTSIDE_REPERTOIRE: &str = "the documents hold a character outside the repertoire \
     (hadronyche-tools/data/repertoire.tsv): the port is red by rule (lead ruling R13), whatever the script says";
 
+/// The reason given for every row a regex engine failure decides.
+pub const REGEX_LIMIT: &str = "the port's regex engine failed (backtracking limit or a refused pattern): \
+    the port is red by rule (lead ruling R19), never \"no match\"; the script, which has no limit, \
+    is slow (or timed out) and then right";
+
 fn classify(
     spec: &CheckSpec,
     label: &str,
@@ -201,6 +212,9 @@ fn classify(
     };
     if port.contains(crate::doccheck::repertoire::CRITERION) {
         return Status::Classified(kind, DiffClass::OutsideRepertoire, OUTSIDE_REPERTOIRE);
+    }
+    if port.contains(crate::doccheck::docs::REGEX_LIMIT) && kind.excused_by(DiffClass::RegexLimit) {
+        return Status::Classified(kind, DiffClass::RegexLimit, REGEX_LIMIT);
     }
     spec.known_differences
         .iter()
@@ -250,6 +264,7 @@ fn red_phase(
     spec: &CheckSpec,
     repo: &Path,
     text: &str,
+    timeout_s: u32,
     timer: &mut Timer,
     log: &mut dyn FnMut(&str),
 ) -> Result<(Option<String>, Option<Row>), String> {
@@ -259,6 +274,7 @@ fn red_phase(
     log(&format!("(b) red-phase tree {c}"));
     let old = Docs::at_commit(repo, &c)?;
     let sb = Sandbox::new(&old, spec.id, text, spec.script_env).map_err(|e| e.to_string())?;
+    let sb = sb.with_timeout(timeout_s);
     let v = timed(timer, || sb.run());
     let r = row(spec, format!("tree at {}", &c[..10]), v, &old, timer);
     Ok((Some(c), Some(r)))
@@ -380,14 +396,18 @@ pub fn run(
     };
     let docs = Docs::dir(repo);
     let boxes = (0..opts.jobs.max(1))
-        .map(|_| Sandbox::new(&docs, spec.id, &text, spec.script_env).map_err(|e| e.to_string()))
+        .map(|_| {
+            Sandbox::new(&docs, spec.id, &text, spec.script_env)
+                .map(|sb| sb.with_timeout(opts.script_timeout_s))
+                .map_err(|e| e.to_string())
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let sb = &boxes[0];
     log("(a) current tree");
     let v = timed(&mut timer, || sb.run());
     let current = row(spec, "current tree".into(), v, &docs, &mut timer);
     let (red_commit, red) = if opts.red_phase {
-        red_phase(spec, repo, &text, &mut timer, log)?
+        red_phase(spec, repo, &text, opts.script_timeout_s, &mut timer, log)?
     } else {
         (None, None)
     };
@@ -431,6 +451,7 @@ fn verdict_word(passed: bool, criteria: &BTreeSet<String>) -> String {
 fn script_word(v: &ScriptVerdict) -> String {
     match v.outcome {
         ScriptOutcome::Crash => format!("CRASH ({})", v.tail.replace('|', "/")),
+        ScriptOutcome::TimedOut => format!("TIMED OUT ({})", v.tail),
         _ if v.anomaly => format!(
             "{} (FAIL printed, exit 0)",
             verdict_word(false, &v.criteria)
@@ -632,6 +653,40 @@ mod tests {
             "a modelled crash matches the script's"
         );
         assert!(!DiffKind::ScriptRedPortPass.excused_by(DiffClass::ScriptWrong));
+    }
+
+    #[test]
+    fn a_regex_limit_is_port_stricter_and_a_timeout_is_never_same() {
+        let limit: BTreeSet<String> = ["REGEX_LIMIT".to_string()].into();
+        let red = script::verdict(false, "FAIL AC3: BadMagik");
+        let timed_out = ScriptVerdict {
+            outcome: ScriptOutcome::TimedOut,
+            criteria: BTreeSet::new(),
+            anomaly: false,
+            tail: String::new(),
+        };
+        for script in [&red, &timed_out] {
+            let kind = diff_kind(script, false, false, &limit);
+            assert!(kind.is_some());
+            assert!(matches!(
+                classify(&SPEC, "x", kind, &limit),
+                Status::Classified(_, DiffClass::RegexLimit, _)
+            ));
+        }
+        // the port passing where the script timed out is never excused
+        let kind = diff_kind(&timed_out, true, false, &BTreeSet::new());
+        assert_eq!(kind, Some(DiffKind::ScriptTimedOutPortPass));
+        assert!(kind.is_some_and(DiffKind::weaker));
+        assert_eq!(
+            classify(&SPEC, "x", kind, &limit),
+            Status::Unexcused(DiffKind::ScriptTimedOutPortPass)
+        );
+        // a timeout against an ordinary port red is unclassified
+        let ac3: BTreeSet<String> = ["AC3".to_string()].into();
+        assert_eq!(
+            classify(&SPEC, "x", diff_kind(&timed_out, false, false, &ac3), &ac3),
+            Status::Unexcused(DiffKind::ScriptTimedOutPortRed)
+        );
     }
 
     #[test]

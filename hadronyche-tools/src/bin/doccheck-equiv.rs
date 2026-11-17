@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! cargo run --release -p hadronyche-tools --bin doccheck-equiv -- <id>|--all
-//!     [--seeds 2026,7,31337,99] [--limit 2000] [--no-red] [--no-denials] [--denials-only] [--jobs 4]
+//!     [--seeds 2026,7,31337,99] [--limit 2000] [--no-red] [--no-denials] [--denials-only] [--jobs 4] [--script-timeout 60]
 //!     [--out FILE] [--full]
 //! ```
 //!
@@ -26,7 +26,7 @@ use hadronyche_tools::doccheck::equiv::{Options, render, render_full, run};
 fn usage() -> ! {
     let ids: Vec<&str> = checks::registry().iter().map(|s| s.id).collect();
     eprintln!(
-        "usage: doccheck-equiv <id>|--all [--seeds A,B] [--limit N] [--no-red] [--no-denials] [--denials-only] [--jobs N] [--out PATH] [--full]\nported checks: {}",
+        "usage: doccheck-equiv <id>|--all [--seeds A,B] [--limit N] [--no-red] [--no-denials] [--denials-only] [--jobs N] [--script-timeout S] [--out PATH] [--full]\nported checks: {}",
         ids.join(", ")
     );
     exit(2)
@@ -75,6 +75,9 @@ fn parse() -> Args {
             "--out" => a.out = Some(value()),
             "--full" => a.full = true,
             "--jobs" => a.opts.jobs = value().parse().unwrap_or_else(|_| usage()),
+            "--script-timeout" => {
+                a.opts.script_timeout_s = value().parse().unwrap_or_else(|_| usage())
+            }
             _ => usage(),
         }
     }
