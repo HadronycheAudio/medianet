@@ -25,10 +25,10 @@ fn int_or(f: &Dict, key: &str, default: i128) -> Result<i128, String> {
     f.get(key).map_or(Ok(default), |v| v.py_int().map_err(|e| format!("int() of {key}: {e}")))
 }
 
-/// `ms` as an int when `isinstance(ms, int)`; a huge int is a huge int.
+/// `ms` as an int when `isinstance(ms, int)`; an int beyond `i128` is red
+/// by rule (`INT_LIMIT`, recorded by `py_int`), never saturated.
 fn max_size(tm: &Dict) -> Option<i128> {
     match tm.get("max_size") {
-        Some(PyValue::BigInt(s)) => Some(if s.starts_with('-') { i128::MIN } else { i128::MAX }),
         Some(v) if v.is_int() => v.py_int().ok(),
         _ => None,
     }

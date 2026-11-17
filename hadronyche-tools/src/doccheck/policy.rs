@@ -158,10 +158,30 @@ pub enum TomlReader {
     /// ([`super::tomllib`]); its differences from `tomllib` on the corpus are
     /// listed in `tomllib::KNOWN_DIFFERENCES`.
     Tomllib,
-    /// The statement-scanner subset reader of 004-03 (a variant), 06, 08-13,
-    /// 16-20 and 24-29 (byte-identical in 004-06, 18, 24, 27), ported in
-    /// [`super::tomlsubset`] and proven on the corpus.
+    /// The statement-scanner subset reader of 004-03, 05, 06, 08-13, 16-20
+    /// and 24-29, ported in [`super::tomlsubset`]. The corpus generator runs
+    /// all twenty scripts' copies and they give the same result on every
+    /// snippet (004-03 and 004-05 differ only in formatting: a dict literal
+    /// on several lines, `%`-formatted messages that print the same).
     Subset004_18,
+    /// The line reader of 004-14 ([`super::tomlline`], `Variant::V004_14`):
+    /// `(messages, others)`, strings unescaped (`\"`, `\\`).
+    Line004_14,
+    /// The line reader of 004-15 ([`super::tomlline`], `Variant::V004_15`):
+    /// strings kept as written; a field before any message is an
+    /// `IndexError`, a `[[x]]` after `[x]` an uncaught `AttributeError`.
+    Line004_15,
+}
+
+impl TomlReader {
+    /// The [`super::tomlline::Variant`] of a line reader.
+    pub fn line_variant(self) -> Option<super::tomlline::Variant> {
+        match self {
+            TomlReader::Line004_14 => Some(super::tomlline::Variant::V004_14),
+            TomlReader::Line004_15 => Some(super::tomlline::Variant::V004_15),
+            TomlReader::Tomllib | TomlReader::Subset004_18 => None,
+        }
+    }
 }
 
 /// The regex word class (lead ruling R1). Not a parameter: every pattern

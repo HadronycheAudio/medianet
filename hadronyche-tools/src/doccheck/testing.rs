@@ -166,13 +166,15 @@ mod source_rules {
     /// Library files that may call `.parse`: TOML text into the crate's
     /// parser (tomllib, wire_toml), already-validated digits inside the
     /// subset reader (tomlsubset), Rust's own float formatting (pyvalue),
-    /// a replacement's group number (rx).
+    /// a replacement's group number (rx), Python's `float()` on validated
+    /// ASCII (pynum).
     const PARSE_ALLOWED: &[&str] = &[
         "tomllib.rs",
         "wire_toml.rs",
         "tomlsubset.rs",
         "pyvalue.rs",
         "rx.rs",
+        "pynum.rs",
     ];
 
     fn files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -278,6 +280,8 @@ mod source_rules {
             "run)(",
             "take_failures",
             "restore_failures",
+            "take_int_limits",
+            "restore_int_limits",
         ];
         if is_check {
             // whitespace-stripped: `.parse :: <usize>()`, `unwrap_or( 0 )`
@@ -410,14 +414,24 @@ mod source_rules {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            if matches!(name.as_str(), "docs.rs" | "rx.rs" | "testing.rs") {
+            if matches!(
+                name.as_str(),
+                "docs.rs" | "rx.rs" | "pynum.rs" | "testing.rs"
+            ) || p.ends_with("pynum/tests.rs")
+            {
                 continue;
             }
             let flat: String = code_of(&std::fs::read_to_string(p).expect("readable"))
                 .chars()
                 .filter(|c| !c.is_whitespace())
                 .collect();
-            for b in ["run)(", "take_failures", "restore_failures"] {
+            for b in [
+                "run)(",
+                "take_failures",
+                "restore_failures",
+                "take_int_limits",
+                "restore_int_limits",
+            ] {
                 if flat.contains(b) {
                     hits.push(format!("{}: `{b}`", p.display()));
                 }
@@ -517,6 +531,7 @@ mod source_rules {
             "use crate::doccheck::text::rx_raw as rx;",
             "let r = (SPEC.run)(docs);",
             "let f = crate::doccheck::rx::take_failures();",
+            "let f = crate::doccheck::pynum::take_int_limits();",
         ] {
             assert!(!violations(p, bypass, true).is_empty(), "missed: {bypass}");
         }
