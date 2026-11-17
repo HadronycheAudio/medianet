@@ -280,7 +280,9 @@ fn red_phase(
     };
     log(&format!("(b) red-phase tree {c}"));
     let old = Docs::at_commit(repo, &c)?;
-    let sb = Sandbox::new(&old, spec.id, text, spec.script_env).map_err(|e| e.to_string())?;
+    let sb = Sandbox::new(&old, spec.id, text, spec.script_env)
+        .map_err(|e| e.to_string())?
+        .with_reader(spec.fail_reader);
     let sb = sb.with_timeout(timeout_s);
     let v = timed(timer, || sb.run());
     let r = row(spec, format!("tree at {}", &c[..10]), v, &old, timer);
@@ -407,7 +409,10 @@ pub fn run(
     let boxes = (0..opts.jobs.max(1))
         .map(|_| {
             Sandbox::new(&docs, spec.id, &text, spec.script_env)
-                .map(|sb| sb.with_timeout(opts.script_timeout_s))
+                .map(|sb| {
+                    sb.with_timeout(opts.script_timeout_s)
+                        .with_reader(spec.fail_reader)
+                })
                 .map_err(|e| e.to_string())
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -603,6 +608,7 @@ mod tests {
         known_differences: KNOWN,
         denials: &[],
         toml: TomlReader::Tomllib,
+        fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
     };
 
     fn set(xs: &[&str]) -> BTreeSet<String> {

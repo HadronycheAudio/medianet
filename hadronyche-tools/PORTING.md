@@ -554,6 +554,14 @@ about 30 minutes per check on a quiet machine.
   `UNREADABLE`: reported, never "same", never a crash. A traceback is the
   header `Traceback (most recent call last):` at column 0 followed by a
   `  File` frame; a quoted header is not one.
+- **One FAIL reader per port, explicit.** `CheckSpec::fail_reader` is the
+  function that reads the script's failed criteria from its output and
+  text (`equiv::script::FailReader`: `fn(script: &str, lines: &[&str]) ->
+  BTreeSet<String>`). Every port sets it; `equiv::script::DEFAULT_READER`
+  (the reader above) unless its script prints failures another way. A
+  port-specific reader (epic 002's `FAIL: message` lines) lives in its own
+  file and is named in that port's spec only: never two readers on one
+  port, never selected by an environment variable.
 - A summary (`--out`) is refused from a tree with uncommitted changes to
   tracked files other than `hadronyche-tools/equivalence/` (the summaries
   themselves); `--allow-dirty` names them in the header instead. The tree

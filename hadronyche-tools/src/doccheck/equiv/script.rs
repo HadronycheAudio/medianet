@@ -71,8 +71,10 @@ pub const SCRIPT_TIMEOUT_S: u32 = 60;
 pub struct Sandbox {
     pub root: PathBuf,
     script: String,
+    script_text: String,
     env: Vec<(String, String)>,
     timeout_s: u32,
+    reader: FailReader,
 }
 
 impl Sandbox {
@@ -109,7 +111,16 @@ impl Sandbox {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             timeout_s: SCRIPT_TIMEOUT_S,
+            script_text: script_text.to_string(),
+            reader: DEFAULT_READER,
         })
+    }
+
+    /// The same sandbox reading the script's FAIL lines with `reader` (the
+    /// port's [`crate::doccheck::checks::CheckSpec::fail_reader`]).
+    pub fn with_reader(mut self, reader: FailReader) -> Sandbox {
+        self.reader = reader;
+        self
     }
 
     /// The same sandbox with a per-script timeout of `seconds`.
@@ -138,13 +149,15 @@ impl Sandbox {
                 anomaly: false,
                 tail: format!("timed out after {} s", self.timeout_s),
             },
-            Ok(o) => verdict(
+            Ok(o) => verdict_with(
                 o.status.success(),
                 &format!(
                     "{}{}",
                     String::from_utf8_lossy(&o.stdout),
                     String::from_utf8_lossy(&o.stderr)
                 ),
+                &self.script_text,
+                self.reader,
             ),
             Err(e) => verdict(
                 false,
@@ -221,6 +234,22 @@ fn make_executable(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// How the harness reads a script's failed criteria: `(script text, output
+/// lines) -> criteria`. ONE reader per port, chosen explicitly in its
+/// [`crate::doccheck::checks::CheckSpec::fail_reader`]; [`DEFAULT_READER`]
+/// unless the port's script prints its failures another way (epic 002's
+/// `FAIL: message` lines). A reader lives in its own file; a port never
+/// combines two.
+pub type FailReader = fn(&str, &[&str]) -> BTreeSet<String>;
+
+/// The default reader: [`fail_labels`] (`FAIL <label>:` lines and the
+/// grouped form).
+pub const DEFAULT_READER: FailReader = default_reader;
+
+fn default_reader(_script: &str, lines: &[&str]) -> BTreeSet<String> {
+    fail_labels(lines)
+}
+
 /// The pseudo-criterion of a FAIL line the reader cannot attribute: it is
 /// reported (the row can never read "same"), never taken for a crash.
 pub const UNREADABLE: &str = "UNREADABLE";
@@ -289,8 +318,20 @@ fn fail_labels(lines: &[&str]) -> BTreeSet<String> {
 /// FAIL message that quotes the words is not one), or a non-zero exit with
 /// no failed criterion at all.
 pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
+    verdict_with(exit_ok, output, "", DEFAULT_READER)
+}
+
+/// [`verdict`] with the port's own FAIL-line reader, given the script's
+/// text (a reader may take a criterion from the script, as epic 002's
+/// `# AC n` comments).
+pub fn verdict_with(
+    exit_ok: bool,
+    output: &str,
+    script: &str,
+    reader: FailReader,
+) -> ScriptVerdict {
     let lines: Vec<&str> = output.lines().collect();
-    let criteria = fail_labels(&lines);
+    let criteria = reader(script, &lines);
     let last_report = lines
         .iter()
         .rposition(|l| rx(r"^\s*(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
@@ -381,6 +422,33 @@ fn git(repo: &Path, args: &[&str]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_port_reads_its_script_with_its_own_reader() {
+        // an epic-002 style script: `FAIL: message`, the criterion in a
+        // comment of the script
+        fn from_comment(script: &str, lines: &[&str]) -> BTreeSet<String> {
+            let ac = script.contains("# AC 3").then(|| "AC3".to_string());
+            lines
+                .iter()
+                .filter(|l| l.starts_with("FAIL: "))
+                .filter_map(|_| ac.clone())
+                .collect()
+        }
+        let out = "FAIL: the table has no row";
+        assert!(
+            verdict(false, out).criteria.is_empty(),
+            "the default reader skips it"
+        );
+        let v = verdict_with(
+            false,
+            out,
+            "# AC 3 — rows\nbad 'the table has no row'",
+            from_comment,
+        );
+        assert_eq!(v.criteria, ["AC3".to_string()].into());
+        assert_eq!(v.outcome, ScriptOutcome::Red);
+    }
 
     #[test]
     fn round_three_label_forms_read_or_are_reported() {

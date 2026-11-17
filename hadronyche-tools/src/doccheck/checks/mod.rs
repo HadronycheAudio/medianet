@@ -37,6 +37,11 @@ pub struct CheckSpec {
     pub denials: &'static [Denial],
     /// The TOML reader the script used.
     pub toml: TomlReader,
+    /// How the harness reads the script's failed criteria: ONE reader per
+    /// port, explicit ([`crate::doccheck::equiv::script::DEFAULT_READER`]
+    /// unless the script prints its failures another way; a port-specific
+    /// reader lives in its own file).
+    pub fail_reader: crate::doccheck::equiv::script::FailReader,
 }
 
 /// A section of a document the corpus mutates.

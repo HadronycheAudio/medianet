@@ -48,6 +48,16 @@ deletes its private layer, applies the mapping below, and reruns
    `; slow:` in `denial_tests!`.
 8. **No module is named after a work package**, and no port imports
    another (with any prefix: `super::c004_14::` included).
+9. **`CheckSpec` has a new required field, `fail_reader`.**
+   - Set it to `crate::doccheck::equiv::script::DEFAULT_READER` unless the
+     script prints its failures another way.
+   - A port-specific reader is a `fn(script: &str, lines: &[&str]) ->
+     BTreeSet<String>` in its own file, named in that port's spec. It
+     plugs in without touching shared lines.
+   - Epic 002 (WP1's `equiv::labels002`, WP2's
+     `doccheck::fail_form::colon_criterion`): one reader per port, never
+     two on one port, never selected by `DOCCHECK_FAIL_FORM` or any other
+     environment variable.
 
 ## wp7 (004-16, 004-17, 004-18, 004-19, 004-20)
 
