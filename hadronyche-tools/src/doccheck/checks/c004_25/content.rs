@@ -95,7 +95,7 @@ pub(crate) fn ac2(types: &[SType], consts: &Consts, report: &mut Report) {
 }
 
 /// `counter_re`.
-fn counter_re(n: &str) -> String {
+pub(super) fn counter_re(n: &str) -> String {
     let special: BTreeMap<&str, &str> = [
         ("marked gap", r"marked[\s-]+gap"),
         ("other-epoch", r"other[\s-]+epoch"),
@@ -116,7 +116,7 @@ fn counter_re(n: &str) -> String {
 
 /// `max_match`: a maximum bipartite matching by augmenting paths, in the
 /// script's order; (matched, counter index → text index).
-fn max_match(keys: &[String], texts: &[&str]) -> (usize, BTreeMap<usize, usize>) {
+pub(super) fn max_match(keys: &[String], texts: &[&str]) -> (usize, BTreeMap<usize, usize>) {
     let cand: Vec<Vec<usize>> = keys.iter().map(|k| texts.iter().enumerate().filter(|(_, t)| has_i(k, t)).map(|(j, _)| j).collect()).collect();
     let mut owner: BTreeMap<usize, usize> = BTreeMap::new();
     fn aug(i: usize, cand: &[Vec<usize>], seen: &mut BTreeSet<usize>, owner: &mut BTreeMap<usize, usize>) -> bool {

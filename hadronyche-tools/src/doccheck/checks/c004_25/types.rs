@@ -4,6 +4,7 @@
 
 use super::Stamp;
 use super::tree::{Node, bad_arithmetic, build_tree, cdiv, entry_nodes, lo_of, maxc, size_node, tile_node};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::{Field, fields_of, find_sub, is_field_table, tables};
 use crate::doccheck::pycompat::parse_int;
@@ -51,7 +52,7 @@ impl SType {
 }
 
 /// `(?:⌈|ceil\s*\()\s*(\d+)\s*/\s*(\d+)\s*(?:⌉|\))\s*=\s*(\d+)`, any case.
-fn statements(text: &str) -> Vec<(i128, i128, i128)> {
+pub(super) fn statements(text: &str) -> Vec<(i128, i128, i128)> {
     rx(r"(?i)(?:⌈|ceil\s*\()\s*(\d+)\s*/\s*(\d+)\s*(?:⌉|\))\s*=\s*(\d+)")
         .captures_iter(text)
         .filter_map(|c| Some((parse_int(&c[1]).ok()?, parse_int(&c[2]).ok()?, parse_int(&c[3]).ok()?)))
@@ -109,10 +110,10 @@ fn one_type(t: &mut SType, ctrl_bound: Option<i128>, block: Option<(i128, i128)>
     if off0 != 0 && off0 != 58 {
         report.fail("AC1", format!("the {} table starts at offset {off0}: a body starts at 0 and a section at 58", t.key));
     }
-    let start = off0 * 8 + lo_of(first).unwrap_or_default();
+    let start = checked::add(checked::mul(off0, 8), lo_of(first).unwrap_or_default());
     tile_node(&mut root, start, &t.title, "AC1", report);
     let rbits = size_node(&mut root, &t.title, report);
-    let sec_max = 58 + cdiv(rbits, 8);
+    let sec_max = checked::add(58, cdiv(rbits, 8));
     t.sec_max = Some(sec_max);
     let Some(b) = ctrl_bound else { return crash("TypeError: '<=' not supported between instances of 'int' and 'NoneType'") };
     let within = sec_max <= b;

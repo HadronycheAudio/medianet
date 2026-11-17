@@ -8,6 +8,7 @@
 use super::merged::Merged;
 use super::tree::{Node, cdiv, entry_nodes, maxc};
 use super::types::{SType, TYPE_SPECS};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::pyvalue::{Dict, PyValue};
 use crate::doccheck::report::{Flow, crash};
@@ -109,7 +110,7 @@ fn agree_main(m: &Dict, body_rel: bool, root: &Node) -> Flow<bool> {
     }
     let mut agree = tf.len() == root.rows.len();
     for (f, g) in tf.iter().zip(&root.rows) {
-        let exp_off = g.start.saturating_add(if body_rel { 464 } else { 0 });
+        let exp_off = checked::add(g.start, if body_rel { 464 } else { 0 });
         if must(f, "offset")? != exp_off || must(f, "width")? != g.f.bits {
             agree = false;
         }
@@ -136,7 +137,7 @@ fn agree_entry(em: &Dict, n: &Node) -> Flow<bool> {
     let mut ends = Vec::new();
     for g in &efs {
         let mult = if g.contains_key("count") { int_or(g, "max_count", 1)? } else { 1 };
-        ends.push(must(g, "offset")?.saturating_add(must(g, "width")?.saturating_mul(mult)));
+        ends.push(checked::add(must(g, "offset")?, checked::mul(must(g, "width")?, mult)));
     }
     if ends.last().is_some_and(|e| *e != n.size) {
         ok = false;

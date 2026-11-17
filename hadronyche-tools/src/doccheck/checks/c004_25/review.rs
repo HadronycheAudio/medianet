@@ -11,10 +11,10 @@ use std::collections::BTreeSet;
 
 use super::types::SType;
 use super::{Consts, Stamp};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::{Ctx, tables};
 use crate::doccheck::pycompat::{is_nd, parse_int};
-use crate::doccheck::pynum::record_int_limit;
 use crate::doccheck::report::{Flow, crash};
 use crate::doccheck::sentences::{SentenceSplit, split};
 use crate::doccheck::evidence::has_tag;
@@ -27,25 +27,16 @@ fn sentences(text: &str) -> Vec<String> {
 }
 
 /// `re.search(rf"(?<!\d){n}(?!\d)", text)` (`has_num`).
-fn has_number(text: &str, n: i128) -> bool {
+pub(super) fn has_number(text: &str, n: i128) -> bool {
     has(&format!(r"(?<!\d){n}(?!\d)"), text)
 }
 
 /// `str.isdigit()` inside the repertoire: a decimal digit, or one of the
 /// superscript and subscript digits (`int()` of which raises).
-fn py_isdigit(c: char) -> bool {
+pub(super) fn py_isdigit(c: char) -> bool {
     is_nd(c) || "¹²³⁴⁵⁶⁹₁₂₃".contains(c)
 }
 
-/// A product or difference Python computes exactly: beyond `i128` it is
-/// recorded as `INT_LIMIT` (the verdict is red by rule; the value then
-/// returned is never compared).
-fn exact(v: Option<i128>, what: &str) -> i128 {
-    v.unwrap_or_else(|| {
-        record_int_limit(what);
-        i128::MAX
-    })
-}
 
 const RULE7: &str = "a stamp that needs more cannot be sent";
 
@@ -53,9 +44,9 @@ fn c1_report(st: &Stamp, h: &SType, s: i128, section_max: Option<i128>, report: 
     let f_h = h.list_counts()[0];
     // `_S - HEALTH["Nt"]`: set whenever the health type has entries
     let Some(h_nt) = h.nt else { return crash("TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'") };
-    let s_other = s - h_nt;
+    let s_other = checked::sub(s, h_nt);
     let sm = section_max.filter(|&m| m != 0).unwrap_or(64);
-    let t = exact(sm.checked_sub(s_other).and_then(|d| d.checked_mul(f_h)), "(SECTION_MAX or 64) - S_other) * F_H");
+    let t = checked::mul(checked::sub(sm, s_other), f_h);
     let paras: Vec<&str> = st.prose.iter().filter(|b| b.kind == BlockKind::Prose && has(r"Open item 1(?:\D|$)", &b.text)).map(|b| b.text.as_str()).collect();
     let score = |p: &str| -> usize {
         let lower = p.to_lowercase();
@@ -96,7 +87,7 @@ pub(crate) fn c1(st: &Stamp, types: &[SType], s: i128, section_max: Option<i128>
     }
     let Some(h) = types.iter().find(|t| t.key == "health").filter(|h| h.root.as_ref().is_some_and(|r| r.rows.iter().any(|x| x.child.is_some()))) else { return Ok(()) };
     let product = match (consts.c09_max, consts.peers) {
-        (Some(a), Some(b)) if a != 0 && b != 0 => Some(exact(a.checked_mul(b).and_then(|p| p.checked_mul(2)), "2 * C09_MAX * PEERS")),
+        (Some(a), Some(b)) if a != 0 && b != 0 => Some(checked::product([2, a, b])),
         _ => None,
     };
     let m_h = h.m_stated.first().copied();
@@ -106,7 +97,7 @@ pub(crate) fn c1(st: &Stamp, types: &[SType], s: i128, section_max: Option<i128>
     c1_report(st, h, s, section_max, report)
 }
 
-fn capnorm(x: &str) -> String {
+pub(super) fn capnorm(x: &str) -> String {
     rx(r"[_\-]+").replace_all(&x.to_lowercase(), " ")
 }
 
@@ -157,9 +148,9 @@ pub(crate) fn c2(st: &Stamp, types: &[SType], report: &mut Report) -> Flow<()> {
                 Err(_) => return crash(format!("ValueError: invalid literal for int() with base 10: {w:?}")),
             }
         } else {
-            words.iter().position(|x| *x == w.to_lowercase()).map_or(-1, |p| p as i128)
+            words.iter().position(|x| *x == w.to_lowercase()).map_or(-1, |p| i128::try_from(p).expect("an index fits i128"))
         };
-        report.check("DoD", n == id_rows as i128, format!("review R2-1: the stated count of {n} capabilities equals the numbered rows of the capability id table ({id_rows} numbered rows)"));
+        report.check("DoD", n == i128::try_from(id_rows).expect("a count fits i128"), format!("review R2-1: the stated count of {n} capabilities equals the numbered rows of the capability id table ({id_rows} numbered rows)"));
     }
     Ok(())
 }
