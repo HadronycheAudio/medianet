@@ -219,7 +219,7 @@ parallel without editing the same files.
      - the crate's other tools (`wire_tables.rs`, `metrics_check.rs`,
        `src/bin/`, `build.rs`) and their own test files.
    - A source test (`testing::source_rules`) covers what clippy cannot see.
-     In check modules and `tests/doc_*.rs` it forbids:
+     In check modules and `tests/doc/c<id>.rs` it forbids:
      - `include!`, `include_str!`, `include_bytes!` and `#[path]`;
      - any opt-out of the clippy rule;
      - in a check module, matched on whitespace-stripped code: `.parse(`,
@@ -263,13 +263,14 @@ For ticket `<id>` (`004-27`), with `<mod>` = `c` + the id with `-` as `_`
 |---|---|
 | `src/doccheck/checks/<mod>/mod.rs` | the check: `pub fn run(docs: &Docs) -> Report`, `pub const SPEC: CheckSpec`, `const KNOWN` (classified differences); split into files per criterion |
 | `src/doccheck/checks/<mod>/denials.rs` | `pub const DENIALS: &[Denial]`: the denial list (see below) |
-| `tests/doc_<id>.rs` | one `#[test]` per acceptance criterion and DoD item, the red-phase test, and `hadronyche_tools::denial_tests!(SPEC; …)` with every denial name |
+| `tests/doc/c<id>.rs` (e.g. `tests/doc/c004_27.rs`) | one module of the single test binary `tests/doc.rs`: one `#[test]` per acceptance criterion and DoD item, the red-phase test, and `hadronyche_tools::denial_tests!(SPEC; …)` with every denial name |
 | `equivalence/<id>.md` | the committed harness summary |
 | `scripts/repo-state.d/<id>.sh` | the relocated repository-state assertions |
 | `checks/<id>.sh` | deleted, in the port's commit |
 
-There is no registry to edit: `build.rs` generates it from
-`src/doccheck/checks/c<digits>…`. A malformed entry fails the build with a
+There is no registry and no test list to edit: `build.rs` generates the
+registry from `src/doccheck/checks/c<digits>…` and the test binary's
+module list from `tests/doc/c<digits>…rs`. A malformed entry fails the build with a
 message, for example a directory without `mod.rs` or a `c…` file that is not
 `.rs`.
 
@@ -285,12 +286,13 @@ message, for example a directory without `mod.rs` or a `c…` file that is not
 | `known_differences` | `KNOWN` |
 | `denials` | `denials::DENIALS` |
 | `toml` | the script's `TomlReader` |
+| `fail_reader` | how the harness reads the script's failures: `equiv::script::DEFAULT_READER`, or the port's own reader |
 
 ## Which files a porter may edit
 
 - **Yours alone:**
   - `src/doccheck/checks/<mod>/` (all of it);
-  - `tests/doc_<id>.rs`;
+  - `tests/doc/c<id>.rs`;
   - `equivalence/<id>.md`;
   - `scripts/repo-state.d/<id>.sh`;
   - deleting `checks/<id>.sh`.
@@ -356,13 +358,15 @@ the port must report on them (`Denial { name, file, edit, expect }`):
   `old = "ALL\n"` replaces every newline.
 
 Every port has ONE list (`denials.rs`), used twice:
-- **as tests:** `denial_tests!(SPEC; name, …; slow: name, …)` makes one
-  `#[test]` each, plus a test that the list and the tests agree. Every
-  denial that expects `REGEX_LIMIT` (a backtracking input: seconds per test
-  in a debug build) must be listed after `slow:`; those are `#[ignore]`d in
-  the default `cargo test` and run in release by CI's "Slow denials" step
-  and the per-change suite (`cargo test --release -p hadronyche-tools
-  --test 'doc_*' -- --ignored`, under a second each);
+- **as tests:** `denial_tests!(SPEC; name, …)` in the check's test file
+  makes one `#[test]` per denial, plus a test that the list and the tests
+  agree one to one (it runs in every build). Every denial test is ignored
+  in a debug build and runs in release: the default `cargo test` keeps the
+  criterion, red-phase and library tests, and the named release step
+  `cargo test --release -p hadronyche-tools --test doc` (CI's "Denial tests
+  of the ported document checks", and the per-change suite) runs every
+  denial exactly once, backtracking ones included. A `slow:` list is still
+  accepted and means the same;
 - **by the harness against the old script:** the targeted denials are the
   strongest evidence, since a random corpus is only 8–13 % red.
 

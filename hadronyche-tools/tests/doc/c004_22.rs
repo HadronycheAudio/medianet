@@ -294,7 +294,6 @@ hadronyche_tools::denial_tests!(
     review_r3_024_date_as_16_november_2026,
     review_r3_025_main_branch_split_by_a_tab_b_and_s,
     review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l,
-    ; slow:
     review_r3_001_backtracking_4000_backticked_names_then_zzz_32_bits_samples,
     review_r3_002_backtracking_6000_backticked_names_then_zzz_32_bits_samples,
     review_r3_057_backtracking_list_of_4000_then_zzz_32_bits_samples_at_the_en,

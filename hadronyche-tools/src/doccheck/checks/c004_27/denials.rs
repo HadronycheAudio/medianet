@@ -1,6 +1,6 @@
 //! The denial list of 004-27: the real documents with one edit, and what
 //! the port (and the old script) must report. Consumed by
-//! `tests/doc_004_27.rs` (one test each) and by `doccheck-equiv 004-27
+//! `tests/doc/c004_27.rs` (one test each) and by `doccheck-equiv 004-27
 //! --denials`. The `review_*` entries are the review's findings 1c-1f and
 //! 2 and its two "stricter" cases (PR #42, round 1); an entry with no
 //! expectation is one the port must pass (the agreement is the point, or the
