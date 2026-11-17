@@ -257,10 +257,22 @@ pub const DENIALS: &[Denial] = &[
         expect: &[("AC2", "")],
     },
     Denial {
+        // past 64 bits bash's test says "integer expression expected": the
+        // range covers nothing, on both sides
         name: "ac4_semantics_a_range_beyond_64_bits",
         file: REPORT,
         edit: DenialEdit::Text(|t| constants_as(t, "C-30 to C-99999999999999999999 are not in these files [code].")),
         expect: &[("AC2", ""), ("AC4", "is not accounted for")],
+    },
+    Denial {
+        // beyond i128: the script still reads "not a number" (bash's test);
+        // the port is red by rule (INT_LIMIT, classified port stricter)
+        name: "ac4_semantics_a_range_beyond_i128",
+        file: REPORT,
+        edit: DenialEdit::Text(|t| {
+            constants_as(t, "C-30 to C-9999999999999999999999999999999999999999 are not in these files [code].")
+        }),
+        expect: &[("INT_LIMIT", "")],
     },
     Denial {
         name: "ac4_semantics_a_range_written_with_dots",

@@ -370,6 +370,47 @@ Write one denial per negative the script's header lists, plus one per
 assertion that has none. Scope an edit with `mutate::within_section` when
 the same words occur in an earlier section.
 
+## The epic-002 bash scripts: `family002`
+
+The 002 scripts are bash, not Python: GNU grep, sed, mawk, tr, cut,
+`sort -u`, `wc -l` and bash expansions, run in the environment's locale
+(`fr_FR.UTF-8` here; no script sets `LC_ALL`). Their ports use
+`doccheck::family002`, never `text::rx` or `pycompat` for the script's own
+semantics.
+
+- **What it gives.** `Grep` (`-E`/BRE/`-F`, `-i`; line test, `-q`, `-c`,
+  `-o`) and `Sed` (`sed -E 's/…/…/g'`); `Lines` (grep/sed numbering: a CR
+  stays in its line, a last line without newline is a line for sed and is
+  lost by `read`), `heading_no` (not fence-aware), `line_range`, `sed -n`
+  ranges, `$(…)`, here-documents, `${s#…}`/`${s%…}`, byte-based `tr`/`cut`,
+  `bash_test_int` (`test -le`); `awk` (mawk on bytes: `AwkRe`, `substr`,
+  `tolower`, `-v` escapes); `rules` (the rules several scripts write
+  verbatim, as named variants: `TagSet`, `PtrRule`,
+  `untagged_pointer_lines`, `unowned_open_items`, `section_verdict`).
+  A script-private rule stays in its port.
+- **Two matchers.** grep selects a line with gnulib's DFA when the DFA
+  supports the pattern (code-point digit ranges), else with the superset
+  DFA AND glibc regex; positions (`-o`, sed) are glibc regex, whose
+  `[0-9]` takes `¹²³⁴⁵⁶₁₂₃⅓⅔`. `Grep` and `Sed` model both.
+- **Proof.** `tools/gen_family002.py` runs the real tools and writes
+  `data/family002/` (tool versions and locale in the headers);
+  `family002::proof` compares every helper with it, no tool run. A port
+  may use only proven patterns: its test asserts
+  `family002::unproven_patterns()` is empty after the check and its
+  denials. To add a pattern: append it to `PATTERNS` in the generator,
+  regenerate (`python3 hadronyche-tools/tools/gen_family002.py`), run
+  `cargo test -p hadronyche-tools family002`. A composite of the port's
+  own (002-03's awk program) is added as a generator snippet and proven
+  in the port's test with `family002::check_snippet`.
+- **Criteria.** The scripts print `FAIL: message` with no label. Their
+  ports set `fail_reader: equiv::labels002::READER`: the criterion is the
+  banner (`# AC 1 — …` gives `AC1`, `# Locate section …` gives `Locate`)
+  above the `bad` call that printed the message; the port names its
+  criteria the same way.
+- **Integers.** `bash_test_int` reads through `pycompat::parse_int`: past
+  64 bits it is "integer expression expected" (the test is false), as in
+  bash; past `i128` the port is red under `INT_LIMIT`.
+
 ## The library in one table
 
 | Module | Use it for |

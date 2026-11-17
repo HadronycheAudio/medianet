@@ -185,6 +185,7 @@ hadronyche_tools::denial_tests!(
     ac4_denial_not_accounted_for,
     ac4_semantics_a_range_with_a_leading_zero,
     ac4_semantics_a_range_beyond_64_bits,
+    ac4_semantics_a_range_beyond_i128,
     ac4_semantics_a_range_written_with_dots,
     dod_denial_a_pointer_line_without_a_tag,
     dod_denial_an_open_item_without_owner_and_falsifier,
