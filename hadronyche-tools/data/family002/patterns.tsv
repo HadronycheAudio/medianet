@@ -1,4 +1,4 @@
-# locale fr_FR.UTF-8; inputs seeded from doc/design/reports/archaeology/REPORT-0b.md at b7c71c5eb438
+# locale fr_FR.UTF-8; inputs seeded from doc/design/reports/archaeology/REPORT-0b.md at 33052ca2501d
 # tool: grep (GNU grep) 3.11
 # tool: sed (GNU sed) 4.9
 # tool: mawk 1.3.4 20250131 (/usr/bin/mawk)
@@ -45,3 +45,83 @@ grep-Gi	voice comparison bit-level	002-02 DoD row
 grep-E	^[[:space:]]*\\|	002-02 DoD table row
 grep-Gi	answered	002-02 DoD answered
 grep-Ei	(^|[^[:alnum:]])(yes|no)([^[:alnum:]]|$)	002-02 DoD yes/no
+grep-E	\\[(code|measured|kernel-doc|memory|decision)\\]	002-03 has_tag
+grep-E	[A-Za-z0-9_./-]+\\.rs:[0-9]+	002-03 has_ptr
+grep-Eo	[A-Za-z0-9_./-]+\\.rs:[0-9]+	002-03 AC1 pointers
+grep-Eo	transport\\.rs:[0-9]+	002-03 AC1 own pointers
+grep-Eo	control\\.rs:[0-9]+	002-03 AC1 own pointers
+grep-E	not in (these|the two|either) files?|not found in (these|either)|absent from (these|both)	002-03 has_marker
+grep-E	transport\\.rs	002-03 find_headings
+grep-E	control\\.rs	002-03 find_headings
+sed-E	s/^(#+).*/\\1/	002-03 heading level
+grep-Ei	who acts[^.]*reference|transport[ -]reference|reference (role|holder)|(sender|synth)[^.]*(is|acts as|serves as|defaults? to)[^.]*reference|reference[^.]{0,30}(is|equals)[^.]{0,20}(sender|synth)([^[:alnum:]_.]|$)	002-03 fact 1
+grep-Ei	(^|[^[:alnum:]_])sender([^[:alnum:]_.]|$)	002-03 fact 1
+grep-Ei	is_reference	002-03 fact 2
+grep-Ei	module\\.rs|elected|election|routes	002-03 fact 2
+grep-Ei	listen|claim	002-03 fact 3
+grep-Ei	(1[.,]5[^0-9]{0,3}(s|sec|secs|second|seconds))|(1500[[:space:]]*ms)|(1[ _]?500[ _]?000[ _]?000[[:space:]]*ns)	002-03 fact 3
+grep-Ei	before|hear|guard|already|join|wait	002-03 fact 3
+grep-Ei	transport|datagram|events	002-03 fact 4
+grep-Ei	events	002-03 fact 4
+grep-Ei	output|connection|port|\\bsends?\\b|\\bsent\\b|\\bsending\\b	002-03 fact 4
+grep-E	[0-9]	002-03 AC3 digit
+grep-Ei	(^|[^[:alnum:]_])(constant|const|timeout|period|delay|interval|rate|size|length|budget|window|lead|expiry|expir|election|listen|repeat|room|capacity|duration|deadline|payload|every|per second|bytes|samples?|ticks?|frames?)([^[:alnum:]_]|$)|_(LEN|NS|MS|SECS|BYTES|SLOTS)([^[:alnum:]_]|$)|(^|[^[:alnum:]_])(STATE_LEN|PULSE_LEN|REPORT_LEN|ROOM|CYCLE_SECS|DIVIDER|SLOTS|LISTEN_NS|HELLO_NS|EXPIRE_NS|ELECTION_NS)([^[:alnum:]_]|$)	002-03 AC3 quantity_re
+grep-E	(^|[^A-Za-z0-9])C-30([^0-9]|$)	002-03 AC4 id
+grep-E	(^|[^A-Za-z0-9])C-31([^0-9]|$)	002-03 AC4 id
+grep-E	(^|[^A-Za-z0-9])C-32([^0-9]|$)	002-03 AC4 id
+grep-E	(^|[^A-Za-z0-9])C-33([^0-9]|$)	002-03 AC4 id
+grep-Eo	C-[0-9]+[[:space:]]*(to|through|\\.\\.|-)[[:space:]]*C-[0-9]+	002-03 AC4 ranges
+sed-E	s/^C-([0-9]+).*/\\1/	002-03 AC4 range start
+sed-E	s/.*C-([0-9]+)$/\\1/	002-03 AC4 range end
+grep-Ei	(^|[^[:alnum:]_])differ(s|ed|ing)?([^[:alnum:]_]|$)	002-03 AC4 differ
+grep-G	002-13	002-03 AC4 flagged
+grep-Ei	(^|[^[:alnum:]_])(match|matches|matched|matching|differ|differs|differed|differing)([^[:alnum:]_]|$)	002-03 AC4 verdict
+grep-E	open (item|question)|\\btodo\\b|\\btbd\\b|\\bunresolved\\b	002-03 DoD open item
+grep-E	(^|[^a-z])(no|none|not)[^.]{0,30}open	002-03 DoD negation
+grep-Gi	owner	002-03 DoD owner
+grep-Gi	falsifier	002-03 DoD falsifier
+grep-E	^[[:space:]]*(\\*\\*)?verdict:	002-03 section marker
+sed-E	s/^[[:space:]]*(\\*\\*)?verdict:[[:space:]]*//; s/[[:space:]]*\\*\\*[[:space:]]*$//	002-03 verdict body
+grep-Ei	^pending$	002-03 verdict pending
+grep-Ei	mechanism:	002-03 verdict mechanism
+grep-Ei	explanation:	002-03 verdict explanation
+awk-test	(^|[^[:alnum:]_])(constant|const|timeout|period|delay|interval|rate|size|length|budget|window|lead|expiry|expir|election|listen|repeat|room|capacity|duration|deadline|payload|every|per second|bytes|samples?|ticks?|frames?)([^[:alnum:]_]|$)|_(LEN|NS|MS|SECS|BYTES|SLOTS)([^[:alnum:]_]|$)|(^|[^[:alnum:]_])(STATE_LEN|PULSE_LEN|REPORT_LEN|ROOM|CYCLE_SECS|DIVIDER|SLOTS|LISTEN_NS|HELLO_NS|EXPIRE_NS|ELECTION_NS)([^[:alnum:]_]|$)	002-03 awk cue (-v)
+awk-test	(^|[^[:alnum:]_])(ms|milliseconds?|µs|us|microseconds?|ns|nanoseconds?|s|sec|secs|seconds?|minutes?|hours?|Hz|kHz|MHz|bytes?|KiB|KB|bits?|samples?|ticks?|frames?|fps|ppm|%|Q32\\.32|Q1\\.31|Q0\\.32|slots?|entries|channels?|controllers?|slices?|blocks?)([^[:alnum:]_]|$)|per second	002-03 awk unit (-v)
+awk-gsub	[A-Za-z0-9_.\\/-]+\\.rs:[0-9]+(-[0-9]+)?	002-03 awk
+awk-gsub	C-[0-9]+	002-03 awk
+awk-gsub	[0-9][0-9][0-9]-[0-9][0-9]	002-03 awk
+awk-gsub	Q[0-9]+\\.[0-9]+	002-03 awk
+awk-gsub	[0-9][0-9]?:[0-9][0-9]:[0-9][0-9][:;][0-9][0-9]	002-03 awk
+awk-gsub	\\^[ ]*[0-9]+	002-03 awk
+awk-gsub	<<[ ]*[0-9]+	002-03 awk
+awk-match	[0-9]+([.,][0-9]+)?	002-03 awk
+awk-gsub	^[ \\t]*	002-03 awk
+awk-test	[+*\\/xX<×-]	002-03 awk operator
+awk-gsub	[ \\t]+$	002-03 awk
+awk-test	[\\^+*\\/<]	002-03 awk previous
+awk-match	([A-Z][A-Z0-9_]{2,})[`*_]*[ \\t]*=[ \\t]*$	002-03 awk
+awk-gsub	[`*_]*[ \\t]*=[ \\t]*$	002-03 awk
+awk-test	(_LEN|_NS|_MS|_SECS|_BYTES|_SLOTS)$	002-03 awk
+grep-E	\\[(code|measured|kernel-doc|memory|decision|standard)\\]	002-04 has_tag (Tag6)
+grep-Eo	sender\\.rs:[0-9]+	002-04 AC1 own pointers
+grep-Eo	stats\\.rs:[0-9]+	002-04 AC1 own pointers
+grep-Eo	tui\\.rs:[0-9]+	002-04 AC1 own pointers
+grep-E	sender\\.rs:435([^0-9]|$)	002-04 AC2 hop pointer
+grep-E	stats\\.rs:324([^0-9]|$)	002-04 AC2 hop pointer
+grep-E	tui\\.rs:(10[7-9]|11[0-4])([^0-9]|$)	002-04 AC2 hop pointer
+grep-Ei	rx_lost	002-04 AC2
+grep-Ei	(^|[^[:alnum:]_])(u32|32[ -]?bit|4[ -]?byte)([^[:alnum:]_]|$)	002-04 AC2 type32
+grep-Ei	(^|[^[:alnum:]_])(packets?|counts?|dimensionless|unitless)([^[:alnum:]_]|$)|no (unit|conversion|scaling)|unchanged	002-04 AC2 unit
+grep-Ei	header|echo|datagram|reply|returned	002-04 AC2 source
+grep-Ei	\\[code\\]	002-04 AC2 tag
+grep-Ei	lost_fwd	002-04 AC2
+grep-Ei	(^|[^[:alnum:]_])(u64|64[ -]?bit|8[ -]?byte)([^[:alnum:]_]|$)	002-04 AC2 type64
+grep-Ei	one[- ]line|display|print|status|format	002-04 AC2 display
+grep-Ei	sent|lost_total|received	002-04 AC2 branch
+grep-Ei	lost_fwd|rx_lost	002-04 context
+grep-Ei	streams?	002-04 context
+grep-Ei	(^|[^[:alnum:]_])(latest|last|newest|overwrit(e|es|ten|ing)|replac(e|es|ed|ing)|wins?|supersed(e|es|ed))([^[:alnum:]_]|$)	002-04 context latest
+grep-Ei	no per[ -]?stream|not per[ -]?stream|across all|without (per[ -]?stream|separat)|no (per[ -]?stream )?separat|pooled|merged|single (counter|value|number|lost)|one (counter|value|number)|regardless of (the )?stream|indifferent to (the )?stream	002-04 context pooled
+grep-Ei	tx pacing lateness|tx_late	002-04 AC3
+grep-E	sender\\.rs:[0-9]+	002-04 AC3 pointer
+grep-Ei	(^|[^[:alnum:]_])(ns|nanoseconds?|µs|us|microseconds?|ms|milliseconds?)([^[:alnum:]_]|$)	002-04 AC3 unit

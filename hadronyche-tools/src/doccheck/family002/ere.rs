@@ -367,7 +367,7 @@ fn parse_sed(script: &str) -> Result<Vec<(String, String, bool)>, String> {
 
 static USED: OnceLock<Mutex<BTreeSet<(String, String)>>> = OnceLock::new();
 
-fn used(kind: String, pattern: &str) {
+pub(crate) fn used(kind: String, pattern: &str) {
     let set = USED.get_or_init(|| Mutex::new(BTreeSet::new()));
     let mut set = set.lock().expect("family002 registry");
     if set.len() < 4096 {
@@ -388,7 +388,14 @@ pub fn unproven_patterns() -> Vec<(String, String)> {
         .filter(|l| !l.starts_with('#'))
         .filter_map(|l| {
             let mut f = l.split('\t');
-            Some((f.next()?.to_string(), unescape_field(f.next()?)))
+            // an awk regex is proven by its test, match and gsub rows
+            let kind = f.next()?;
+            let kind = if kind.starts_with("awk-") {
+                "awk"
+            } else {
+                kind
+            };
+            Some((kind.to_string(), unescape_field(f.next()?)))
         })
         .collect();
     let set = USED.get_or_init(|| Mutex::new(BTreeSet::new()));

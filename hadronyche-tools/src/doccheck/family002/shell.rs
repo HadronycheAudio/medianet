@@ -193,3 +193,25 @@ pub fn distinct_count<'s>(items: impl IntoIterator<Item = &'s str>) -> usize {
         items.into_iter().filter(|s| !s.is_empty()).collect();
     set.len()
 }
+
+/// The integer `[ "$s" -le N ]` (and the other `test` comparisons) reads
+/// from `s`, or `None` when bash says "integer expression expected" (the
+/// test is then false): optional leading whitespace (`isspace`) and sign,
+/// decimal digits (a leading zero is still decimal: `030` is 30), optional
+/// trailing spaces or tabs, within 64 bits (`strtoimax` overflow is an
+/// error). Bash 5.2 `legal_number`.
+pub fn bash_test_int(s: &str) -> Option<i64> {
+    let t = s.trim_start_matches([' ', '\t', '\n', '\x0b', '\x0c', '\r']);
+    let (negative, t) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let end = t.find(|c: char| !c.is_ascii_digit()).unwrap_or(t.len());
+    let (digits, rest) = t.split_at(end);
+    if digits.is_empty() || !rest.chars().all(|c| c == ' ' || c == '\t') {
+        return None;
+    }
+    let n = crate::doccheck::pycompat::parse_int(digits).ok()?;
+    i64::try_from(if negative { -n } else { n }).ok()
+}

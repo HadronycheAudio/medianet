@@ -18,21 +18,22 @@ Files written (under --out, default hadronyche-tools/data/family002):
                 newline (no tool sees a newline inside a line): its class
                 memberships for grep -E (with and without -i), bash patterns,
                 tr, mawk and cut. Columns are documented in the header.
-  patterns.tsv  every (tool, flags, pattern) the corpus proves, one per line:
+  patterns.tsv  every (tool, flags, pattern) the corpus proves (awk: the
+                regex VALUE mawk compiles, rows AT test, AM match, AG gsub), one per line:
                 the list a port's patterns must belong to
                 (`family002::unproven_patterns`).
   corpus.tsv    the inputs and, per probe, what the tool printed:
                   I <id> <line>              an input line
                   Q <key> <ids>              grep -q: the inputs that match
                                              (ranges "0-3,7")
-                  O <key> <id> <m1 US m2..>  grep -o: the matches of one input
-                                             (only inputs with a match)
+                  OD <key> <digests>         grep -o: per input its matches
+                                             joined by \x1f, digested
                   SD <key> <digests>         sed: the outputs of every input,
                                              one FNV-1a 64 digest per chunk
                                              of 64 (each output + \x1e)
                   HD <snippet> <ids> <dig,..> a transform's outputs on those
                                              inputs, digested as for SD
-                  HC <snippet> <ids> <v,..>  a counter's output per input
+
                   F <id> <text>              a whole-file fixture
                   R <probe> <fixture> <out>  a file-level probe's output
                 Strings are escaped: \\ \t \n \r and \xHH for other control
@@ -55,6 +56,7 @@ disagrees on.
 """
 
 import argparse
+import shlex
 import os
 import shutil
 import subprocess
@@ -67,6 +69,12 @@ REPO = os.path.dirname(CRATE)
 REPORT = "doc/design/reports/archaeology/REPORT-0b.md"
 
 # ----------------------------------------------------------------- patterns
+# 002-03's two dynamic regexes, as written in the script; mawk gets them
+# through -v, which keeps the unknown escape \. as it is.
+QUANTITY_RE = '(^|[^[:alnum:]_])(constant|const|timeout|period|delay|interval|rate|size|length|budget|window|lead|expiry|expir|election|listen|repeat|room|capacity|duration|deadline|payload|every|per second|bytes|samples?|ticks?|frames?)([^[:alnum:]_]|$)|_(LEN|NS|MS|SECS|BYTES|SLOTS)([^[:alnum:]_]|$)|(^|[^[:alnum:]_])(STATE_LEN|PULSE_LEN|REPORT_LEN|ROOM|CYCLE_SECS|DIVIDER|SLOTS|LISTEN_NS|HELLO_NS|EXPIRE_NS|ELECTION_NS)([^[:alnum:]_]|$)'
+UNIT_RE = '(^|[^[:alnum:]_])(ms|milliseconds?|µs|us|microseconds?|ns|nanoseconds?|s|sec|secs|seconds?|minutes?|hours?|Hz|kHz|MHz|bytes?|KiB|KB|bits?|samples?|ticks?|frames?|fps|ppm|%|Q32\\.32|Q1\\.31|Q0\\.32|slots?|entries|channels?|controllers?|slices?|blocks?)([^[:alnum:]_]|$)|per second'
+UNIT_OFFENDERS_BODY = '  local line="$1"\n  printf \'%s\\n\' "$line" | awk -v cue="$quantity_re" -v unit="$unit_re" \'\n    {\n      low = tolower($0)\n      if (low !~ cue) next\n      s = $0\n      gsub(/[A-Za-z0-9_.\\/-]+\\.rs:[0-9]+(-[0-9]+)?/, "", s)\n      gsub(/C-[0-9]+/, "", s)\n      gsub(/[0-9][0-9][0-9]-[0-9][0-9]/, "", s)\n      gsub(/Q[0-9]+\\.[0-9]+/, "", s)\n      gsub(/[0-9][0-9]?:[0-9][0-9]:[0-9][0-9][:;][0-9][0-9]/, "", s)\n      gsub(/\\^[ ]*[0-9]+/, "", s)\n      gsub(/<<[ ]*[0-9]+/, "", s)\n      while (match(s, /[0-9]+([.,][0-9]+)?/)) {\n        nstart = RSTART; nlen = RLENGTH; adv = nstart + nlen\n        num = substr(s, nstart, nlen)\n        before = substr(s, 1, nstart - 1)\n        after = substr(s, adv, 24)\n        tail = after\n        sub(/^[ \\t]*/, "", tail)\n        op = substr(tail, 1, 1)\n        if (op ~ /[+*\\/xX<×-]/) { s = substr(s, adv); continue }\n        if (tolower(after) ~ unit) { s = substr(s, adv); continue }\n        prev = before\n        sub(/[ \\t]+$/, "", prev)\n        prevch = substr(prev, length(prev), 1)\n        if (prevch ~ /[\\^+*\\/<]/) { s = substr(s, adv); continue }\n        # Dimensionless identifier assignment: `VOLUME` = 0, T_STATE = 0.\n        if (match(before, /([A-Z][A-Z0-9_]{2,})[`*_]*[ \\t]*=[ \\t]*$/)) {\n          ident = substr(before, RSTART, RLENGTH)\n          sub(/[`*_]*[ \\t]*=[ \\t]*$/, "", ident)\n          if (ident !~ /(_LEN|_NS|_MS|_SECS|_BYTES|_SLOTS)$/ \\\n              && ident != "ROOM" && ident != "CYCLE_SECS" \\\n              && ident != "DIVIDER" && ident != "SLOTS" && ident != "ONE") {\n            s = substr(s, adv); continue\n          }\n        }\n        printf "number %s has no unit near: %s\\n", num, after\n        s = substr(s, adv)\n      }\n    }\''
+
 # (tool+flags, pattern, origin). Tool+flags is one of:
 #   grep-E grep-Ei grep-G grep-Gi grep-F grep-Fi   (match per line: -q/-c/-n)
 #   grep-Eo grep-Eio grep-Go                      (grep -o: matches per line)
@@ -110,6 +118,89 @@ PATTERNS = [
     ("grep-E", r"^[[:space:]]*\|", "002-02 DoD table row"),
     ("grep-Gi", r"answered", "002-02 DoD answered"),
     ("grep-Ei", r"(^|[^[:alnum:]])(yes|no)([^[:alnum:]]|$)", "002-02 DoD yes/no"),
+    # 002-03
+    ("grep-E", r"\[(code|measured|kernel-doc|memory|decision)\]", "002-03 has_tag"),
+    ("grep-E", r"[A-Za-z0-9_./-]+\.rs:[0-9]+", "002-03 has_ptr"),
+    ("grep-Eo", r"[A-Za-z0-9_./-]+\.rs:[0-9]+", "002-03 AC1 pointers"),
+    ("grep-Eo", r"transport\.rs:[0-9]+", "002-03 AC1 own pointers"),
+    ("grep-Eo", r"control\.rs:[0-9]+", "002-03 AC1 own pointers"),
+    ("grep-E", r"not in (these|the two|either) files?|not found in (these|either)|absent from (these|both)", "002-03 has_marker"),
+    ("grep-E", r"transport\.rs", "002-03 find_headings"),
+    ("grep-E", r"control\.rs", "002-03 find_headings"),
+    ("sed-E", r"s/^(#+).*/\1/", "002-03 heading level"),
+    ("grep-Ei", r"who acts[^.]*reference|transport[ -]reference|reference (role|holder)|(sender|synth)[^.]*(is|acts as|serves as|defaults? to)[^.]*reference|reference[^.]{0,30}(is|equals)[^.]{0,20}(sender|synth)([^[:alnum:]_.]|$)", "002-03 fact 1"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])sender([^[:alnum:]_.]|$)", "002-03 fact 1"),
+    ("grep-Ei", r"is_reference", "002-03 fact 2"),
+    ("grep-Ei", r"module\.rs|elected|election|routes", "002-03 fact 2"),
+    ("grep-Ei", r"listen|claim", "002-03 fact 3"),
+    ("grep-Ei", r"(1[.,]5[^0-9]{0,3}(s|sec|secs|second|seconds))|(1500[[:space:]]*ms)|(1[ _]?500[ _]?000[ _]?000[[:space:]]*ns)", "002-03 fact 3"),
+    ("grep-Ei", r"before|hear|guard|already|join|wait", "002-03 fact 3"),
+    ("grep-Ei", r"transport|datagram|events", "002-03 fact 4"),
+    ("grep-Ei", r"events", "002-03 fact 4"),
+    ("grep-Ei", r"output|connection|port|\bsends?\b|\bsent\b|\bsending\b", "002-03 fact 4"),
+    ("grep-E", r"[0-9]", "002-03 AC3 digit"),
+    ("grep-Ei", QUANTITY_RE, "002-03 AC3 quantity_re"),
+    ("grep-E", r"(^|[^A-Za-z0-9])C-30([^0-9]|$)", "002-03 AC4 id"),
+    ("grep-E", r"(^|[^A-Za-z0-9])C-31([^0-9]|$)", "002-03 AC4 id"),
+    ("grep-E", r"(^|[^A-Za-z0-9])C-32([^0-9]|$)", "002-03 AC4 id"),
+    ("grep-E", r"(^|[^A-Za-z0-9])C-33([^0-9]|$)", "002-03 AC4 id"),
+    ("grep-Eo", r"C-[0-9]+[[:space:]]*(to|through|\.\.|-)[[:space:]]*C-[0-9]+", "002-03 AC4 ranges"),
+    ("sed-E", r"s/^C-([0-9]+).*/\1/", "002-03 AC4 range start"),
+    ("sed-E", r"s/.*C-([0-9]+)$/\1/", "002-03 AC4 range end"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])differ(s|ed|ing)?([^[:alnum:]_]|$)", "002-03 AC4 differ"),
+    ("grep-G", r"002-13", "002-03 AC4 flagged"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])(match|matches|matched|matching|differ|differs|differed|differing)([^[:alnum:]_]|$)", "002-03 AC4 verdict"),
+    ("grep-E", r"open (item|question)|\btodo\b|\btbd\b|\bunresolved\b", "002-03 DoD open item"),
+    ("grep-E", r"(^|[^a-z])(no|none|not)[^.]{0,30}open", "002-03 DoD negation"),
+    ("grep-Gi", r"owner", "002-03 DoD owner"),
+    ("grep-Gi", r"falsifier", "002-03 DoD falsifier"),
+    ("grep-E", r"^[[:space:]]*(\*\*)?verdict:", "002-03 section marker"),
+    ("sed-E", r"s/^[[:space:]]*(\*\*)?verdict:[[:space:]]*//; s/[[:space:]]*\*\*[[:space:]]*$//", "002-03 verdict body"),
+    ("grep-Ei", r"^pending$", "002-03 verdict pending"),
+    ("grep-Ei", r"mechanism:", "002-03 verdict mechanism"),
+    ("grep-Ei", r"explanation:", "002-03 verdict explanation"),
+    # 002-03 awk (unit_offenders): the regex values mawk compiles
+    ("awk-test", QUANTITY_RE, "002-03 awk cue (-v)"),
+    ("awk-test", UNIT_RE, "002-03 awk unit (-v)"),
+    ("awk-gsub", r"[A-Za-z0-9_.\/-]+\.rs:[0-9]+(-[0-9]+)?", "002-03 awk"),
+    ("awk-gsub", r"C-[0-9]+", "002-03 awk"),
+    ("awk-gsub", r"[0-9][0-9][0-9]-[0-9][0-9]", "002-03 awk"),
+    ("awk-gsub", r"Q[0-9]+\.[0-9]+", "002-03 awk"),
+    ("awk-gsub", r"[0-9][0-9]?:[0-9][0-9]:[0-9][0-9][:;][0-9][0-9]", "002-03 awk"),
+    ("awk-gsub", r"\^[ ]*[0-9]+", "002-03 awk"),
+    ("awk-gsub", r"<<[ ]*[0-9]+", "002-03 awk"),
+    ("awk-match", r"[0-9]+([.,][0-9]+)?", "002-03 awk"),
+    ("awk-gsub", r"^[ \t]*", "002-03 awk"),
+    ("awk-test", r"[+*\/xX<×-]", "002-03 awk operator"),
+    ("awk-gsub", r"[ \t]+$", "002-03 awk"),
+    ("awk-test", r"[\^+*\/<]", "002-03 awk previous"),
+    ("awk-match", r"([A-Z][A-Z0-9_]{2,})[`*_]*[ \t]*=[ \t]*$", "002-03 awk"),
+    ("awk-gsub", r"[`*_]*[ \t]*=[ \t]*$", "002-03 awk"),
+    ("awk-test", r"(_LEN|_NS|_MS|_SECS|_BYTES|_SLOTS)$", "002-03 awk"),
+    # 002-04
+    ("grep-E", r"\[(code|measured|kernel-doc|memory|decision|standard)\]", "002-04 has_tag (Tag6)"),
+    ("grep-Eo", r"sender\.rs:[0-9]+", "002-04 AC1 own pointers"),
+    ("grep-Eo", r"stats\.rs:[0-9]+", "002-04 AC1 own pointers"),
+    ("grep-Eo", r"tui\.rs:[0-9]+", "002-04 AC1 own pointers"),
+    ("grep-E", r"sender\.rs:435([^0-9]|$)", "002-04 AC2 hop pointer"),
+    ("grep-E", r"stats\.rs:324([^0-9]|$)", "002-04 AC2 hop pointer"),
+    ("grep-E", r"tui\.rs:(10[7-9]|11[0-4])([^0-9]|$)", "002-04 AC2 hop pointer"),
+    ("grep-Ei", r"rx_lost", "002-04 AC2"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])(u32|32[ -]?bit|4[ -]?byte)([^[:alnum:]_]|$)", "002-04 AC2 type32"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])(packets?|counts?|dimensionless|unitless)([^[:alnum:]_]|$)|no (unit|conversion|scaling)|unchanged", "002-04 AC2 unit"),
+    ("grep-Ei", r"header|echo|datagram|reply|returned", "002-04 AC2 source"),
+    ("grep-Ei", r"\[code\]", "002-04 AC2 tag"),
+    ("grep-Ei", r"lost_fwd", "002-04 AC2"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])(u64|64[ -]?bit|8[ -]?byte)([^[:alnum:]_]|$)", "002-04 AC2 type64"),
+    ("grep-Ei", r"one[- ]line|display|print|status|format", "002-04 AC2 display"),
+    ("grep-Ei", r"sent|lost_total|received", "002-04 AC2 branch"),
+    ("grep-Ei", r"lost_fwd|rx_lost", "002-04 context"),
+    ("grep-Ei", r"streams?", "002-04 context"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])(latest|last|newest|overwrit(e|es|ten|ing)|replac(e|es|ed|ing)|wins?|supersed(e|es|ed))([^[:alnum:]_]|$)", "002-04 context latest"),
+    ("grep-Ei", r"no per[ -]?stream|not per[ -]?stream|across all|without (per[ -]?stream|separat)|no (per[ -]?stream )?separat|pooled|merged|single (counter|value|number|lost)|one (counter|value|number)|regardless of (the )?stream|indifferent to (the )?stream", "002-04 context pooled"),
+    ("grep-Ei", r"tx pacing lateness|tx_late", "002-04 AC3"),
+    ("grep-E", r"sender\.rs:[0-9]+", "002-04 AC3 pointer"),
+    ("grep-Ei", r"(^|[^[:alnum:]_])(ns|nanoseconds?|µs|us|microseconds?|ms|milliseconds?)([^[:alnum:]_]|$)", "002-04 AC3 unit"),
 ]
 
 # Bash snippets proven per input line: the line is in "$line"; the output
@@ -131,7 +222,15 @@ SNIPPETS = {
     "word_count": r'''printf '%s' "$line" | tr -s '[:space:]' '\n' | grep -c '[[:alnum:]]' ''',
     "terminal_count": r'''printf '%s' "$line" | grep -oE '[.!?]' | wc -l | tr -d ' ' ''',
     "cut_110": r'''printf '%s' "$line" | cut -c1-110''',
+    # mawk's -v assignment of the line (escape processing)
+    "awk_v_assign": r'''awk -v x="$line" 'BEGIN { printf "%s", x }' ''',
+    # bash test -le on a string (how 002-03 compares range ends)
+    "bash_test_le_30": r'''if [ "$line" -le 30 ] 2>/dev/null; then printf yes; else printf no; fi''',
 }
+# 002-03 unit_offenders(), verbatim, with the script's two regexes
+SNIPPETS["002-03 unit_offenders"] = (
+    "quantity_re=" + shlex.quote(QUANTITY_RE) + "\nunit_re=" + shlex.quote(UNIT_RE) + "\n" + UNIT_OFFENDERS_BODY
+)
 
 # File-level probes: "$f" is the fixture file. Output records are
 # separated by \x1e.
@@ -151,6 +250,7 @@ EOF''',
     "heading_no_open": r'''grep -Ein '^#+[[:space:]]*Open sub-questions' "$f" | awk -F: '/^[0-9]+:#/ { print $1; exit }' ''',
     "count_nonempty_sub": r'''SUB=$(sed -n "1,99p" "$f"); printf '%s\n' "$SUB" | grep -c '[^[:space:]]' ''',
     "ptr_distinct": r'''SUB=$(sed -n "1,99p" "$f"); ptrs=$(printf '%s\n' "$SUB" | grep -oE 'audio\.rs:[0-9]+' | sort -u); printf '%s\n' "$ptrs" | grep -c . || true''',
+    "any_ptr_distinct": r'''SUB=$(sed -n "1,99p" "$f"); ptrs=$(printf '%s\n' "$SUB" | grep -oE '[A-Za-z0-9_./-]+\.rs:[0-9]+' | sort -u); printf '%s\n' "$ptrs" | grep -c . || true''',
 }
 
 FIXTURES = [
@@ -176,6 +276,8 @@ FIXTURES = [
     "AUDIO.RS:5\naudio.rs:6\r\n",
     "line with trailing spaces   \n\t\n \n",
     "x\ny\nz\nw\n",
+    "a.rs:1 a_rs.rs:1 a-rs.rs:1 a/rs.rs:1 ./a.rs:1 a.rs:01 A.rs:1 a.rs:1² ab.rs:1 a.b.rs:1\nab.rs:2 a-b.rs:2 a_b.rs:2 A_B.rs:2 a.rs:1\n",
+    "x.rs:12 x.rs:1²\nx.rs:1₂ x.rs:1⅔ x.rs:12\n",
 ]
 
 
@@ -351,9 +453,12 @@ def range_facts(t, chars, tmp):
 def inputs(commit):
     text = subprocess.run(["git", "show", f"{commit}:{REPORT}"], cwd=REPO, capture_output=True, check=True).stdout.decode()
     seen, out = set(), []
+    allowed = set(repertoire())
 
     def add(s):
-        if s not in seen and "\n" not in s:
+        # only repertoire characters: outside it no port runs (the guard),
+        # and str.upper() makes some (µ gives the Greek capital mu)
+        if s not in seen and "\n" not in s and all(c in allowed for c in s):
             seen.add(s)
             out.append(s)
 
@@ -392,12 +497,12 @@ def inputs(commit):
     for _, pat, _ in PATTERNS:
         for word in pat.replace("\\", " ").replace("|", " ").replace("(", " ").replace(")", " ").replace("^", " ").replace("$", " ").split():
             w = "".join(ch for ch in word if ch.isalnum() or ch in "._:-[]? ")
-            if len(w) >= 2:
+            if len(w) >= 3:
                 keywords.add(w)
     keywords |= {"confirmed", "corrected", "yes", "no", "eps", "e.g.", "i.e.", "audio.rs:604", "audio.rs:", "[code]", "[measured]",
                  "Verdict statement:", "Voice comparison bit-level: yes", "voice comparison bit-level", "answered", "1.5", "2.7 s",
                  "1 s", "3 s", "1-second", "3-second", "SETTLE_SECS", "MAX_LAG_WINDOWS", "1 024", "1,024", "voices=false"}
-    contexts = ["", " ", "_", "x", "X", "0", ".", "-", "|", "\t", "\r", "µ", "²", "Δ", "—"]
+    contexts = ["", " ", "_", "x", "0", ".", "-", "\t", "\r", "µ", "²", "—"]
     for k in sorted(keywords):
         for c in contexts:
             add(c + k + " end")
@@ -423,6 +528,25 @@ def inputs(commit):
         "µs Δt Σx α π τ", "ΔΣαπτµ", "a²b", "word² word", "² ³ ¹", "x — y", "→", "Ünïcödé-free", "back\\slash", "a\\b",
         "\\.", "[.]", "a{b", "{", "}", "$", "^", "a$b", "a^b", "( ) [ ] { } * + ? | \\ / . ^ $",
     ]
+    hand += ["30", "030", " 30", "30 ", "+30", "-5", "1e3", "09", "0x1F", "99999999999999999999", "31", "7\t", "\t7", "3²",
+             "STATE_LEN = 7", "VOLUME = 0", "T_STATE = 0", "`ROOM` = 64", "x ÷ 2 period", "x × 2 delay", "a ^ 2 size", "1 << 3 rate",
+             "period 10 ms", "rate 48 kHz", "delay 1.5 s", "delay 1,5 s", "size 12 bytes", "window 1024", "every 5", "budget 3 µs",
+             "length 12 (audio.rs:12-14)", "C-30 to C-33", "C-30..C-33", "C-30-C-33", "C-30 through C-33", "C-3 to C-033",
+             "00:01:02;03 time", "Q32.32 and Q1.31", "rate 2-3 Hz", "period 0x10", "constant ONE = 1", "LISTEN_NS = 1500000000",
+             "election 1 500 000 000 ns", "listen 1.5 s before", "1.5s", "1.5 sec", "1500 ms", "1_500_000_000 ns", "1.5²s",
+             "not in these files", "Not In The Two Files", "absent from both", "not found in either", "verdict: pending",
+             "**verdict:** pending  **", "  verdict: instrument bug, mechanism: x", "Verdict: pending", "verdict:pending\r",
+             "open item: owner x falsifier y", "no open item", "TODO later", "the tbd value", "unresolved", "nothing is open",
+             "x.rs:1 y.rs:2 a/b.rs:3 ./c.rs:4 x.rs:01", "transport.rs:12 xtransport.rs:13 control.rs:9", "Transport.rs:1",
+             "it differs (002-13)", "differed", "matching", "mismatch", "the sender is the reference", "who acts as reference",
+             "sender.rs:1 only", "is_reference via module.rs", "events output", "it sends events", "sent", "resend",
+             "a\\.b", "x\\ty", "q\\\"r", "s\\/t", "u\\\\v", "period 5\\n"]
+    hand += ["sender.rs:435 rx_lost u32 packets header [code]", "sender.rs:4350", "sender.rs:435²", "tui.rs:107", "tui.rs:115",
+             "tui.rs:11²", "tui.rs:10⁹", "tui.rs:114x", "stats.rs:324 lost_fwd u64 count [code]", "32-bit", "32 bit", "4-byte",
+             "u32x", "64bit", "8 byte", "no unit", "no conversion", "unchanged", "unitless", "one-line display", "lost_total",
+             "the latest record wins", "overwritten", "superseded", "pooled across all streams", "no per-stream separation",
+             "regardless of the stream", "single counter", "TX pacing lateness 3 µs sender.rs:12 [code]", "tx_late in ns",
+             "[standard]", "[Standard]", "µs", "us", "msx", "_ms"]
     for h in hand:
         add(h)
     return out
@@ -457,8 +581,10 @@ def corpus(t, lines, tmp):
                     continue
                 n, _, m = l.partition(b":")
                 per.setdefault(int(n) - 1, []).append(m)
-            for i in sorted(per):
-                out.append(f"O\t{key}\t{i}\t" + "\\x1f".join(esc(m) for m in per[i]))
+            outputs = [b"\x1f".join(per.get(i, [])) for i in range(len(lines))]
+            out.append(f"OD\t{key}\t{digests(outputs)}")
+        elif tool.startswith("awk-"):
+            out.extend(awk_rows(t, tool, pat, key, path))
         elif tool == "sed-E":
             r = t.run(["sed", "-E", pat, path], check=True)
             got = r.stdout.split(b"\n")
@@ -471,7 +597,31 @@ def corpus(t, lines, tmp):
     return out
 
 
-COUNTERS = {"hash_run_len", "word_count", "terminal_count"}
+AWK_PROGRAMS = {
+    "awk-test": '{ print ($0 ~ ENVIRON["RE"]) ? 1 : 0 }',
+    "awk-match": '{ if (match($0, ENVIRON["RE"])) print RSTART ":" RLENGTH; else print "-" }',
+    "awk-gsub": '{ s = $0; gsub(ENVIRON["RE"], "", s); print s }',
+}
+
+
+def awk_rows(t, tool, pat, key, path):
+    """mawk on every input, the regex VALUE passed through ENVIRON (no -v
+    escape processing): AT ids that match, AM per-input RSTART:RLENGTH,
+    AG digests of the gsub outputs."""
+    env = dict(t.env)
+    env["RE"] = pat
+    with open(path, "rb") as f:
+        r = subprocess.run(["awk", AWK_PROGRAMS[tool]], stdin=f, capture_output=True, env=env)
+    if r.returncode != 0:
+        sys.exit(f"awk {pat!r}: {r.stderr.decode(errors='replace')}")
+    got = r.stdout.split(b"\n")
+    if got and got[-1] == b"":
+        got.pop()
+    if tool == "awk-test":
+        return [f"AT\t{key}\t{ranges([i for i, g in enumerate(got) if g == b'1'])}"]
+    if tool == "awk-match":
+        return [f"AMD\t{key}\t{digests(got)}"]
+    return [f"AG\t{key}\t{digests(got)}"]
 
 
 def snippets(t, lines, tmp):
@@ -489,9 +639,6 @@ def snippets(t, lines, tmp):
         if got and got[-1] == b"":
             got.pop()
         assert len(got) == len(ids), (name, len(got), len(ids), r.stderr[:300])
-        if name in COUNTERS:
-            out.append(f"HC\t{name}\t{ranges(ids)}\t" + ",".join(g.decode().strip() for g in got))
-            continue
         out.append(f"HD\t{name}\t{ranges(ids)}\t" + digests(got))
     return out
 

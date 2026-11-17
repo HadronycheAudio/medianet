@@ -6,13 +6,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::awk::{AwkRe, substr, tolower, v_assign};
 use super::ere::{Grep, Sed, unescape_bytes, unescape_field};
 use super::shell::*;
+use super::tables::{CORPUS, compare_digests, inputs, rows};
 use super::translate::{Syntax, is_space, is_word, posix_class, translate};
-use crate::doccheck::pycompat::parse_int;
 
 const CHARS: &str = include_str!("../../../data/family002/chars.tsv");
-const CORPUS: &str = include_str!("../../../data/family002/corpus.tsv");
 const PATTERNS: &str = include_str!("../../../data/family002/patterns.tsv");
 const RANGES: &str = include_str!("../../../data/family002/ranges.tsv");
 
@@ -55,28 +55,8 @@ const CLASS_COLUMNS: [&str; 18] = [
     "cntrl", "xdigit", "w", "s", "dot", "09", "az", "AZ",
 ];
 
-fn rows(table: &str) -> impl Iterator<Item = Vec<&str>> {
-    table
-        .lines()
-        .filter(|l| !l.starts_with('#'))
-        .map(|l| l.split('\t').collect())
-}
-
 fn ids(spec: &str) -> BTreeSet<usize> {
-    let mut out = BTreeSet::new();
-    if spec == "-" {
-        return out;
-    }
-    for part in spec.split(',') {
-        let (a, b) = part.split_once('-').unwrap_or((part, part));
-        let (a, b) = (num(a), num(b));
-        out.extend(a..=b);
-    }
-    out
-}
-
-fn num(s: &str) -> usize {
-    usize::try_from(parse_int(s).expect("a number")).expect("an index")
+    super::tables::ids(spec).into_iter().collect()
 }
 
 fn cp(hex: &str) -> char {
@@ -194,13 +174,6 @@ fn every_character_has_the_tools_classes() {
     );
 }
 
-fn inputs() -> Vec<String> {
-    rows(CORPUS)
-        .filter(|r| r[0] == "I")
-        .map(|r| unescape_field(r.get(2).copied().unwrap_or("")))
-        .collect()
-}
-
 fn grep_of(kind: &str, pattern: &str) -> Grep {
     let flags = kind.trim_start_matches("grep-");
     let syntax = match &flags[..1] {
@@ -243,34 +216,18 @@ fn every_pattern_matches_the_lines_grep_matched() {
 #[test]
 fn grep_o_and_sed_give_the_tools_output() {
     let input = inputs();
-    type Matches = BTreeMap<usize, Vec<Vec<u8>>>;
-    let mut only: BTreeMap<(String, String), Matches> = BTreeMap::new();
-    for r in rows(CORPUS).filter(|r| r[0] == "O") {
-        let ms = r
-            .get(4)
-            .copied()
-            .unwrap_or("")
-            .split("\\x1f")
-            .map(unescape_bytes)
+    let mut onlys = 0;
+    for r in rows(CORPUS).filter(|r| r[0] == "OD") {
+        let (kind, pattern) = (r[1], unescape_field(r[2]));
+        let g = grep_of(kind.trim_end_matches('o'), &pattern);
+        let outputs: Vec<Vec<u8>> = input
+            .iter()
+            .map(|l| g.only(l).join("\x1f").into_bytes())
             .collect();
-        only.entry((r[1].to_string(), unescape_field(r[2])))
-            .or_default()
-            .insert(num(r[3]), ms);
+        assert_digests(&format!("grep -o {pattern:?}"), &input, &outputs, r[3]);
+        onlys += 1;
     }
-    for (_, p, _) in proven_list()
-        .into_iter()
-        .filter(|(k, _, _)| k.ends_with('o'))
-    {
-        only.entry((format!("grep-{}o", "E"), p)).or_default();
-    }
-    for ((kind, pattern), want) in &only {
-        let g = grep_of(kind.trim_end_matches('o'), pattern);
-        for (i, line) in input.iter().enumerate() {
-            let got: Vec<Vec<u8>> = g.only(line).iter().map(|m| m.as_bytes().to_vec()).collect();
-            let want = want.get(&i).cloned().unwrap_or_default();
-            assert_eq!(got, want, "grep -o {pattern:?} on {line:?}");
-        }
-    }
+    assert!(onlys >= 5);
     let mut seds = 0;
     for r in rows(CORPUS).filter(|r| r[0] == "SD") {
         let s = Sed::ere(&unescape_field(r[2]));
@@ -281,43 +238,10 @@ fn grep_o_and_sed_give_the_tools_output() {
     assert!(seds >= 2);
 }
 
-/// FNV-1a, 64 bits (the generator's digest).
-fn fnv(data: &[u8]) -> u64 {
-    let mut h: u64 = 0xCBF2_9CE4_8422_2325;
-    for b in data {
-        h = (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01B3);
-    }
-    h
-}
-
-/// Compares `outputs` (one per input of `inputs`, in order) with the
-/// generator's per-chunk digests; a mismatch names the chunk's inputs.
 fn assert_digests(what: &str, inputs: &[impl AsRef<str>], outputs: &[Vec<u8>], digests: &str) {
-    let want: Vec<&str> = digests.split(',').collect();
-    let chunks: Vec<&[Vec<u8>]> = outputs.chunks(64).collect();
-    assert_eq!(chunks.len(), want.len(), "{what}: chunk count");
-    for (k, (chunk, want)) in chunks.iter().zip(want).enumerate() {
-        let mut data = Vec::new();
-        for o in *chunk {
-            data.extend_from_slice(o);
-            data.push(0x1e);
-        }
-        let got = format!("{:016x}", fnv(&data));
-        if got != want {
-            let lines: Vec<String> = (k * 64..(k * 64 + chunk.len()))
-                .map(|i| {
-                    format!(
-                        "{:?} -> {:?}",
-                        inputs[i].as_ref(),
-                        String::from_utf8_lossy(&outputs[i])
-                    )
-                })
-                .collect();
-            panic!(
-                "{what}: chunk {k} differs from the tool (run the snippet or sed on these lines to see the tool's output); ours:\n{}",
-                lines.join("\n")
-            );
-        }
+    let inputs: Vec<&str> = inputs.iter().map(|s| s.as_ref()).collect();
+    if let Err(e) = compare_digests(what, &inputs, outputs, digests) {
+        panic!("{e}");
     }
 }
 
@@ -336,11 +260,11 @@ fn proven_list() -> Vec<(String, String, String)> {
 #[test]
 fn every_listed_pattern_is_in_the_corpus() {
     let corpus: BTreeSet<(String, String)> = rows(CORPUS)
-        .filter(|r| matches!(r[0], "Q" | "O" | "SD"))
+        .filter(|r| matches!(r[0], "Q" | "OD" | "SD" | "AT" | "AMD" | "AG"))
         .map(|r| (r[1].to_string(), unescape_field(r[2])))
         .collect();
     for (kind, p, origin) in proven_list() {
-        let found = corpus.contains(&(kind.clone(), p.clone())) || kind.ends_with('o');
+        let found = corpus.contains(&(kind.clone(), p.clone()));
         assert!(found, "{kind} {p:?} ({origin}) has no row in corpus.tsv");
     }
 }
@@ -368,8 +292,8 @@ fn snippet(name: &str, line: &str) -> Vec<u8> {
             .to_string()
             .into_bytes(),
         "tr_delete_space" => tr_delete_space(line).into_bytes(),
-        "word_count" => alnum_word_count(line).to_string().into_bytes(),
-        "terminal_count" => Grep::ere("[.!?]").only(line).len().to_string().into_bytes(),
+        "word_count" => format!("{}\n", alnum_word_count(line)).into_bytes(),
+        "terminal_count" => format!("{}\n", Grep::ere("[.!?]").only(line).len()).into_bytes(),
         "cut_110" => {
             // cut ends every line it prints with a newline; empty input
             // (`printf '%s' ""`) has no line at all
@@ -383,8 +307,19 @@ fn snippet(name: &str, line: &str) -> Vec<u8> {
             b.push(b'\n');
             b
         }
+        "awk_v_assign" => v_assign(line).into_bytes(),
+        "bash_test_le_30" => {
+            let yes = bash_test_int(line).is_some_and(|n| n <= 30);
+            (if yes { "yes" } else { "no" }).as_bytes().to_vec()
+        }
         other => panic!("snippet {other} has no Rust counterpart"),
     }
+}
+
+/// Snippets named after a script (`002-03 unit_offenders`) are that
+/// script's own code: its port's test proves them (`check_snippet`).
+fn port_snippet(name: &str) -> bool {
+    name.starts_with("002-")
 }
 
 #[test]
@@ -393,29 +328,17 @@ fn every_bash_snippet_gives_the_shells_output() {
     let mut seen = 0;
     for r in rows(CORPUS) {
         match r[0] {
+            "HD" if port_snippet(r[1]) => {}
             "HD" => {
                 let subset: Vec<&str> = ids(r[2]).into_iter().map(|i| input[i].as_str()).collect();
                 let outputs: Vec<Vec<u8>> = subset.iter().map(|l| snippet(r[1], l)).collect();
                 assert_digests(r[1], &subset, &outputs, r[3]);
                 seen += 1;
             }
-            "HC" => {
-                let values: Vec<&str> = r[3].split(',').collect();
-                for (i, v) in ids(r[2]).into_iter().zip(values) {
-                    assert_eq!(
-                        snippet(r[1], &input[i]),
-                        v.as_bytes(),
-                        "{} on {:?}",
-                        r[1],
-                        input[i]
-                    );
-                }
-                seen += 1;
-            }
             _ => {}
         }
     }
-    assert!(seen >= 9, "every snippet has rows");
+    assert!(seen >= 11, "every snippet has rows");
 }
 
 fn records(v: &[&str]) -> String {
@@ -442,6 +365,13 @@ fn probe(name: &str, text: &str) -> String {
             nl(lines.heading_no(&Grep::ere_i(r"^#+[[:space:]]*Open sub-questions")))
         }
         "count_nonempty_sub" => format!("{}\n", Grep::bre("[^[:space:]]").count_lines(&all())),
+        "any_ptr_distinct" => {
+            let sub = all();
+            format!(
+                "{}\n",
+                distinct_count(Grep::ere(r"[A-Za-z0-9_./-]+\.rs:[0-9]+").only_lines(&sub))
+            )
+        }
         "ptr_distinct" => {
             let sub = all();
             format!(
@@ -518,4 +448,70 @@ fn the_line_model_reads_like_sed_and_read() {
     assert_eq!(l.line_range(2, 1), "");
     assert_eq!(Lines::new("x\n\n\n").sed_range_text(1, 3), "x");
     assert_eq!(cut_bytes("a—b", 2), "a\u{FFFD}");
+}
+
+/// Every awk pattern on every input: `~` (rows AT), `match` with RSTART
+/// and RLENGTH (AM), `gsub` with an empty replacement (AG, digests).
+#[test]
+fn awk_patterns_give_mawks_answers() {
+    let input = inputs();
+    let bytes: Vec<&[u8]> = input.iter().map(|s| s.as_bytes()).collect();
+    let mut n = 0;
+    for r in rows(CORPUS) {
+        let pattern = || unescape_field(r[2]);
+        match r[0] {
+            "AT" => {
+                let re = AwkRe::new(&pattern());
+                let want = ids(r[3]);
+                for (i, b) in bytes.iter().enumerate() {
+                    assert_eq!(
+                        re.test(b),
+                        want.contains(&i),
+                        "awk {:?} ~ on {:?}",
+                        pattern(),
+                        input[i]
+                    );
+                }
+            }
+            "AMD" => {
+                let re = AwkRe::new(&pattern());
+                let outputs: Vec<Vec<u8>> = bytes
+                    .iter()
+                    .map(|b| {
+                        re.find(b)
+                            .map_or("-".to_string(), |(s, l)| format!("{s}:{l}"))
+                            .into_bytes()
+                    })
+                    .collect();
+                assert_digests(
+                    &format!("awk match {:?}", pattern()),
+                    &input,
+                    &outputs,
+                    r[3],
+                );
+            }
+            "AG" => {
+                let re = AwkRe::new(&pattern());
+                let outputs: Vec<Vec<u8>> =
+                    bytes.iter().map(|b| re.replace(b, b"", true)).collect();
+                assert_digests(&format!("awk gsub {:?}", pattern()), &input, &outputs, r[3]);
+            }
+            _ => continue,
+        }
+        n += 1;
+    }
+    assert!(n >= 16, "the awk rows are there");
+}
+
+#[test]
+fn awk_strings_are_bytes() {
+    assert_eq!(substr(b"abc", 0, Some(1)), b"");
+    assert_eq!(substr(b"abc", -1, Some(3)), b"a");
+    assert_eq!(substr(b"abc", 2, None), b"bc");
+    assert_eq!(substr(b"abc", 3, Some(24)), b"c");
+    assert_eq!(substr(b"abc", 4, Some(1)), b"");
+    assert_eq!(substr("aµb".as_bytes(), 2, Some(1)), &[0xC2]);
+    assert_eq!(tolower("AΔB".as_bytes()), "aΔb".as_bytes());
+    assert_eq!(AwkRe::new("x*").replace(b"abxd", b"-", true), b"-a-b-d-");
+    assert_eq!(AwkRe::new("b").replace(b"abcb", b"[&]", false), b"a[b]cb");
 }

@@ -19,7 +19,18 @@
 //!   line, the scripts' `heading_no` and `line_range`), here-document
 //!   lines, `${s#…}`/`${s%…}` with `[[:space:]]`, `${s%%[!set]*}`, `tr`
 //!   (byte-based: only ASCII changes case), `cut -c` (bytes), `sort -u |
-//!   grep -c .`, the alnum word count.
+//!   grep -c .`, the alnum word count, `test`'s integers
+//!   ([`bash_test_int`]: `030` is 30, beyond 64 bits is no number);
+//! * [`awk`]: mawk 1.3.4, byte-based ([`AwkRe`]: `~`, `match` with
+//!   `RSTART`/`RLENGTH`, `sub`/`gsub`; `substr`, `tolower`, the `-v`
+//!   escape rules);
+//! * [`rules`]: the rules several scripts write the same way, as named
+//!   variants (evidence tags Tag5/Tag6, the pointer with or without a
+//!   range, tag discipline and open items of 002-03/04, the section
+//!   verdict line with pending accepted);
+//! * [`tables`]: the committed tables, and [`check_snippet`], with which a
+//!   port's test proves a composite of its own (a script's awk program)
+//!   against the tool's committed output.
 //!
 //! **Proof.** `tools/gen_family002.py` runs the real tools on a corpus (the
 //! lines of REPORT-0b.md plus case, CR, tab and spacing variants, every
@@ -30,9 +41,10 @@
 //! (grep with and without `-i`, bash, tr, cut), every proven pattern on
 //! every input (`-q`, `-o`, `sed`), every bash snippet on every input, and
 //! the file-level probes on fixtures (final line without newline, CRLF,
-//! trailing blank lines, a heading inside a fence). A port may only use a
-//! pattern the tables prove: its test asserts [`unproven_patterns`] is
-//! empty after running the check and its denials.
+//! trailing blank lines, a heading inside a fence), every awk regex on every
+//! input (`~`, `match`, `gsub`). A port may only use a pattern the tables
+//! prove: its test asserts [`unproven_patterns`] is empty after running the
+//! check and its denials.
 //!
 //! **The repertoire.** The helpers are defined on the repertoire
 //! (`data/repertoire.tsv`), which [`crate::doccheck::CheckSpec::evaluate`]
@@ -45,18 +57,23 @@
 //! What is not here: package-private rules (a script's own keyword lists,
 //! its messages, its criteria). Those stay in the ports.
 
+pub mod awk;
 pub mod ere;
 #[cfg(test)]
 mod proof;
+pub mod rules;
 pub mod shell;
+pub mod tables;
 pub mod translate;
 
+pub use awk::AwkRe;
 pub use ere::{Grep, Sed, unproven_patterns};
 pub use shell::{
-    Lines, alnum_word_count, command_substitution, cut_bytes, distinct_count, heredoc_lines,
-    leading_run, lstrip_space, rstrip_space, strip_prefix_once, strip_suffix_once, tr_delete_space,
-    tr_lower,
+    Lines, alnum_word_count, bash_test_int, command_substitution, cut_bytes, distinct_count,
+    heredoc_lines, leading_run, lstrip_space, rstrip_space, strip_prefix_once, strip_suffix_once,
+    tr_delete_space, tr_lower,
 };
+pub use tables::check_snippet;
 pub use translate::{Engine, Syntax, is_space, is_word, posix_class};
 
 use super::{Docs, Report};
