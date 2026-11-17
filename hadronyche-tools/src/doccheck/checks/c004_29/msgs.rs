@@ -4,6 +4,7 @@
 
 use super::clock::clock_terms;
 use super::{Merged29, Section};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::{Field, fields_of, first_field_table};
 use crate::doccheck::pycompat::parse_int;
@@ -13,7 +14,7 @@ use crate::doccheck::text::{has, has_i, rx, starts};
 use crate::doccheck::units::{BlockKind, prose_blocks};
 
 /// `SIZE_MAX_RE`: every "maximum … N bytes" figure (`int()` of each).
-fn stated_sizes(text: &str) -> Vec<i128> {
+pub(super) fn stated_sizes(text: &str) -> Vec<i128> {
     rx(r"(?i)maximum[^.;]{0,120}?(\d+)\s*bytes").captures_iter(text).filter_map(|c| parse_int(&c[1]).ok()).collect()
 }
 
@@ -38,7 +39,7 @@ pub(crate) fn msg_analysis(text: &str, title: &str, label: &str, m: &Merged29, r
         if f.bits.rem_euclid(8) != 0 || f.off != pos {
             tiles = false;
         }
-        pos = f.off.saturating_add(f.bits.div_euclid(8));
+        pos = checked::add(f.off, f.bits.div_euclid(8));
     }
     report.check(label, tiles, format!("the {title} table tiles from byte 0 with no gap or overlap (its rows end at byte {pos})"));
     let stated = stated_sizes(text);

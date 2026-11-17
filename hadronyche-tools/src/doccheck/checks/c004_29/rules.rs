@@ -14,7 +14,7 @@ use crate::doccheck::units::{BlockKind, prose_blocks};
 
 /// `parse_rules`: each numbered (`1. `) or `**Rule N` item with its
 /// continuation lines, up to a blank line.
-fn parse_rules(text: &str) -> Vec<String> {
+pub(super) fn parse_rules(text: &str) -> Vec<String> {
     let mut rules: Vec<Vec<&str>> = Vec::new();
     let mut open = false;
     for line in splitlines(text) {
@@ -31,7 +31,7 @@ fn parse_rules(text: &str) -> Vec<String> {
 }
 
 /// `rule_parts`: (bold label, lowered first sentence of the rest).
-fn rule_parts(rule: &str) -> (String, String) {
+pub(super) fn rule_parts(rule: &str) -> (String, String) {
     let label = rx(r"\*\*([^*]+)\*\*").captures(rule).map(|c| c[1].py_strip().trim_end_matches('.').to_lowercase()).unwrap_or_default();
     let rest = rx(r"^\s*(\d+\.|\*\*Rule \d+\*\*)\s*").replace(rule, "");
     let rest = rx(r"\*\*[^*]+\*\*").replace(&rest, "");

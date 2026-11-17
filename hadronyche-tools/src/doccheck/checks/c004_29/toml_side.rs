@@ -8,6 +8,7 @@
 
 use super::msgs::Msg;
 use super::{Merged29, Section};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::pyvalue::{Dict, PyValue};
 use crate::doccheck::report::{Flow, crash};
@@ -102,7 +103,7 @@ fn one(msgs: &[&Dict], label: &str, pat: &str, md: Option<&Msg>, m: &Merged29, r
     let (len, tf) = fields(t, md.fl.len())?;
     let mut agree = len == md.fl.len();
     for (g, f) in tf.iter().zip(&md.fl) {
-        if int_or(g, "offset", -1)? != f.off.saturating_mul(8) || int_or(g, "width", -1)? != f.bits {
+        if int_or(g, "offset", -1)? != checked::mul(f.off, 8) || int_or(g, "width", -1)? != f.bits {
             agree = false;
         }
     }
