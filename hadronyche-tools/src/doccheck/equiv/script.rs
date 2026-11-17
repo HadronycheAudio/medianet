@@ -221,40 +221,60 @@ fn make_executable(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The criterion labels of `FAIL <label>: message` lines: everything
-/// between `FAIL ` and the first `:` (letters, digits, spaces, hyphens,
-/// dots), trimmed — `AC1`, `DoD`, `Hand-off` (004-18), `C-40`, `C-100`
-/// (004-20), `WIRE`. Only the acceptance-criterion forms are normalised:
-/// `AC 1` and `AC-1` read `AC1`, as the ports name them.
-fn fail_labels(lines: &[&str]) -> BTreeSet<String> {
-    let label = rx(r"^FAIL ([A-Za-z0-9][A-Za-z0-9 .\-]*?)\s*:");
-    let ac = rx(r"^AC[ -]?([0-9]+)$");
-    lines
-        .iter()
-        .filter_map(|l| label.captures(l).map(|c| c[1].trim().to_string()))
-        .map(|l| match ac.captures(&l) {
-            Some(c) => format!("AC{}", &c[1]),
-            None => l,
-        })
-        .collect()
-}
+/// The pseudo-criterion of a FAIL line the reader cannot attribute: it is
+/// reported (the row can never read "same"), never taken for a crash.
+pub const UNREADABLE: &str = "UNREADABLE";
 
-/// The criteria of the scripts that print their results grouped (006-01,
-/// 006-02, 004-07): a line `  AC1` or `  DoD`, then its checks as
-/// `    OK   message` or `    FAIL message`. Additive: output without such
-/// groups gives nothing. (Taken from the WP9 branch, so it need not edit
-/// this file.)
-fn grouped_failures(lines: &[&str]) -> BTreeSet<String> {
-    let group = rx(r"^  (AC[0-9]+|DoD)\s*$");
+/// The failed criteria of a script's output, in one pass:
+///
+/// * `FAIL <label>:` with any indentation and spacing, a parenthesised
+///   note before the colon (`FAIL AC2 (constants): …`), or a bracketed
+///   label (`FAIL [AC1] …`); `AC 1` and `AC-1` normalise to `AC1`;
+/// * the grouped form of 006-01, 006-02 and 004-07: a header line
+///   `  AC1`, `  DoD` or `  WIRE` (two spaces, one upper-case label), then
+///   its checks indented below it as `    FAIL message`;
+/// * any other `FAIL <text>` line gives [`UNREADABLE`] (a summary
+///   `FAIL: 3 failed` names no criterion and is skipped).
+fn fail_labels(lines: &[&str]) -> BTreeSet<String> {
+    let label = rx(
+        r"^\s*FAIL\s+(?:\[\s*([A-Za-z0-9][A-Za-z0-9 .\-]*?)\s*\]|([A-Za-z0-9][A-Za-z0-9 .\-]*?)\s*(?:\([^)]*\))?\s*:)",
+    );
+    let group = rx(r"^  ([A-Z][A-Za-z0-9\-]*)\s*$");
+    let ac = rx(r"^AC[ -]?([0-9]+)$");
+    let fail_line = rx(r"^\s*FAIL(?:\s+[^\s:]|\[)");
     let mut current: Option<String> = None;
     let mut out = BTreeSet::new();
     for line in lines {
         if let Some(c) = group.captures(line) {
             current = Some(c[1].to_string());
-        } else if line.starts_with("    FAIL ")
-            && let Some(c) = &current
-        {
-            out.insert(c.clone());
+            continue;
+        }
+        if !line.starts_with(' ') {
+            current = None;
+        }
+        // a FAIL line with a label to read (`FAIL: 3 failed` is a summary)
+        let fail = fail_line.is_match(line);
+        if fail && line.starts_with("    ") && current.is_some() {
+            out.extend(current.clone());
+            continue;
+        }
+        match label.captures(line) {
+            Some(c) => {
+                let l = c
+                    .get(1)
+                    .or(c.get(2))
+                    .map_or("", |m| m.as_str())
+                    .trim()
+                    .to_string();
+                out.insert(match ac.captures(&l) {
+                    Some(n) => format!("AC{}", &n[1]),
+                    None => l,
+                });
+            }
+            None if fail => {
+                out.insert(UNREADABLE.to_string());
+            }
+            None => {}
         }
     }
     out
@@ -263,22 +283,24 @@ fn grouped_failures(lines: &[&str]) -> BTreeSet<String> {
 /// The verdict of a script from its exit status and output.
 ///
 /// The failed criteria are the labels of its `FAIL <label>:` lines
-/// ([`fail_labels`]) and of its grouped results ([`grouped_failures`]). A
+/// and of its grouped results ([`fail_labels`]). A
 /// crash is the interpreter's own traceback: a line `Traceback (most recent
 /// call last):` at column 0 after the last FAIL, PASS, OK or NOTE line (a
 /// FAIL message that quotes the words is not one), or a non-zero exit with
 /// no failed criterion at all.
 pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
     let lines: Vec<&str> = output.lines().collect();
-    let mut criteria = fail_labels(&lines);
-    criteria.extend(grouped_failures(&lines));
+    let criteria = fail_labels(&lines);
     let last_report = lines
         .iter()
         .rposition(|l| rx(r"^\s*(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
         .map_or(0, |i| i + 1);
-    let traceback = lines[last_report..]
-        .iter()
-        .any(|l| l.starts_with("Traceback (most recent call last):"));
+    // the interpreter's own traceback: the header at column 0, followed by
+    // a `  File "…"` frame (a quoted header in a message is not one)
+    let rest = &lines[last_report..];
+    let traceback = rest.windows(2).any(|w| {
+        w[0].starts_with("Traceback (most recent call last):") && w[1].starts_with("  File")
+    });
     let crashed = traceback || (!exit_ok && criteria.is_empty());
     let outcome = if crashed {
         ScriptOutcome::Crash
@@ -317,12 +339,25 @@ pub fn script_source(repo: &Path, id: &str) -> Option<(String, String)> {
 /// that commit's).
 pub fn head_commit(repo: &Path) -> Option<String> {
     let head = git(repo, &["rev-parse", "HEAD"])?.trim().to_string();
-    let dirty = git(repo, &["status", "--porcelain", "--untracked-files=no"]).is_some();
-    Some(if dirty {
-        format!("{head} with uncommitted changes")
-    } else {
+    let dirty = dirty_paths(repo);
+    Some(if dirty.is_empty() {
         head
+    } else {
+        format!("{head} with uncommitted changes in {}", dirty.join(", "))
     })
+}
+
+/// The tracked files with uncommitted changes, except the committed
+/// summaries themselves (`hadronyche-tools/equivalence/`, the harness's
+/// output, never its input).
+pub fn dirty_paths(repo: &Path) -> Vec<String> {
+    git(repo, &["status", "--porcelain", "--untracked-files=no"])
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.get(3..))
+        .filter(|p| !p.starts_with("hadronyche-tools/equivalence/"))
+        .map(str::to_string)
+        .collect()
 }
 
 /// The commit that first added `checks/<id>.sh` (the red-phase commit).
@@ -346,6 +381,34 @@ fn git(repo: &Path, args: &[&str]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn round_three_label_forms_read_or_are_reported() {
+        let read = |out: &str| verdict(false, out).criteria.into_iter().collect::<Vec<_>>();
+        assert_eq!(read("FAIL AC2 (constants): x"), vec!["AC2"]);
+        assert_eq!(read("FAIL [AC1] the table"), vec!["AC1"]);
+        assert_eq!(read("FAIL  AC1: double space"), vec!["AC1"]);
+        assert_eq!(read("  FAIL AC3: indented"), vec!["AC3"]);
+        assert_eq!(
+            read("  WIRE\n    OK   a\n    FAIL wire.toml: b"),
+            vec!["WIRE"]
+        );
+        assert_eq!(read("FAIL what is this"), vec![UNREADABLE]);
+        let quoted = verdict(
+            false,
+            "FAIL AC4: the log says\nTraceback (most recent call last): quoted",
+        );
+        assert_eq!(
+            quoted.outcome,
+            ScriptOutcome::Red,
+            "a quoted header is not a crash"
+        );
+        let real = verdict(
+            false,
+            "FAIL AC4: x\nTraceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nKeyError: 'a'",
+        );
+        assert_eq!(real.outcome, ScriptOutcome::Crash);
+    }
 
     #[test]
     fn fail_lines_give_criteria() {

@@ -86,12 +86,25 @@ pub fn unsupported(pattern: &str) -> Option<String> {
     let c: Vec<char> = pattern.chars().collect();
     let mut in_class = false;
     let mut i = 0;
+    // 0: after an atom; 1: after a quantifier; 2: after a lazy `?`
+    let mut quant = 0u8;
     let refuse = |what: &str| {
         Some(format!(
             "{what} is not supported by the library (PORTING.md, \"Regex constructs\")"
         ))
     };
     while i < c.len() {
+        if !in_class && let Some(len) = quantifier_at(&c, i) {
+            match (quant, c[i]) {
+                (1, '+') => return refuse("a possessive quantifier (Python 3.10 refuses it)"),
+                (1, '?') => quant = 2,
+                (1 | 2, _) => return refuse("a repeated quantifier (Python: multiple repeat)"),
+                _ => quant = 1,
+            }
+            i += len;
+            continue;
+        }
+        quant = 0;
         match c[i] {
             '\\' => {
                 match c.get(i + 1) {
@@ -117,6 +130,14 @@ pub fn unsupported(pattern: &str) -> Option<String> {
                 if next.starts_with("?P=") {
                     return refuse("a named back-reference");
                 }
+                if next.starts_with("?>") {
+                    return refuse("an atomic group (Python 3.10 refuses it)");
+                }
+                // `(?` opens a group form, not a quantifier
+                if next.starts_with('?') {
+                    i += 2;
+                    continue;
+                }
             }
             '{' if !in_class && c.get(i + 1) == Some(&',') => return refuse("`{,n}`"),
             _ => {}
@@ -124,6 +145,22 @@ pub fn unsupported(pattern: &str) -> Option<String> {
         i += 1;
     }
     None
+}
+
+/// The length of the quantifier at `i` (`*`, `+`, `?`, `{m}`, `{m,}`,
+/// `{m,n}`), or `None` (Python reads any other `{` as a literal).
+fn quantifier_at(c: &[char], i: usize) -> Option<usize> {
+    match c[i] {
+        '*' | '+' | '?' => Some(1),
+        '{' => {
+            let close = c[i..].iter().position(|&x| x == '}')?;
+            let body: String = c[i + 1..i + close].iter().collect();
+            let (lo, hi) = body.split_once(',').unwrap_or((&body, ""));
+            let digits = |s: &str| s.chars().all(|d| d.is_ascii_digit());
+            (!lo.is_empty() && digits(lo) && digits(hi)).then_some(close + 1)
+        }
+        _ => None,
+    }
 }
 
 /// True when `rest` (the text after a `(`) opens a look-around.
@@ -490,6 +527,13 @@ mod tests {
             ("a{,2}b", "`{,n}`"),
             (r"(a)\1", "back-reference"),
             ("(?P<x>a)(?P=x)", "back-reference"),
+            // Python 3.10 (the 004 family) raises re.error on these
+            ("a++", "possessive"),
+            ("a*+", "possessive"),
+            ("a{2}+", "possessive"),
+            ("(?>ab)c", "atomic"),
+            ("a**", "repeated"),
+            ("a+??", "repeated"),
         ] {
             let msg = unsupported(p).unwrap_or_default();
             assert!(msg.contains(why), "{p}: {msg}");
@@ -510,6 +554,14 @@ mod tests {
             r"(?:x)",
             r"\{,",
             r"(?<=\d)x",
+            r"a+?",
+            r"a??",
+            r"\++",
+            r"[+]+",
+            r"(?i)a+",
+            r"(?P<n>a)+",
+            r"x{a}+",
+            r"(?<=a)b+",
         ] {
             assert_eq!(unsupported(p), None, "{p}");
         }

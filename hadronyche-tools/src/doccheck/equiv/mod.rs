@@ -401,6 +401,8 @@ pub fn run(
         script: Duration::ZERO,
         port: Duration::ZERO,
     };
+    // the tree as it was when the run started (not when it ended)
+    let tree = script::head_commit(repo).unwrap_or_else(|| "unknown".into());
     let docs = Docs::dir(repo);
     let boxes = (0..opts.jobs.max(1))
         .map(|_| {
@@ -428,7 +430,7 @@ pub fn run(
     Ok(Outcome {
         id: spec.id.to_string(),
         script_from,
-        tree: script::head_commit(repo).unwrap_or_else(|| "unknown".into()),
+        tree,
         limit: opts.limit,
         current,
         red_commit,

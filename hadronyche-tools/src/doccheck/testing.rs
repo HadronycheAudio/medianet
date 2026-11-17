@@ -291,6 +291,17 @@ mod source_rules {
                 "from_str(",
                 "unwrap_or(0)",
                 ".evaluate(",
+                // R19 holes of review round 4: a regex run on another
+                // thread, or a result cached across evaluations, escapes
+                // the per-thread failure record
+                "thread::",
+                "OnceLock",
+                "LazyLock",
+                "OnceCell",
+                "thread_local!",
+                "Mutex",
+                "RwLock",
+                "atomic::",
             ]);
         }
         let flat: String = code.chars().filter(|c| !c.is_whitespace()).collect();
@@ -298,6 +309,16 @@ mod source_rules {
             if flat.contains(b) {
                 out.push(format!("{}: uses `{b}`", path.display()));
             }
+        }
+        if is_check
+            && regex::Regex::new(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?static\s")
+                .expect("pattern")
+                .is_match(code)
+        {
+            out.push(format!(
+                "{}: declares a `static` (a check keeps no state across evaluations, R19)",
+                path.display()
+            ));
         }
         if is_check {
             // an aliased import (`use … testing as t`) still names `testing`
@@ -519,6 +540,15 @@ mod source_rules {
                 .any(|v| v.contains("another port"))
         );
         assert!(violations(p, "use crate::doccheck::checks::c004_22::X;", true).is_empty());
+        assert!(
+            violations(
+                p,
+                "const N: &'static str = \"x\"; fn f(s: &'static str) {}",
+                true
+            )
+            .is_empty(),
+            "a 'static lifetime is not a static"
+        );
         assert!(!violations(p, "let n = x.parse::<i64>();", true).is_empty());
         for bypass in [
             "use super::super::c004_27::SPEC;",

@@ -299,3 +299,54 @@ hadronyche_tools::denial_tests!(
     review_r3_058_backtracking_list_of_6000_then_zzz_32_bits_samples_at_the_en,
     review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l,
 );
+
+/// Review round 4, item 4: the repertoire guard covers what the check
+/// READS, wherever it lies (R20), with no list in the port.
+mod read_log_coverage {
+    use hadronyche_tools::doccheck::Docs;
+    use hadronyche_tools::doccheck::checks::c004_22::SPEC;
+    use hadronyche_tools::doccheck::testing::repo;
+
+    const WIRE: &str = "doc/design/spec/wire.md";
+
+    fn with_link(link: &str, anchor: &str) -> Docs {
+        let wire = repo().read(WIRE).expect("wire.md");
+        let at = wire.find(anchor).expect("anchor") + anchor.len();
+        let text = format!("{}\n\nSee {link}.\n{}", &wire[..at], &wire[at..]);
+        repo().with(WIRE, text)
+    }
+
+    fn repertoire(docs: &Docs) -> Vec<String> {
+        let r = SPEC.evaluate(docs);
+        r.of("REPERTOIRE").iter().map(|f| f.to_string()).collect()
+    }
+
+    #[test]
+    fn a_separate_review_record_is_guarded() {
+        let rec = "doc/design/reports/r4-review-record.md";
+        let docs = with_link(
+            "[the record](../reports/r4-review-record.md)",
+            "## Traceability table",
+        );
+        let clean = docs.with(rec, "# Review record\n\nReviewer: x\n");
+        assert!(repertoire(&clean).is_empty());
+        let bad = docs.with(rec, "# Review record\n\nReviewer: Ren\u{e9}e\n");
+        let hits = repertoire(&bad);
+        assert!(
+            hits.iter().any(|h| h.contains("r4-review-record.md:3")),
+            "{hits:?}"
+        );
+    }
+
+    #[test]
+    fn a_link_target_outside_doc_is_guarded() {
+        // a file at the repository root, outside doc/ (in memory: the
+        // guard sees what the check reads, not what the disk holds)
+        let docs = with_link("[readme](../../../README.md#x)", "## Review record")
+            .with("README.md", "# Readme\n\n## X\n");
+        assert!(repertoire(&docs).is_empty());
+        let bad = docs.with("README.md", "# Readme\n\n## X\n\nna\u{ef}ve\n");
+        let hits = repertoire(&bad);
+        assert!(hits.iter().any(|h| h.contains("README.md:")), "{hits:?}");
+    }
+}

@@ -592,6 +592,7 @@ fn check_line(line: &str, inputs: &[(String, String)]) -> (usize, Vec<String>) {
 }
 
 #[test]
+#[allow(clippy::disallowed_methods)] // a library proof, not a check: threads only split the corpus
 fn the_library_equals_the_scripts_on_the_family004_corpus() {
     let inputs = inputs();
     assert!(inputs.len() > 100, "{} inputs", inputs.len());
