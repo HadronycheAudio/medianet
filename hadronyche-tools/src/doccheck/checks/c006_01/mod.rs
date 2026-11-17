@@ -4,26 +4,30 @@
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
 //! in `tests/doc_006_01.rs`. The script's variants, named where used:
 //!
-//! * fences: an opener of three or more backticks or tildes, a closer of the
-//!   same character, at least as long, with nothing after it
-//!   ([`scan::scan`]; the library's `FencePolicy::Matching` differs on an
-//!   info string after the closer);
-//! * rows: split by walking the characters ([`text::split_row`]), a table
-//!   needs at least two visible lines with a dash-only second line;
-//! * headings: matched by stemmed token groups, level 2 or deeper, the first
-//!   match ([`sections`]); a section runs to the line before the next
+//! * fences: [`FencePolicy::Matching`] (opener `^[ \t]*` three or more
+//!   backticks or tildes, closed only by a bare marker of the same
+//!   character at least as long);
+//! * rows and tables: [`TableRules::T006_01`] (character-walking row split,
+//!   dash-only separator line), the header and separator lines kept;
+//! * headings: matched by stemmed token groups (`markdown::stem_match`), level 2 or
+//!   deeper, the first match; a section runs to the line before the next
 //!   heading of the same or a higher level;
-//! * text: `norm_text` with NFKC ([`text`]);
+//! * text: `norm_text` with `pycompat::nfkc`;
 //! * tags: `[code]` only, in lower case, in the retired-behaviour note.
 //!
 //! The script has no repository-level assertion.
 
+//! [`FencePolicy::Matching`]: crate::doccheck::policy::FencePolicy::Matching
+//! [`TableRules::T006_01`]: crate::doccheck::policy::TableRules::T006_01
+
 mod constants;
+mod denials;
 mod scan;
 mod sections;
-pub(crate) mod text;
 
 use super::{CheckSpec, Target};
+use crate::doccheck::policy::TomlReader;
+use crate::doccheck::pycompat::{splitlines, universal_newlines};
 use crate::doccheck::{Docs, Report};
 
 /// The specification.
@@ -36,11 +40,20 @@ pub const SPEC: CheckSpec = CheckSpec {
     run,
     script_env: &[],
     targets: &[
-        Target { file: SPEC_MD, heading: None },
-        Target { file: CONSTANTS, heading: None },
+        Target {
+            file: SPEC_MD,
+            heading: None,
+        },
+        Target {
+            file: CONSTANTS,
+            heading: None,
+        },
     ],
     keywords: &["wins", "differ", "pending"],
     known_differences: &[],
+    denials: denials::DENIALS,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The check.
@@ -52,10 +65,13 @@ pub fn run(docs: &Docs) -> Report {
         }
         return r;
     };
-    let lines = crate::doccheck::text::splitlines(&spec);
+    let spec = universal_newlines(&spec);
+    let lines = splitlines(&spec);
     let sc = scan::scan(&lines);
-    let tables = scan::tables(&lines, &sc.visible);
-    let source = docs.read(CONSTANTS).map(|t| scan::constants_source(&t));
+    let tables = scan::tables(&lines);
+    let source = docs
+        .read(CONSTANTS)
+        .map(|t| scan::constants_source(&universal_newlines(&t)));
     constants::ac1(&lines, &sc, &tables, source.as_ref(), &mut r);
     sections::ac2(&lines, &sc, &mut r);
     sections::ac3(&lines, &sc, &mut r);

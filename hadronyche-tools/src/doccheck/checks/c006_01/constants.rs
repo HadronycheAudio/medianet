@@ -2,10 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::scan::{Head, Scan, Source, Table, norm_status, norm_value};
-use super::text::norm_text;
+use super::scan::{Block as Table, Head, Scan, Source, norm_status, norm_text, norm_value};
 use crate::doccheck::Report;
-use crate::doccheck::text::{has, rx};
+use crate::doccheck::pycompat::PyStr;
+use crate::doccheck::text::{full, has, rx};
 
 /// The ids of the ticket.
 pub(crate) const IDS: [&str; 47] = [
@@ -22,21 +22,30 @@ fn header_index(header: &[String], names: &[&str]) -> Option<usize> {
     header.iter().position(|cell| {
         let c = norm_text(cell).to_lowercase();
         let c = c.trim_end_matches(['.', ':']);
-        names.iter().any(|n| c == *n || c.starts_with(&format!("{n} ")) || c.starts_with(&format!("{n}(")))
+        names
+            .iter()
+            .any(|n| c == *n || c.starts_with(&format!("{n} ")) || c.starts_with(&format!("{n}(")))
     })
 }
 
 fn is_cid(s: &str) -> bool {
-    has(r"^C-\d{2,3}$", s)
+    full(r"C-\d{2,3}", s)
 }
 
 fn constants_table(tables: &[Table]) -> Option<&Table> {
     tables.iter().find(|t| {
         let header = &t[0].1;
-        let (Some(id), Some(_)) = (header_index(header, &["id", "constant id"]), header_index(header, &["value"])) else {
+        let (Some(id), Some(_)) = (
+            header_index(header, &["id", "constant id"]),
+            header_index(header, &["value"]),
+        ) else {
             return false;
         };
-        t.iter().skip(2).any(|(_, cells)| cells.get(id).is_some_and(|c| is_cid(&c.trim().to_uppercase())))
+        t.iter().skip(2).any(|(_, cells)| {
+            cells
+                .get(id)
+                .is_some_and(|c| is_cid(&c.py_strip().to_uppercase()))
+        })
     })
 }
 
@@ -52,7 +61,8 @@ fn one_sentence_wins(text: &str) -> bool {
     sentences.push(&text[start..]);
     sentences.iter().any(|s| {
         let low = s.to_lowercase();
-        has(r"\bwins?\b|\bprevails?\b|\bprecedence\b", &low) && has(r"\bdiffer|\bconflict|\bdisagree|\bdiscrepan", &low)
+        has(r"\bwins?\b|\bprevails?\b|\bprecedence\b", &low)
+            && has(r"\bdiffer|\bconflict|\bdisagree|\bdiscrepan", &low)
     })
 }
 
@@ -61,14 +71,14 @@ type Rows<'a> = BTreeMap<String, (usize, &'a Vec<String>)>;
 fn rows_of<'a>(t: &'a Table, id_col: usize, r: &mut Report) -> Rows<'a> {
     let (mut rows, mut malformed) = (BTreeMap::new(), Vec::new());
     for (line, cells) in t.iter().skip(2) {
-        if cells.iter().all(|c| c.trim().is_empty()) {
+        if cells.iter().all(|c| c.py_strip().is_empty()) {
             continue;
         }
         let Some(cell) = cells.get(id_col) else {
             malformed.push(format!("line {line}: row has no id cell"));
             continue;
         };
-        let cid = cell.trim().to_uppercase();
+        let cid = cell.py_strip().to_uppercase();
         if !is_cid(&cid) {
             malformed.push(format!("line {line}: unexpected row id {cid:?} (the table must carry only the ticket's C- ids)"));
         } else if let std::collections::btree_map::Entry::Vacant(slot) = rows.entry(cid.clone()) {
@@ -78,40 +88,85 @@ fn rows_of<'a>(t: &'a Table, id_col: usize, r: &mut Report) -> Rows<'a> {
         }
     }
     if !malformed.is_empty() {
-        r.fail("AC1", malformed.iter().take(5).cloned().collect::<Vec<_>>().join("; "));
+        r.fail(
+            "AC1",
+            malformed
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
     }
     rows
 }
 
-fn compare(rows: &Rows, cols: (usize, Option<usize>), source: &BTreeMap<String, Source>, r: &mut Report) {
+fn compare(
+    rows: &Rows,
+    cols: (usize, Option<usize>),
+    source: &BTreeMap<String, Source>,
+    r: &mut Report,
+) {
     let (value_col, status_col) = cols;
     let (mut values, mut statuses) = (Vec::new(), Vec::new());
     for cid in IDS {
-        let Some((line, cells)) = rows.get(cid) else { continue };
+        let Some((line, cells)) = rows.get(cid) else {
+            continue;
+        };
         match (cells.get(value_col), source.get(cid)) {
             (None, _) => values.push(format!("line {line}: {cid} has no value cell")),
             (Some(v), Some(s)) if norm_value(v) != norm_value(&s.value) => {
-                values.push(format!("{cid} at line {line}: document has {:?}; 02-constants.md has {:?}", v.trim(), s.value.trim()));
+                values.push(format!(
+                    "{cid} at line {line}: document has {:?}; 02-constants.md has {:?}",
+                    v.py_strip(),
+                    s.value.py_strip()
+                ));
             }
             _ => {}
         }
         if let (Some(sc), Some(s)) = (status_col.and_then(|c| cells.get(c)), source.get(cid))
-            && norm_status(sc) != norm_status(&s.status) {
-                statuses.push(format!("{cid} at line {line}: document has {:?}; 02-constants.md has {:?}", sc.trim(), s.status.trim()));
-            }
+            && norm_status(sc) != norm_status(&s.status)
+        {
+            statuses.push(format!(
+                "{cid} at line {line}: document has {:?}; 02-constants.md has {:?}",
+                sc.py_strip(),
+                s.status.py_strip()
+            ));
+        }
     }
     for (what, list) in [("value", values), ("status", statuses)] {
         if !list.is_empty() {
-            let more = if list.len() <= 3 { String::new() } else { format!(" (+{} more)", list.len() - 3) };
-            r.fail("AC1", format!("{what} mismatch against 02-constants.md: {}{more}", list.iter().take(3).cloned().collect::<Vec<_>>().join(" | ")));
+            let more = if list.len() <= 3 {
+                String::new()
+            } else {
+                format!(" (+{} more)", list.len() - 3)
+            };
+            r.fail(
+                "AC1",
+                format!(
+                    "{what} mismatch against 02-constants.md: {}{more}",
+                    list.iter().take(3).cloned().collect::<Vec<_>>().join(" | ")
+                ),
+            );
         }
     }
     for cid in ["C-61", "C-195"] {
-        let Some((_, cells)) = rows.get(cid) else { continue };
-        let status = status_col.and_then(|c| cells.get(c)).map_or(String::new(), |s| norm_status(s));
+        let Some((_, cells)) = rows.get(cid) else {
+            continue;
+        };
+        let status = status_col
+            .and_then(|c| cells.get(c))
+            .map_or(String::new(), |s| norm_status(s));
         if !status.contains("pending") || !status.contains("simulation") {
-            let shown = if status.is_empty() { "no status".to_string() } else { status };
-            r.fail("AC1", format!("{cid} must be marked pending simulation (found {shown:?})"));
+            let shown = if status.is_empty() {
+                "no status".to_string()
+            } else {
+                status
+            };
+            r.fail(
+                "AC1",
+                format!("{cid} must be marked pending simulation (found {shown:?})"),
+            );
         }
     }
 }
@@ -126,7 +181,8 @@ fn introduced(const_heading: Option<&Head>, headings: &[Head], r: &mut Report) {
         r.fail("AC1", "constants table is not under a level-2 heading");
         return;
     };
-    let intro = r"(?i)\b(introduction|overview|scope|product frame|conventions?|evidence tags?|purpose)\b";
+    let intro =
+        r"(?i)\b(introduction|overview|scope|product frame|conventions?|evidence tags?|purpose)\b";
     if h2s[..ci].iter().any(|x| !has(intro, &x.2)) {
         let names: Vec<String> = h2s[..ci].iter().map(|x| format!("{:?}", x.2)).collect();
         r.fail("AC1", format!("the constants table is not the first section after the introduction; headings before it: {}", names.join(", ")));
@@ -134,15 +190,33 @@ fn introduced(const_heading: Option<&Head>, headings: &[Head], r: &mut Report) {
 }
 
 /// AC 1.
-pub(crate) fn ac1(lines: &[&str], scan: &Scan, tables: &[Table], source: Option<&BTreeMap<String, Source>>, r: &mut Report) {
+pub(crate) fn ac1(
+    lines: &[&str],
+    scan: &Scan,
+    tables: &[Table],
+    source: Option<&BTreeMap<String, Source>>,
+    r: &mut Report,
+) {
     let empty = BTreeMap::new();
     let src = source.unwrap_or(&empty);
     match source {
-        None => r.fail("AC1", "doc/design/02-constants.md does not exist; cannot verify values"),
+        None => r.fail(
+            "AC1",
+            "doc/design/02-constants.md does not exist; cannot verify values",
+        ),
         Some(s) => {
-            let missing: Vec<&str> = sorted_ids().into_iter().filter(|i| !s.contains_key(*i)).collect();
+            let missing: Vec<&str> = sorted_ids()
+                .into_iter()
+                .filter(|i| !s.contains_key(*i))
+                .collect();
             if !missing.is_empty() {
-                r.fail("AC1", format!("02-constants.md lacks ids required by the ticket: {}", missing.join(", ")));
+                r.fail(
+                    "AC1",
+                    format!(
+                        "02-constants.md lacks ids required by the ticket: {}",
+                        missing.join(", ")
+                    ),
+                );
             }
         }
     }
@@ -151,7 +225,12 @@ pub(crate) fn ac1(lines: &[&str], scan: &Scan, tables: &[Table], source: Option<
         return;
     };
     let header = &t[0].1;
-    let (Some(id_col), Some(value_col)) = (header_index(header, &["id", "constant id"]), header_index(header, &["value"])) else { return };
+    let (Some(id_col), Some(value_col)) = (
+        header_index(header, &["id", "constant id"]),
+        header_index(header, &["value"]),
+    ) else {
+        return;
+    };
     let status_col = header_index(header, &["status", "state"]);
     if status_col.is_none() {
         r.fail("AC1", "constants table has no status column");
@@ -162,13 +241,28 @@ pub(crate) fn ac1(lines: &[&str], scan: &Scan, tables: &[Table], source: Option<
     let missing: Vec<&str> = want.difference(&have).copied().collect();
     let extra: Vec<&str> = have.difference(&want).copied().collect();
     if !missing.is_empty() {
-        r.fail("AC1", format!("constants table is missing ids: {}", missing.join(", ")));
+        r.fail(
+            "AC1",
+            format!("constants table is missing ids: {}", missing.join(", ")),
+        );
     }
     if !extra.is_empty() {
-        r.fail("AC1", format!("constants table has ids not in the ticket's 47 rows: {}", extra.join(", ")));
+        r.fail(
+            "AC1",
+            format!(
+                "constants table has ids not in the ticket's 47 rows: {}",
+                extra.join(", ")
+            ),
+        );
     }
     if missing.is_empty() && extra.is_empty() && rows.len() != 47 {
-        r.fail("AC1", format!("constants table has {} rows; expected exactly 47", rows.len()));
+        r.fail(
+            "AC1",
+            format!(
+                "constants table has {} rows; expected exactly 47",
+                rows.len()
+            ),
+        );
     }
     compare(&rows, (value_col, status_col), src, r);
     let table_start = t[0].0;
@@ -176,7 +270,11 @@ pub(crate) fn ac1(lines: &[&str], scan: &Scan, tables: &[Table], source: Option<
     introduced(ch, &scan.headings, r);
     let table_end = t[t.len() - 1].0;
     let end = match ch {
-        Some(h) => scan.headings.iter().find(|o| o.0 > h.0 && o.1 <= h.1).map_or(lines.len(), |o| o.0 - 1),
+        Some(h) => scan
+            .headings
+            .iter()
+            .find(|o| o.0 > h.0 && o.1 <= h.1)
+            .map_or(lines.len(), |o| o.0 - 1),
         None => table_end,
     };
     if !one_sentence_wins(&lines[..end.min(lines.len())].join("\n")) {
@@ -189,4 +287,3 @@ fn sorted_ids() -> Vec<&'static str> {
     v.sort_unstable();
     v
 }
-
