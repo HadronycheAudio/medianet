@@ -73,6 +73,33 @@ pub struct Sandbox {
     script: String,
     env: Vec<(String, String)>,
     timeout_s: u32,
+    /// Read `FAIL: <message>` lines too ([`DOCCHECK_FAIL_FORM`]).
+    colon: bool,
+}
+
+/// A `script_env` entry `(DOCCHECK_FAIL_FORM, "colon")` is a directive to
+/// the harness, not passed to the script: the script prints its failures
+/// as `FAIL: <message>` (the epic-002 scripts), whose criteria
+/// [`crate::doccheck::fail_form::colon_criterion`] reads.
+pub const DOCCHECK_FAIL_FORM: &str = "DOCCHECK_FAIL_FORM";
+
+/// A `script_env` entry `(DOCCHECK_EXPORT, "a:b")` is a directive to the
+/// harness, not passed to the script: besides `doc/`, the sandbox holds
+/// these repository paths (files or directories, `:`-separated) from the
+/// same documents, where they exist. For a script that reads a fixed path
+/// outside `doc/` (002-13 and 002-14 read
+/// `checks/002-01-frozen-data.sha256`).
+pub const DOCCHECK_EXPORT: &str = "DOCCHECK_EXPORT";
+
+/// The extra paths of the [`DOCCHECK_EXPORT`] directives of `env` that
+/// exist in `docs`.
+fn extra_exports(docs: &Docs, env: &[(&str, &str)]) -> Vec<String> {
+    env.iter()
+        .filter(|(k, _)| *k == DOCCHECK_EXPORT)
+        .flat_map(|(_, v)| v.split(':'))
+        .filter(|p| !p.is_empty() && (docs.is_file(p) || !docs.files_under(p).is_empty()))
+        .map(str::to_string)
+        .collect()
 }
 
 impl Sandbox {
@@ -90,7 +117,21 @@ impl Sandbox {
         if root.exists() {
             fs::remove_dir_all(&root)?;
         }
-        docs.export(&root, &["doc"])?;
+        let extra = extra_exports(docs, env);
+        let mut prefixes = vec!["doc"];
+        for path in &extra {
+            match docs.read(path) {
+                Some(text) if docs.is_file(path) => {
+                    let dest = root.join(path);
+                    if let Some(parent) = dest.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    fs::write(dest, text.as_bytes())?;
+                }
+                _ => prefixes.push(path),
+            }
+        }
+        docs.export(&root, &prefixes)?;
         let script = format!("checks/{id}.sh");
         fs::create_dir_all(root.join("checks"))?;
         fs::write(root.join(&script), script_text)?;
@@ -106,9 +147,13 @@ impl Sandbox {
             script,
             env: env
                 .iter()
+                .filter(|(k, _)| *k != DOCCHECK_FAIL_FORM && *k != DOCCHECK_EXPORT)
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             timeout_s: SCRIPT_TIMEOUT_S,
+            colon: env
+                .iter()
+                .any(|(k, v)| *k == DOCCHECK_FAIL_FORM && *v == "colon"),
         })
     }
 
@@ -138,7 +183,8 @@ impl Sandbox {
                 anomaly: false,
                 tail: format!("timed out after {} s", self.timeout_s),
             },
-            Ok(o) => verdict(
+            Ok(o) => verdict_with(
+                self.colon,
                 o.status.success(),
                 &format!(
                     "{}{}",
@@ -146,7 +192,8 @@ impl Sandbox {
                     String::from_utf8_lossy(&o.stderr)
                 ),
             ),
-            Err(e) => verdict(
+            Err(e) => verdict_with(
+                self.colon,
                 false,
                 &format!("Traceback (most recent call last): harness cannot run bash: {e}"),
             ),
@@ -269,9 +316,28 @@ fn grouped_failures(lines: &[&str]) -> BTreeSet<String> {
 /// FAIL message that quotes the words is not one), or a non-zero exit with
 /// no failed criterion at all.
 pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
+    verdict_with(false, exit_ok, output)
+}
+
+/// The criteria of the colon form's `FAIL: <message>` lines
+/// ([`DOCCHECK_FAIL_FORM`]).
+fn colon_failures(lines: &[&str]) -> BTreeSet<String> {
+    lines
+        .iter()
+        .filter_map(|l| l.strip_prefix("FAIL: "))
+        .map(crate::doccheck::fail_form::colon_criterion)
+        .collect()
+}
+
+/// [`verdict`], reading the colon form's `FAIL: <message>` lines as well
+/// when `colon` is set (the port asked for it with [`DOCCHECK_FAIL_FORM`]).
+pub fn verdict_with(colon: bool, exit_ok: bool, output: &str) -> ScriptVerdict {
     let lines: Vec<&str> = output.lines().collect();
     let mut criteria = fail_labels(&lines);
     criteria.extend(grouped_failures(&lines));
+    if colon {
+        criteria.extend(colon_failures(&lines));
+    }
     let last_report = lines
         .iter()
         .rposition(|l| rx(r"^\s*(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
@@ -462,6 +528,66 @@ mod tests {
             "a script past its timeout"
         );
         assert!(!v.passed() && v.criteria.is_empty());
+    }
+
+    #[test]
+    fn the_colon_form_is_read_only_on_request() {
+        let out = "PASS: AC 1: fine\nFAIL: AC 2: section (d) verdict is still pending\nFAIL: stale sync-rate statement (x) a.md:3: 37/s\nFAIL: DoD: y\n\n2 check(s) failed, 1 passed.\n";
+        let v = verdict_with(true, false, out);
+        let want: BTreeSet<String> = ["AC2", "stale sync-rate statement (x) a.md:3: 37/s", "DoD"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(v.criteria, want);
+        assert_eq!(v.outcome, ScriptOutcome::Red);
+        let plain = verdict(false, out);
+        assert_eq!(
+            plain.outcome,
+            ScriptOutcome::Crash,
+            "without the directive the colon form names no criterion (unchanged behaviour)"
+        );
+        let summary = verdict(false, "FAIL AC1: x\nFAIL: 1 assertion(s) failed\n");
+        assert_eq!(summary.criteria, ["AC1".to_string()].into_iter().collect());
+        let both = verdict_with(true, false, "FAIL AC1: x\nFAIL: report missing: r.md\n");
+        assert_eq!(
+            both.criteria,
+            ["AC1".to_string(), "report missing".to_string()]
+                .into_iter()
+                .collect()
+        );
+    }
+
+    #[test]
+    fn directives_are_read_by_the_harness_and_not_passed_on() {
+        let docs = Docs::dir("/nonexistent-doccheck-tree")
+            .with("doc/x.md", "x\n")
+            .with("checks/manifest.sha256", "abc  f\n");
+        let script = "cd \"$(dirname \"$0\")/..\"\n[ -f checks/manifest.sha256 ] || { echo 'FAIL: AC 7: manifest missing: checks/manifest.sha256'; exit 1; }\n[ -z \"${DOCCHECK_EXPORT:-}${DOCCHECK_FAIL_FORM:-}\" ] || { echo 'FAIL: directive leaked'; exit 1; }\n[ \"${KEEP:-}\" = 1 ] || { echo 'FAIL: env lost'; exit 1; }\necho 'PASS: ok'\n";
+        let env = [
+            (DOCCHECK_FAIL_FORM, "colon"),
+            (DOCCHECK_EXPORT, "checks/manifest.sha256:checks/absent.txt"),
+            ("KEEP", "1"),
+        ];
+        let sb = Sandbox::new(&docs, "000-00", script, &env).unwrap();
+        assert!(sb.root.join("checks/manifest.sha256").exists());
+        assert!(
+            !sb.root.join("checks/absent.txt").exists(),
+            "absent paths are skipped"
+        );
+        assert!(sb.run().passed(), "{:?}", sb.run());
+        let v = sb.run_edited("checks/manifest.sha256", None).unwrap();
+        assert_eq!(v.criteria, ["AC7".to_string()].into_iter().collect());
+        let bare = Sandbox::new(
+            &docs,
+            "000-00",
+            script,
+            &[(DOCCHECK_FAIL_FORM, "colon"), ("KEEP", "1")],
+        )
+        .unwrap();
+        assert!(
+            bare.run().criteria.contains("AC7"),
+            "without the export directive only doc/ is exported"
+        );
     }
 
     #[test]

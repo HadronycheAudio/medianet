@@ -19,6 +19,8 @@
 //! * [`tables`] — tables as rows with header lookup;
 //! * [`units`] — paragraphs, list items, table rows and prose blocks with
 //!   line numbers;
+//! * [`fail_form`] — the criterion of a script's `FAIL: <message>` line
+//!   (the epic-002 colon form), shared by the harness and the ports;
 //! * [`family004`] — the 004 family's field-table and section helpers;
 //! * [`links`] — links and anchor resolution across files;
 //! * [`evidence`] — the six evidence tags and the named variants of the
@@ -51,6 +53,7 @@ pub mod denial;
 pub mod docs;
 pub mod equiv;
 pub mod evidence;
+pub mod fail_form;
 pub mod family004;
 pub mod items;
 pub mod links;
