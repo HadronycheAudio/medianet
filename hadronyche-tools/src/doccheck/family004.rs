@@ -11,7 +11,8 @@
 //!
 //! M1-lib adds the other helpers every 004 script carries a copy of, each
 //! variant named: [`heading_index`], [`section_span`] ([`SpanRule`]),
-//! [`norm_name`] ([`NameNorm`]), [`width_to_bits`] ([`WidthRule`]). Each is
+//! [`norm_name`] ([`NameNorm`]), [`width_to_bits`] ([`WidthRule`]),
+//! [`parse_int_token`], [`bit_positions`]. Each is
 //! proven against the scripts' own definitions, run by Python 3.10 and 3.13
 //! on `data/family004_corpus.txt` (`tools/gen_family004_corpus.py`; the test
 //! is `doccheck::proofs004`), which also records which script's copy is
@@ -339,6 +340,34 @@ pub fn width_to_bits(cell: &str, rule: WidthRule) -> Result<Option<i128>, IntErr
             Ok(Some(if bits { n } else { n.saturating_mul(8) }))
         }
     }
+}
+
+/// `parse_int_token(text)` of 004-06, 08, 09: the first `(\d[\d _]*)`, spaces
+/// and `_` removed, as an integer; `Err` beyond `i128`.
+pub fn parse_int_token(text: &str) -> Result<Option<i128>, IntError> {
+    match rx(r"(\d[\d _]*)").captures(text) {
+        Some(c) => parse_int(&c[1].replace([' ', '_'], "")).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// `bit_positions(row_text)` of 004-06 and 004-08: the (lo, hi) bits of a
+/// sub-byte field, `bits hi..lo` (any case) with `0 <= lo <= hi <= 7`, else
+/// a single `bit N` with `0 <= N <= 7`. A number too long for `i128` is
+/// out of range, as it is for Python.
+pub fn bit_positions(row_text: &str) -> Option<(i128, i128)> {
+    let small = |d: &str| parse_int(d).ok().filter(|n| (0..=7).contains(n));
+    if let Some(c) = rx(r"(?i)bits?\s*(\d+)\s*\.\.\s*(\d+)").captures(row_text) {
+        let (hi, lo) = (parse_int(&c[1]).ok(), small(&c[2]));
+        if let (Some(hi), Some(lo)) = (hi, lo)
+            && lo <= hi
+            && hi <= 7
+        {
+            return Some((lo, hi));
+        }
+    }
+    let c = rx(r"(?i)\bbit\s*(\d+)\b").captures(row_text)?;
+    small(&c[1]).map(|b| (b, b))
 }
 
 /// A document and the constants table, as the family reads them.

@@ -73,6 +73,7 @@ SYNTH = [
     "   \n\t\n",
     "## Path-MTU probe pair\n### Path-MTU probe request\nRequest text. `[standard]`\n### Path-MTU probe reply\nReply text.\n## Regime stamp\n### Section types\ntext",
     "| Invalid form | Outcome |\n|---|---|\n| short | drop and count under TooShort |\n| bad magic | count under BadMagic |\n\n| Further rule | Result | Outcome |\n|---|---|---|\n| r1 | x | ignored |\n\n| Case | Notes |\n|---|---|\n| c | n |",
+    "bits 7..6 | bit 3 | Bits 9..2 | bit 8 | BIT 0 | bits 3 .. 5 | bit12 | 2bit 7 | 99999999999999999999999999999999999999999 bit 1\n1 2_3 4 | _5 | x 0 y",
     "Width cells: 2 | 2 bytes | 16 bits | 6 bits 2 bytes | 1 byte | bits | 1 2 | 1_000 bits | 4 × max 12 | 3 BITS",
     "Name_With-Mixed  Case\tand_underscores\n  leading and trailing  \nµs² Δ — dash – en",
     "Text with `code [decision]` span and [CODE] upper-case tag.\n\n[measured] first word tag only\n\nfive words without any tag",
@@ -515,6 +516,8 @@ HELPERS = [
     ("norm", "004-24", per_line(lambda ns, l: ns["norm"](l))),
     ("width_to_bits", "004-06", lambda ns, t: [ns["width_to_bits"](c) for c in cells(ns, t)]),
     ("width_to_bits", "004-20", lambda ns, t: [ns["width_to_bits"](c) for c in cells(ns, t)]),
+    ("parse_int_token", "004-06", per_line(lambda ns, l: ns["parse_int_token"](l))),
+    ("bit_positions", "004-06", per_line(lambda ns, l: ns["bit_positions"](l))),
     ("sentences", "004-20", lambda ns, t: ns["sentences"](t)),
     ("sentences", "004-25", lambda ns, t: ns["sentences"](t)),
     ("sentences_of", "004-29", lambda ns, t: ns["sentences_of"](t)),
@@ -522,6 +525,14 @@ HELPERS = [
     ("split_sentences", "004-04", per_line(lambda ns, l: ns["split_sentences"](l))),
     ("prose_sentences", "004-09", prose_sentences_09),
     ("SENT", "004-24", sent_004_24),
+    # the inline splits (script:line of one use each)
+    ("split_raw", "004-09", lambda ns, t: re.split(r"(?<=[.;])\s+", t)),  # 004-09:1606
+    ("split_raw_colon", "004-26", lambda ns, t: re.split(r"(?<=[.;:])\s+", t)),  # 004-26:875
+    ("split_raw_colon_newlines", "004-19", lambda ns, t: re.split(r"(?<=[.;:])\s+|\n+", t)),  # 004-19:845
+    ("split_raw_newline", "004-11", lambda ns, t: re.split(r"(?<=[.;])\s+|\n", t)),  # 004-11:700
+    ("split_raw_pipe", "004-21", lambda ns, t: re.split(r"(?<=[.;])\s+|\|", t)),  # 004-21:946
+    ("split_raw_terminal", "004-03", lambda ns, t: re.split(r"(?<=[.!?])\s+(?=[A-Z`(\[])", t)),  # 004-03:1037
+    ("first_sentence", "004-29", per_line(lambda ns, l: re.split(r"(?<=\.)\s", l, 1)[0])),  # 004-29:940
     ("form_rows", "004-17", lambda ns, t: ns["form_rows"](t)),
     ("Sec.form_rows", "004-20", r_form_rows_004_20),
     ("section_blocks", "004-19", section_blocks_kinds),

@@ -16,13 +16,16 @@ use super::evidence::{
     subsections_with_table_untagged, untagged, untagged_lines, untagged_tables,
 };
 use super::family004::{
-    NameNorm, SpanRule, WidthRule, heading_index, norm_name, section_span, subsections, tables,
-    width_to_bits,
+    NameNorm, SpanRule, WidthRule, bit_positions, heading_index, norm_name, parse_int_token,
+    section_span, subsections, tables, width_to_bits,
 };
 use super::items::{OpenItemPolicy, item_is_owned, open_items};
 use super::negation::{Lookback, negated};
 use super::pycompat::splitlines;
-use super::sentences::{SentenceSplit, split};
+use super::sentences::{
+    RAW_COLON, RAW_COLON_NEWLINES_004_19, RAW_NEWLINE_004_11, RAW_PERIOD_SEMI, RAW_PIPE_004_21,
+    RAW_TERMINAL_004_03, SentenceSplit, first_sentence_004_29, split, split_raw,
+};
 use super::text::{join_digit_groups, rx};
 use super::units::{BlockKind, clean_start, prose_blocks, strip_fences};
 
@@ -362,6 +365,22 @@ fn library(helper: &str, variant: &str, t: &str) -> J {
         ("norm", "004-24") => per_line(t, join_digit_groups),
         ("width_to_bits", "004-06") => widths(t, WidthRule::DigitGroups004_06),
         ("width_to_bits", "004-20") => widths(t, WidthRule::FirstNumber004_20),
+        ("parse_int_token", _) => J::L(
+            lines
+                .iter()
+                .map(|l| match parse_int_token(l) {
+                    Ok(Some(n)) => J::I(n),
+                    Ok(None) => J::N,
+                    Err(e) => s(&format!("OVERFLOW {e}")),
+                })
+                .collect(),
+        ),
+        ("bit_positions", _) => J::L(
+            lines
+                .iter()
+                .map(|l| bit_positions(l).map_or(J::N, |(a, b)| J::L(vec![J::I(a), J::I(b)])))
+                .collect(),
+        ),
         ("sentences", "004-20") => sentences(t, SentenceSplit::NEWLINES_004_20),
         ("sentences", "004-25") => sentences(t, SentenceSplit::BLOCKS_004_25),
         ("sentences_of", "004-29") => sentences(t, SentenceSplit::PARAGRAPHS_004_29),
@@ -384,6 +403,13 @@ fn library(helper: &str, variant: &str, t: &str) -> J {
                 .collect(),
         ),
         ("SENT", "004-24") => sentences(t, SentenceSplit::COLON_004_24),
+        ("split_raw", _) => strs(&split_raw(t, RAW_PERIOD_SEMI)),
+        ("split_raw_colon", _) => strs(&split_raw(t, RAW_COLON)),
+        ("split_raw_colon_newlines", _) => strs(&split_raw(t, RAW_COLON_NEWLINES_004_19)),
+        ("split_raw_newline", _) => strs(&split_raw(t, RAW_NEWLINE_004_11)),
+        ("split_raw_pipe", _) => strs(&split_raw(t, RAW_PIPE_004_21)),
+        ("split_raw_terminal", _) => strs(&split_raw(t, RAW_TERMINAL_004_03)),
+        ("first_sentence", _) => per_line(t, |l| first_sentence_004_29(l).to_string()),
         _ => rules(helper, variant, t, &lines),
     }
 }

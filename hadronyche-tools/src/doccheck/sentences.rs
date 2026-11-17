@@ -18,8 +18,15 @@
 //! | [`SentenceSplit::COLON_004_24`] | 004-24 `SENT` | `[s.strip().lower() for s in re.split(r"(?<=[.;:])\s+", t) if s.strip()]` |
 //! | [`SentenceSplit::TERMINAL_004_04`] | 004-04 `split_sentences` | `[s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z`(\[])", t) if s.strip()]` |
 //!
-//! Proven against the scripts' own definitions on `data/family004_corpus.txt`
-//! (`doccheck::proofs004`).
+//! The scripts also split inline and keep the raw pieces (no strip, no
+//! filter): [`split_raw`] with the pattern's alternatives, e.g.
+//! [`RAW_PERIOD_SEMI`] (`re.split(r"(?<=[.;])\s+", t)`: 004-09, 11, 14, 15,
+//! 16, 19, 20, 21), [`RAW_COLON`] (004-26), [`RAW_COLON_NEWLINES_004_19`],
+//! [`RAW_NEWLINE_004_11`], [`RAW_PIPE_004_21`], [`RAW_TERMINAL_004_03`];
+//! [`first_sentence_004_29`] is 004-29's `re.split(r"(?<=\.)\s", rest, 1)[0]`.
+//!
+//! Proven against the scripts' own definitions and inline splits on
+//! `data/family004_corpus.txt` (`doccheck::proofs004`).
 
 use super::pycompat::{PyStr, is_space};
 
@@ -39,7 +46,36 @@ pub enum Cut {
     BlankLine,
     /// `\n(?=[chars])`.
     NewlineBefore(&'static str),
+    /// A literal character (`\|`).
+    Char(char),
+    /// `(?<=[chars])\s`: one whitespace character.
+    AfterPunctOne(&'static str),
 }
+
+/// `(?<=[.;])\s+`.
+pub const RAW_PERIOD_SEMI: &[Cut] = &[PERIOD_SEMI];
+/// `(?<=[.;:])\s+`.
+pub const RAW_COLON: &[Cut] = &[Cut::AfterPunct {
+    chars: ".;:",
+    next: None,
+}];
+/// `(?<=[.;:])\s+|\n+` (004-19).
+pub const RAW_COLON_NEWLINES_004_19: &[Cut] = &[
+    Cut::AfterPunct {
+        chars: ".;:",
+        next: None,
+    },
+    Cut::Newlines,
+];
+/// `(?<=[.;])\s+|\n` (004-11).
+pub const RAW_NEWLINE_004_11: &[Cut] = &[PERIOD_SEMI, Cut::Newline];
+/// `(?<=[.;])\s+|\|` (004-21).
+pub const RAW_PIPE_004_21: &[Cut] = &[PERIOD_SEMI, Cut::Char('|')];
+/// `(?<=[.!?])\s+(?=[A-Z`(\[])` (004-03, 004-04).
+pub const RAW_TERMINAL_004_03: &[Cut] = &[Cut::AfterPunct {
+    chars: ".!?",
+    next: Some("ABCDEFGHIJKLMNOPQRSTUVWXYZ`(["),
+}];
 
 /// What happens to the pieces after the split.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,14 +225,31 @@ fn match_at(t: &str, p: usize, cut: Cut) -> Option<usize> {
             let after = rest.strip_prefix('\n')?;
             after.chars().next().filter(|c| set.contains(*c)).map(|_| 1)
         }
+        Cut::Char(ch) => rest.starts_with(ch).then_some(ch.len_utf8()),
+        Cut::AfterPunctOne(chars) => {
+            let prev = t[..p].chars().next_back()?;
+            let c = rest.chars().next()?;
+            (chars.contains(prev) && is_space(c)).then_some(c.len_utf8())
+        }
     }
 }
 
-/// `re.split(pattern, text)` for the alternatives `cuts`.
-fn raw_split<'t>(t: &'t str, cuts: &[Cut]) -> Vec<&'t str> {
+/// `re.split(pattern, text)` for the alternatives `cuts`: the raw pieces.
+pub fn split_raw<'t>(t: &'t str, cuts: &[Cut]) -> Vec<&'t str> {
+    raw_split(t, cuts, usize::MAX)
+}
+
+/// 004-29's `re.split(r"(?<=\.)\s", rest, 1)[0]`: the text up to the first
+/// whitespace character after a full stop.
+pub fn first_sentence_004_29(t: &str) -> &str {
+    raw_split(t, &[Cut::AfterPunctOne(".")], 1)[0]
+}
+
+/// `re.split(pattern, text, maxsplit)` for the alternatives `cuts`.
+fn raw_split<'t>(t: &'t str, cuts: &[Cut], maxsplit: usize) -> Vec<&'t str> {
     let mut out = Vec::new();
     let (mut last, mut p) = (0, 0);
-    while p <= t.len() {
+    while p <= t.len() && out.len() < maxsplit {
         if let Some(n) = cuts.iter().find_map(|c| match_at(t, p, *c)) {
             out.push(&t[last..p]);
             p += n;
@@ -215,7 +268,7 @@ fn raw_split<'t>(t: &'t str, cuts: &[Cut]) -> Vec<&'t str> {
 /// The sentences of `text` under `how`.
 pub fn split(text: &str, how: SentenceSplit) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for piece in raw_split(text, how.cuts) {
+    for piece in split_raw(text, how.cuts) {
         if how.pieces.drop_blank && piece.py_strip().is_empty() {
             continue;
         }
@@ -272,5 +325,10 @@ mod tests {
             ["a. b.", "C!", "(d"]
         );
         assert_eq!(split("a\n \n b", SentenceSplit::BLOCKS_004_25), ["a", " b"]);
+        assert_eq!(split_raw("a. b|c", RAW_PIPE_004_21), ["a.", "b", "c"]);
+        assert_eq!(
+            first_sentence_004_29("Open item 3.  Owner: x. y"),
+            "Open item 3."
+        );
     }
 }
