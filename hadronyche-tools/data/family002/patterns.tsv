@@ -1,0 +1,47 @@
+# locale fr_FR.UTF-8; inputs seeded from doc/design/reports/archaeology/REPORT-0b.md at b7c71c5eb438
+# tool: grep (GNU grep) 3.11
+# tool: sed (GNU sed) 4.9
+# tool: mawk 1.3.4 20250131 (/usr/bin/mawk)
+# tool: tr (GNU coreutils) 9.7
+# tool: cut (GNU coreutils) 9.7
+# tool: sort (GNU coreutils) 9.7
+# tool: wc (GNU coreutils) 9.7
+# tool: GNU bash, version 5.2.37(1)-release (x86_64-pc-linux-gnu)
+# tool	pattern	origin
+grep-Ei	^#+[[:space:]]*\\(d\\)	002-02 heading_no (d)
+grep-Ei	^#+[[:space:]]*\\(e\\)	002-02 heading_no (e)
+grep-Ei	^#+[[:space:]]*Open sub-questions	002-02 DoD heading
+grep-E	^#+[[:space:]]	002-02 heading line
+grep-G	[^[:space:]]	002-02 AC1 non-empty
+grep-E	audio\\.rs:[0-9]+	002-02 pointer
+grep-Eo	audio\\.rs:[0-9]+	002-02 AC1 pointers
+grep-G	.	002-02 grep -c .
+grep-Ei	toleran|threshold|epsilon|eps\\b	002-02 AC2 tolerance
+grep-Ei	1024|1[ ,]024	002-02 AC3 fact 1
+grep-Ei	window	002-02 AC3 fact 1
+grep-Ei	complete	002-02 AC3 fact 2
+grep-Ei	both	002-02 AC3 fact 2
+grep-Ei	256|MAX_LAG_WINDOWS	002-02 AC3 fact 3
+grep-Ei	2[.,]7	002-02 AC3 fact 3
+grep-Ei	settle|settling	002-02 AC3 fact 4
+grep-Ei	(1[ -]?s|1 second|1-second)	002-02 AC3 fact 4
+grep-Ei	(3[ -]?s|3 second|3-second|SETTLE_SECS)	002-02 AC3 fact 4
+grep-Ei	replica	002-02 AC3 fact 5
+grep-Ei	gap	002-02 AC3 fact 5
+grep-Ei	(^|[^[:alnum:]])(confirmed|corrected)([^[:alnum:]]|$)	002-02 marker
+grep-F	[code]	002-02 AC3 tag
+grep-E	^[[:space:]]*(-|\\*|\\+|>|[0-9]+[.)])[[:space:]]|^[[:space:]]*\\|	002-02 AC4 list entry
+grep-Ei	incomplete	002-02 AC4 category
+grep-Ei	lag|MAX_LAG_WINDOWS	002-02 AC4 category
+grep-Ei	sender[ -]?gap	002-02 AC4 category
+grep-Ei	settle|SETTLE_SECS	002-02 AC4 category
+grep-Ei	voices[ -]?flag|voices.*off|flag off|voices=false|voices = false	002-02 AC4 category
+grep-Ei	because|since|reason|so that|to avoid|otherwise	002-02 AC4 reason
+sed-E	s/audio\\.rs:[0-9]+//g; s/[0-9]+\\.[0-9]+//g; s/\\be\\.g\\.//g; s/\\bi\\.e\\.//g	002-02 AC5 clean
+sed-E	s/\\[(code|measured|kernel-doc|memory|decision)\\]//g	002-02 AC5 tags
+grep-Eo	[.!?]	002-02 AC5 terminals
+grep-G	[[:alnum:]]	002-02 AC5 words
+grep-Gi	voice comparison bit-level	002-02 DoD row
+grep-E	^[[:space:]]*\\|	002-02 DoD table row
+grep-Gi	answered	002-02 DoD answered
+grep-Ei	(^|[^[:alnum:]])(yes|no)([^[:alnum:]]|$)	002-02 DoD yes/no

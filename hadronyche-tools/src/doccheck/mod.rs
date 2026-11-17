@@ -19,6 +19,8 @@
 //! * [`tables`] — tables as rows with header lookup;
 //! * [`units`] — paragraphs, list items, table rows and prose blocks with
 //!   line numbers;
+//! * [`family002`] — the bash semantics of the epic-002 scripts (GNU grep and
+//!   sed, tr, cut, bash expansions), proven against the real tools;
 //! * [`family004`] — the 004 family's field-table and section helpers;
 //! * [`links`] — links and anchor resolution across files;
 //! * [`evidence`] — the six evidence tags and the named variants of the
@@ -51,6 +53,7 @@ pub mod denial;
 pub mod docs;
 pub mod equiv;
 pub mod evidence;
+pub mod family002;
 pub mod family004;
 pub mod items;
 pub mod links;
