@@ -192,6 +192,39 @@ impl Sandbox {
         Ok(v)
     }
 
+    /// Runs the script with several files replaced (or deleted, `None`)
+    /// together, then restores every one; any write or restore error
+    /// aborts.
+    pub fn run_edited_many(
+        &self,
+        edits: &[(String, Option<String>)],
+    ) -> Result<ScriptVerdict, String> {
+        let mut originals = Vec::new();
+        for (file, text) in edits {
+            let path = self.root.join(file);
+            originals.push((file.clone(), fs::read(&path).ok()));
+            match text {
+                Some(t) => write_checked(&path, t.as_bytes())?,
+                None if path.exists() => {
+                    fs::remove_file(&path).map_err(|e| format!("cannot delete {file}: {e}"))?;
+                }
+                None => {}
+            }
+        }
+        let v = self.run();
+        for (file, original) in originals.iter().rev() {
+            let path = self.root.join(file);
+            match original {
+                Some(bytes) => write_checked(&path, bytes)?,
+                None if path.exists() => {
+                    fs::remove_file(&path).map_err(|e| format!("cannot restore {file}: {e}"))?;
+                }
+                None => {}
+            }
+        }
+        Ok(v)
+    }
+
     /// Runs the script with mutation `m` applied to its file.
     pub fn run_mutated(&self, docs: &Docs, m: &Mutation) -> Result<ScriptVerdict, String> {
         let original = docs
@@ -578,6 +611,19 @@ mod tests {
             "a deletion"
         );
         assert!(sb.run().passed(), "restored after a deletion");
+        let many = vec![
+            ("doc/x.md".to_string(), None),
+            ("doc/y.md".to_string(), Some("new".to_string())),
+        ];
+        assert!(
+            !sb.run_edited_many(&many).unwrap().passed(),
+            "two files at once"
+        );
+        assert!(sb.run().passed(), "both restored");
+        assert!(
+            !sb.root.join("doc/y.md").exists(),
+            "a created file is removed again"
+        );
         let cargo = Sandbox::new(&docs, "000-00", script, &[("RUN_CARGO", "1")]).unwrap();
         assert!(cargo.run().criteria.contains("DoD"), "the cargo stub fails");
         let root = sb.root.clone();

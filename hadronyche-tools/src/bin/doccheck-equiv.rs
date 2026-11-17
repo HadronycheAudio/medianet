@@ -106,6 +106,10 @@ fn main() {
         );
         exit(2)
     }
+    // the tree the summaries describe: read once, at the start; the run
+    // aborts if HEAD (or the tracked files) change underneath it
+    let start = hadronyche_tools::doccheck::equiv::script::head_commit(&repo_root())
+        .unwrap_or_else(|| "unknown".into());
     let mut failed = false;
     for spec in &a.ids {
         let outcome = match run(spec, &repo_root(), &a.opts, &mut |l| {
@@ -117,6 +121,17 @@ fn main() {
                 exit(2)
             }
         };
+        let now = hadronyche_tools::doccheck::equiv::script::head_commit(&repo_root())
+            .unwrap_or_else(|| "unknown".into());
+        if now != start {
+            eprintln!(
+                "doccheck-equiv {}: ABORTED: the tree changed during the run ({start} at the start, {now} now)",
+                spec.id
+            );
+            exit(2)
+        }
+        let mut outcome = outcome;
+        outcome.tree = start.clone();
         let text = if a.full {
             render_full(&outcome)
         } else {
