@@ -83,13 +83,13 @@ pub const DENIALS: &[Denial] = &[
         name: "dod_denial_a_constant_unreadable",
         file: CONSTANTS_MD,
         edit: DenialEdit::Text(|b| consts(b, |t| replace_in_line(t, r"^\| C-17 \|", "at most 1 252 bytes", "at most twelve hundred bytes"))),
-        expect: &[("DoD", "constant for bound could not be read")],
+        expect: &[("DoD", "constant for bound could not be read"), ("AC2", "")],
     },
     Denial {
         name: "denial_wire_md_missing",
         file: WIRE_MD,
         edit: DenialEdit::Delete,
-        expect: &[("AC1", "does not exist")],
+        expect: &[("AC1", "does not exist"), ("AC2", ""), ("AC3", ""), ("AC4", ""), ("AC5", ""), ("AC6", ""), ("Behaviour", ""), ("DoD", ""), ("Work3", "")],
     },
     Denial {
         name: "ac4_denial_no_rejection_reasons_section",
@@ -107,25 +107,25 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_no_hello_section",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| wire(b, |t| rename_heading(t, "^Hello$", "Greeting"))),
-        expect: &[("AC1", "no '## Hello' section")],
+        expect: &[("AC1", "no '## Hello' section"), ("AC2", ""), ("AC3", ""), ("AC4", ""), ("AC5", ""), ("AC6", ""), ("Behaviour", ""), ("DoD", ""), ("Work3", "")],
     },
     Denial {
         name: "ac1_denial_a_layout_row_of_four_cells",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id (C-11) of the sender | any 64-bit value |", "| 32 | 8 | u64 | Module id (C-11) of the sender |"))),
-        expect: &[("AC1", "a row has fewer than five cells")],
+        expect: &[("AC1", "a row has fewer than five cells"), ("AC2", ""), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_an_offset_not_a_number",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| x32 | 8 | u64 | Module id"))),
-        expect: &[("AC1", "is not a byte offset")],
+        expect: &[("AC1", "is not a byte offset"), ("AC2", ""), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_a_width_not_a_count",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 32 | eight | u64 | Module id"))),
-        expect: &[("AC1", "is neither a byte count")],
+        expect: &[("AC1", "is neither a byte count"), ("AC2", ""), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_no_common_header_subsection",
@@ -206,55 +206,55 @@ pub const DENIALS: &[Denial] = &[
         name: "ac5_denial_no_layout_subsection",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| rename_heading(t, "^Hello layout$", "Hello fields"))),
-        expect: &[("AC5", "no '### Hello layout' subsection")],
+        expect: &[("AC5", "no '### Hello layout' subsection"), ("AC1", ""), ("AC2", ""), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_the_layout_subsection_has_no_field_table",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| Offset (bytes) |", "| Position |"))),
-        expect: &[("AC5", "the hello layout subsection has no five-column field table")],
+        expect: &[("AC5", "the hello layout subsection has no five-column field table"), ("AC1", ""), ("AC2", ""), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_the_layout_not_starting_with_the_header",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| Magic 0x4d4e", "| Marker 0x4d4e"))),
-        expect: &[("AC5", "does not start with the common control header rows")],
+        expect: &[("AC5", "does not start with the common control header rows"), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_a_layout_header_row_of_another_type",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 7 | 1 | u8 | Authentication scheme", "| 7 | 1 | i8 | Authentication scheme"))),
-        expect: &[("AC5", "differs from the common control header in offset, width or type")],
+        expect: &[("AC5", "differs from the common control header in offset, width or type"), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_layout_rows_that_do_not_tile",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 52 | 4 | u32 | Election epoch", "| 53 | 4 | u32 | Election epoch"))),
-        expect: &[("AC5", "at byte 53, expected 52")],
+        expect: &[("AC5", "at byte 53, expected 52"), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_a_row_of_part_of_a_byte",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 52 | 4 | u32 | Election epoch", "| 52 | 31 bits | u32 | Election epoch"))),
-        expect: &[("AC5", "is not a whole number of bytes")],
+        expect: &[("AC5", "is not a whole number of bytes"), ("AC2", ""), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_no_transport_role_row",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| Transport role: 0 = none", "| Role of transport: 0 = none"))),
-        expect: &[("AC1", "no row for transport role")],
+        expect: &[("AC1", "no row for transport role"), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_a_module_id_of_the_wrong_width",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 32 | 4 | u64 | Module id"))),
-        expect: &[("AC1", "module id (C-11) is 32 bits")],
+        expect: &[("AC1", "module id (C-11) is 32 bits"), ("AC2", ""), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_no_counted_name_row",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 76 | 1 × max 32 | u8 | Name:", "| 76 | 32 | u8 | Name:"))),
-        expect: &[("AC1", "no counted name row")],
+        expect: &[("AC1", "no counted name row"), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_a_name_without_its_encoding",
@@ -266,7 +266,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_capability_bits_not_32",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 48 | 4 | u32 | Capability bits", "| 48 | 2 | u32 | Capability bits"))),
-        expect: &[("AC1", "capability bits are 16 bits")],
+        expect: &[("AC1", "capability bits are 16 bits"), ("AC2", ""), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_no_holder_eligible_bit",
@@ -278,7 +278,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_no_counted_port_row",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 108 | 7 × max 51 |", "| 108 | 7 |"))),
-        expect: &[("AC1", "no counted port row")],
+        expect: &[("AC1", "no counted port row"), ("AC2", ""), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_the_counter_not_the_liveness_counter",
@@ -296,7 +296,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_no_bundle_element_subsection",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| rename_heading(t, "^Bundle element$", "Bundle entry"))),
-        expect: &[("AC1", "no '### Bundle element' subsection")],
+        expect: &[("AC1", "no '### Bundle element' subsection"), ("AC2", "")],
     },
     Denial {
         name: "ac1_denial_no_channel_map_row",
@@ -350,19 +350,19 @@ pub const DENIALS: &[Denial] = &[
         name: "ac2_denial_the_bundle_row_not_counted",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 465 | 98 × max 8 |", "| 465 | 98 |"))),
-        expect: &[("AC2", "is not a counted row")],
+        expect: &[("AC2", "is not a counted row"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_the_bundle_row_unequal_to_its_element",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 465 | 98 × max 8 |", "| 465 | 97 × max 8 |"))),
-        expect: &[("AC2", "the bundle row is 776 bits per bundle")],
+        expect: &[("AC2", "the bundle row is 776 bits per bundle"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_no_one_byte_bundle_count",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 75 | 1 | u8 | Bundle count", "| 75 | 2 | u8 | Bundle count"))),
-        expect: &[("AC2", "no one-byte bundle count row")],
+        expect: &[("AC2", "no one-byte bundle count row"), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_no_stated_bundles_per_hello",
@@ -394,7 +394,7 @@ pub const DENIALS: &[Denial] = &[
         let t = lit(&t, "A hello is at most 8 bundles", "A hello is at most 7 bundles");
         replace_all(&t, "256", "many")
     })),
-        expect: &[("AC2", "cannot carry C-09's 256 streams")],
+        expect: &[("AC2", "cannot carry C-09's 256 streams"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_no_one_bundle_figure",
@@ -442,13 +442,13 @@ pub const DENIALS: &[Denial] = &[
         name: "ac2_denial_fits_without_bundle_rows",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", no_bundle_rows)),
-        expect: &[("AC2", "fits but the hello layout carries no bundle rows")],
+        expect: &[("AC2", "fits but the hello layout carries no bundle rows"), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_fits_above_the_bound",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| lit(&lit(t, "| 465 | 98 × max 8 |", "| 465 | 98 × max 9 |"), "A hello is at most 8 bundles", "A hello is at most 9 bundles"))),
-        expect: &[("AC2", "is 1347 bytes, above 1252")],
+        expect: &[("AC2", "is 1347 bytes, above 1252"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_fits_with_a_stated_maximum_that_differs",
@@ -469,7 +469,7 @@ pub const DENIALS: &[Denial] = &[
         let t = within_section(&verdict(t, FALSIFIED), "^Hello layout$", no_bundle_rows);
         replace_all(&t, r"at most (\d+) bundles", "no more than so many bundles")
     })),
-        expect: &[("AC2", "the all-bundles maximum cannot be computed")],
+        expect: &[("AC2", "the all-bundles maximum cannot be computed"), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_falsified_with_an_all_bundles_maximum_within_the_bound",
@@ -478,13 +478,13 @@ pub const DENIALS: &[Denial] = &[
         let t = within_section(&verdict(t, FALSIFIED), "^Hello layout$", no_bundle_rows);
         lit(&t, "A hello is at most 8 bundles", "A hello is at most 1 bundles")
     })),
-        expect: &[("AC2", "not above 1252")],
+        expect: &[("AC2", "not above 1252"), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_falsified_with_a_fallback_above_the_bound",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| lit(&verdict(t, FALSIFIED), "| 465 | 98 × max 8 |", "| 465 | 98 × max 9 |"))),
-        expect: &[("AC2", "the fallback hello is 1347 bytes")],
+        expect: &[("AC2", "the fallback hello is 1347 bytes"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_falsified_with_a_stated_maximum_that_differs",
@@ -499,7 +499,7 @@ pub const DENIALS: &[Denial] = &[
         let t = within_section(&verdict(t, FALSIFIED), "^Hello layout$", no_bundle_rows);
         lit(&t, "A hello is at most 8 bundles", "A hello is at most 9 bundles")
     })),
-        expect: &[("AC2", "the all-bundles size 1347 bytes is not stated")],
+        expect: &[("AC2", "the all-bundles size 1347 bytes is not stated"), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_falsified_citing_c17_against_its_falsifier",
@@ -514,7 +514,7 @@ pub const DENIALS: &[Denial] = &[
         let t = verdict(t, "**Verdict: the hello is falsified.** Nothing more `[decision]`.");
         replace_all(&replace_all(&t, "(?i)split", "divid"), "(?i)handshake", "exchange")
     })),
-        expect: &[("AC3", "does not name the fallback")],
+        expect: &[("AC3", "does not name the fallback"), ("AC2", "")],
     },
     Denial {
         name: "ac3_denial_no_alarm_subsection",
@@ -586,7 +586,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac3_denial_a_role_open_item_without_owner",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Open items$", |t| replace_in_line(t, r"^\*\*Open item 1 ", "(?i)owner", "Confirmed by"))),
-        expect: &[("AC3", "does not name epic 005 as its confirming owner")],
+        expect: &[("AC3", "does not name epic 005 as its confirming owner"), ("DoD", "")],
     },
     Denial {
         name: "ac3_denial_a_role_open_item_without_its_falsifier",
@@ -682,7 +682,7 @@ pub const DENIALS: &[Denial] = &[
         name: "dod_denial_the_regime_stamp_fields_not_documented",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| replace_all(t, r"(?i)version\s+number", "version count"))),
-        expect: &[("DoD", "regime stamp fields the hello touches")],
+        expect: &[("DoD", "regime stamp fields the hello touches"), ("AC6", ""), ("Work3", "")],
     },
     Denial {
         name: "work3_denial_c18_not_cited",
@@ -706,7 +706,7 @@ pub const DENIALS: &[Denial] = &[
         name: "behaviour_denial_the_cs5_value_of_c13",
         file: CONSTANTS_MD,
         edit: DenialEdit::Text(|b| consts(b, |t| replace_in_line(t, r"^\| C-13 \|", r"control CS5 \(40\)", "control CS5 (41)"))),
-        expect: &[("Behaviour", "CS5 is not stated with the value of C-13")],
+        expect: &[("Behaviour", "CS5 is not stated with the value of C-13"), ("AC6", "")],
     },
     Denial {
         name: "behaviour_denial_the_peer_bound_of_c34",
@@ -875,7 +875,7 @@ pub const DENIALS: &[Denial] = &[
         name: "py_denial_an_open_item_after_a_unit_separator",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| append(t, "\u{1f}**Open item 10 — x.** Still open `[decision]`."))),
-        expect: &[("DoD", "names no owner or no falsifier")],
+        expect: &[("REPERTOIRE", "")],
     },
     // `str.splitlines()`: U+2028 ends a line, so the validity table ends in
     // its sixth row.
@@ -883,28 +883,28 @@ pub const DENIALS: &[Denial] = &[
         name: "py_denial_a_line_separator_inside_the_validity_table",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Validity rules$", |t| replace_in_line(t, r"^\| foreign domain", r"\| drop and count under ForeignDomain", "|\u{2028}drop and count under ForeignDomain"))),
-        expect: &[("AC4", "at least 10 are required")],
+        expect: &[("REPERTOIRE", "")],
     },
     // `str.splitlines()`: so does a form feed.
     Denial {
         name: "py_denial_a_form_feed_inside_the_validity_table",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Validity rules$", |t| replace_in_line(t, r"^\| foreign domain", r"\| drop and count under ForeignDomain", "|\u{c}drop and count under ForeignDomain"))),
-        expect: &[("AC4", "at least 10 are required")],
+        expect: &[("REPERTOIRE", "")],
     },
     // `int()` is unbounded: a 21-digit offset is read, and does not tile.
     Denial {
         name: "py_denial_an_offset_beyond_64_bits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 100000000000000000032 | 8 | u64 | Module id"))),
-        expect: &[("AC5", "at byte 100000000000000000032, expected 32")],
+        expect: &[("AC5", "at byte 100000000000000000032, expected 32"), ("AC6", "")],
     },
     // `\d` and `int()` read Arabic-Indic digits: ٣٣ is 33, out of place.
     Denial {
         name: "py_denial_an_offset_in_arabic_indic_digits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| \u{663}\u{663} | 8 | u64 | Module id"))),
-        expect: &[("AC5", "at byte 33, expected 32")],
+        expect: &[("REPERTOIRE", "")],
     },
     // The subset reader keeps `"1249"` a str: unequal to 1249.
     Denial {
@@ -946,7 +946,7 @@ pub const DENIALS: &[Denial] = &[
         name: "py_denial_a_counted_width_as_a_string",
         file: WIRE_TOML,
         edit: DenialEdit::Text(|b| hello_toml(b, "offset = 608\nwidth = 8", "offset = 608\nwidth = \"8\"")),
-        expect: &[("CRASH", "adds a non-number")],
+        expect: &[("CRASH", "adds a non-number"), ("AC6", "")],
     },
     // `key_of(r[3])` on a sync header row of three cells: IndexError.
     Denial {
@@ -975,7 +975,7 @@ pub const DENIALS: &[Denial] = &[
         name: "py_denial_an_open_item_with_a_dotless_i",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| append(t, "**Open \u{131}tem 10 — x.** Still open `[decision]`."))),
-        expect: &[("DoD", "names no owner or no falsifier")],
+        expect: &[("REPERTOIRE", "")],
     },
     // `(?<!not )`: "not fits" is not a verdict word.
     Denial {
@@ -989,7 +989,7 @@ pub const DENIALS: &[Denial] = &[
         name: "py_accepts_an_offset_in_arabic_indic_digits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| \u{663}\u{662} | 8 | u64 | Module id"))),
-        expect: &[],
+        expect: &[("REPERTOIRE", "")],
     },
     // A combining accent is not a word character for Python: `\bdead\b`
     // still finds "Dead\u{301}".
@@ -997,14 +997,14 @@ pub const DENIALS: &[Denial] = &[
         name: "py_accepts_a_combining_accent_after_an_alarm",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead\u{301} | bit 2 |"))),
-        expect: &[],
+        expect: &[("REPERTOIRE", "")],
     },
     // `re.I`: "bınary" is "binary" to Python.
     Denial {
         name: "py_accepts_a_dotless_i",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| hello(b, |t| replace_all(t, "binary", "b\u{131}nary"))),
-        expect: &[],
+        expect: &[("REPERTOIRE", "")],
     },
     // The 24-character look-back counts characters, not bytes.
     Denial {
@@ -1038,6 +1038,342 @@ pub const DENIALS: &[Denial] = &[
         name: "py_accepts_a_unit_separator_in_a_cell",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 32\u{1f} | 8 | u64 | Module id"))),
+        expect: &[("REPERTOIRE", "")],
+    },
+    // `T.get("max_size") != H_BYTES` and `> bound` on 10^19: Python compares exactly.
+    Denial {
+        name: "num_denial_max_size_of_10_19",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 10000000000000000000")),
+        expect: &[("AC6", "")],
+    },
+    // 10^36 is an int to Python (no clamp); the comparisons fail as for any other size.
+    Denial {
+        name: "num_denial_max_size_of_10_36",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 1000000000000000000000000000000000000")),
+        expect: &[("AC6", "")],
+    },
+    // 10^40 is beyond i128: the port is red by rule (INT_LIMIT); Python fails AC6.
+    Denial {
+        name: "num_denial_max_size_of_10_40",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 10000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 2^127, one above i128::MAX: INT_LIMIT.
+    Denial {
+        name: "num_denial_max_size_just_beyond_i128",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 170141183460469231731687303715884105728")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // The subset reader reads `1_249` as Python's int("1_249") would, or not at all.
+    Denial {
+        name: "num_accepts_max_size_with_an_underscore",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 1_249")),
         expect: &[],
+    },
+    // A leading `+`.
+    Denial {
+        name: "num_denial_max_size_with_a_plus",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = +1249")),
+        expect: &[],
+    },
+    // Leading zeros: the subset reader accepts `040`-style ints.
+    Denial {
+        name: "num_denial_max_size_with_leading_zeros",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 01249")),
+        expect: &[],
+    },
+    // A non-decimal form (0x4e1 = 1249).
+    Denial {
+        name: "num_denial_max_size_in_hex",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 0x4e1")),
+        expect: &[],
+    },
+    // 1249.0 == 1249 in Python, but a float is not `isinstance(_, int)`.
+    Denial {
+        name: "num_denial_max_size_as_a_float",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 1249.0")),
+        expect: &[],
+    },
+    // True is an int to `isinstance` and equals 1.
+    Denial {
+        name: "num_denial_max_size_as_true",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = true")),
+        expect: &[("AC6", "")],
+    },
+    // An empty string.
+    Denial {
+        name: "num_denial_max_size_empty",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = \"\"")),
+        expect: &[("AC6", "")],
+    },
+    // No max_size: `T.get("max_size")` is None.
+    Denial {
+        name: "num_denial_max_size_missing",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249\n", "")),
+        expect: &[("AC6", "")],
+    },
+    // A counted width beyond i128: `width * max_count` is INT_LIMIT.
+    Denial {
+        name: "num_denial_a_width_of_10_40",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 608\nwidth = 8", "offset = 608\nwidth = 10000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 10^20 bits × 51 fits i128; the comparisons fail.
+    Denial {
+        name: "num_denial_a_width_times_count_beyond_i128",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 608\nwidth = 8", "offset = 608\nwidth = 100000000000000000000")),
+        expect: &[("AC6", "")],
+    },
+    // 16.0 == 16; the sum becomes a float and still equals max_size × 8.
+    Denial {
+        name: "num_denial_a_width_as_a_float",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = 16.0")),
+        expect: &[],
+    },
+    // A float of 10^19: != 16, and the float sum != max_size × 8.
+    Denial {
+        name: "num_denial_a_width_as_a_big_float",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = 1e19")),
+        expect: &[("AC6", "")],
+    },
+    // `inf` (the subset reader's float), summed.
+    Denial {
+        name: "num_denial_a_width_as_inf",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = inf")),
+        expect: &[("AC6", "")],
+    },
+    // True + int is an int.
+    Denial {
+        name: "num_denial_a_width_as_true",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = true")),
+        expect: &[("AC6", "")],
+    },
+    // `total_bits += [16]`: TypeError.
+    Denial {
+        name: "num_denial_a_width_as_a_list",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = [16]")),
+        expect: &[("AC6", ""), ("CRASH", "")],
+    },
+    // `tfl.get("width", 0)`: the default 0.
+    Denial {
+        name: "num_denial_a_width_missing",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "offset = 0\nwidth = 16\n", "offset = 0\n")),
+        expect: &[("AC6", "")],
+    },
+    // `field = 5` before the hello's field tables (the reader decides).
+    Denial {
+        name: "num_denial_field_a_number",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249\n", "max_size = 1249\nfield = 5\n")),
+        expect: &[("AC6", "")],
+    },
+    // A duplicate reason: `set()` drops it.
+    Denial {
+        name: "num_denial_duplicate_rejection_reasons",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "rejection_reasons = [\"TooShort\", ", "rejection_reasons = [\"TooShort\", \"TooShort\", ")),
+        expect: &[],
+    },
+    // `sorted(have - set(MEMBERS))` of a str and an int: TypeError.
+    Denial {
+        name: "num_denial_rejection_reasons_mixed_types",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "rejection_reasons = [\"TooShort\", ", "rejection_reasons = [\"Bogus\", 7, \"TooShort\", ")),
+        expect: &[("CRASH", "")],
+    },
+    // `set()` of a list item: unhashable, TypeError.
+    Denial {
+        name: "num_denial_rejection_reasons_with_a_list",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "rejection_reasons = [\"TooShort\", ", "rejection_reasons = [[1], \"TooShort\", ")),
+        expect: &[("CRASH", "")],
+    },
+    // Two ints and the members: the ints sort among themselves.
+    Denial {
+        name: "num_denial_rejection_reasons_only_numbers",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "rejection_reasons = [\"TooShort\", ", "rejection_reasons = [3, 1, \"TooShort\", ")),
+        expect: &[("AC6", "")],
+    },
+    // C-17 in digit groups to 10^19.
+    Denial {
+        name: "num_denial_the_bound_of_10_19",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 10 000 000 000 000 000 000 bytes"))),
+        expect: &[],
+    },
+    // C-17 at 10^40: INT_LIMIT.
+    Denial {
+        name: "num_denial_the_bound_of_10_40",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 10 000 000 000 000 000 000 000 000 000 000 000 000 000 bytes"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // `²` is not `\d`: NUM stops before it, and `\s*bytes` then fails.
+    Denial {
+        name: "num_denial_the_bound_glued_to_a_superscript",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 1 252² bytes"))),
+        expect: &[("AC2", ""), ("DoD", "")],
+    },
+    // int("040") is 40; the Behaviour regex then looks for `(40)`.
+    Denial {
+        name: "num_denial_the_cs5_value_with_leading_zeros",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "control CS5 (40)", "control CS5 (040)"))),
+        expect: &[],
+    },
+    // C-30 beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_the_hello_period_of_10_40",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| replace_in_line(t, r"^\| C-30 \|", r"\| 1 s \|", "| 10000000000000000000000000000000000000000 s |"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 1 << 126 fits i128; its bit_length 127 exceeds the field.
+    Denial {
+        name: "num_denial_an_alarm_on_bit_126",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead | bit 126 |"))),
+        expect: &[("AC3", "")],
+    },
+    // 1 << 127 is beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_an_alarm_on_bit_127",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead | bit 127 |"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 1 << 10^19: Python raises (MemoryError or OverflowError); the port is INT_LIMIT.
+    Denial {
+        name: "num_denial_an_alarm_on_bit_10_19",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead | bit 10000000000000000000 |"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // int(hex, 16) of 2^128 - 1: INT_LIMIT.
+    Denial {
+        name: "num_denial_an_alarm_of_a_long_hex_value",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead | 0xffffffffffffffffffffffffffffffff |"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 0x10 = 16 fits the field? (bit_length 5)
+    Denial {
+        name: "num_denial_an_alarm_of_a_hex_value",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead | 0x10 |"))),
+        expect: &[("AC3", "")],
+    },
+    // `bit\s+(\d+)` stops before `²`: still bit 2.
+    Denial {
+        name: "num_accepts_an_alarm_bit_glued_to_a_superscript",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead | bit 2² |"))),
+        expect: &[],
+    },
+    // A duplicate row: the first match wins.
+    Denial {
+        name: "num_denial_a_duplicate_alarm_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| lit(t, "| Dead | bit 2 |", "| Dead | bit 2 |\n| Dead | bit 1 |"))),
+        expect: &[],
+    },
+    // A row without its second cell: `rest` is "".
+    Denial {
+        name: "num_denial_an_alarm_row_of_one_cell",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Alarm field$", |t| replace_in_line(t, r"^\| Dead \| bit 2 \|", r"\| Dead \| bit 2 \|.*$", "| Dead |"))),
+        expect: &[("AC3", "")],
+    },
+    // int("032") is 32.
+    Denial {
+        name: "num_accepts_an_offset_with_leading_zeros",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 032 | 8 | u64 | Module id"))),
+        expect: &[],
+    },
+    // `\d+` refuses `+32`.
+    Denial {
+        name: "num_denial_an_offset_with_a_plus",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| +32 | 8 | u64 | Module id"))),
+        expect: &[("AC1", ""), ("AC2", ""), ("AC5", ""), ("AC6", "")],
+    },
+    // An empty Offset cell.
+    Denial {
+        name: "num_denial_an_empty_offset",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "|  | 8 | u64 | Module id"))),
+        expect: &[("AC1", ""), ("AC2", ""), ("AC5", ""), ("AC6", "")],
+    },
+    // An offset beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_an_offset_of_10_40",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 10000000000000000000000000000000000000000 | 8 | u64 | Module id"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // `8²` is neither form of width_of.
+    Denial {
+        name: "num_denial_a_width_glued_to_a_superscript",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 32 | 8² | u64 | Module id"))),
+        expect: &[("AC1", ""), ("AC2", ""), ("AC5", ""), ("AC6", "")],
+    },
+    // 10^36 bytes = 8 × 10^36 bits, within i128.
+    Denial {
+        name: "num_denial_a_width_of_10_36_bytes",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 32 | 1000000000000000000000000000000000000 | u64 | Module id"))),
+        expect: &[("AC1", ""), ("AC2", ""), ("AC5", ""), ("AC6", "")],
+    },
+    // 10^38 bytes × 8 is beyond i128: INT_LIMIT (the library's `width_of` saturates the product; the port's own size sum then overflows and records it).
+    Denial {
+        name: "num_denial_a_width_of_10_38_bytes",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 32 | 100000000000000000000000000000000000000 | u64 | Module id"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // A bundle maximum of 10^19.
+    Denial {
+        name: "num_denial_a_counted_maximum_of_10_19",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 465 | 98 × max 8", "| 465 | 98 × max 10000000000000000000"))),
+        expect: &[("AC2", ""), ("AC6", "")],
+    },
+    // A duplicate row: the layout no longer tiles.
+    Denial {
+        name: "num_denial_a_duplicate_layout_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id (C-11) of the sender | any 64-bit value |", "| 32 | 8 | u64 | Module id (C-11) of the sender | any 64-bit value |\n| 32 | 8 | u64 | Module id (C-11) of the sender | any 64-bit value |"))),
+        expect: &[("AC2", ""), ("AC5", ""), ("AC6", "")],
+    },
+    // The maximum size in digit groups (NUM, to_int).
+    Denial {
+        name: "num_denial_a_stated_maximum_hello_size_in_groups",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| hello(b, |t| lit(t, "maximum hello size is 1 249 bytes", "maximum hello size is 1 249 000 bytes"))),
+        expect: &[("AC2", "")],
     },
 ];

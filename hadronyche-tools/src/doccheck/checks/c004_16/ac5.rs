@@ -2,9 +2,12 @@
 //! against the sync header) and the hello layout that starts with it
 //! (script lines 417-524).
 
-use crate::doccheck::wp7::md::{Field, key_of, fields_of, find_sub, first_table, is_field_table, prose_blocks};
-use super::{Ctx, Layout, NUM, py, to_int};
+use super::{Ctx, Layout, NUM, to_int};
 use crate::doccheck::Report;
+use crate::doccheck::family004::{Field, fields_of, find_sub, first_field_table, key_of};
+use crate::doccheck::report::{Flow, crash};
+use crate::doccheck::text::{has_i, head, rx};
+use crate::doccheck::units::{BlockKind, prose_blocks};
 
 fn key_label(k: &str) -> &'static str {
     match k {
@@ -18,14 +21,14 @@ fn key_label(k: &str) -> &'static str {
     }
 }
 
-fn header(ctx: &Ctx, out: &mut Layout, report: &mut Report) {
+fn header(ctx: &Ctx, out: &mut Layout, report: &mut Report) -> Flow<()> {
     let subs = find_sub(&ctx.subs, r"common\s+control\s+header");
     let mut table = None;
     match subs.first() {
         None => report.fail("AC5", "no '### Common control header' subsection in the Hello section"),
         Some((_, x)) => {
             out.hdr_sub = Some(x.clone());
-            table = first_table(x, is_field_table);
+            table = first_field_table(x);
             if table.is_none() {
                 report.fail("AC5", "the common control header subsection has no five-column field table");
             }
@@ -60,21 +63,24 @@ fn header(ctx: &Ctx, out: &mut Layout, report: &mut Report) {
     let mut cur: i128 = 0;
     for f in &out.hdr {
         if f.off != cur {
-            report.fail("AC5", format!("common control header: {} at byte {}, expected {cur}", py::head(&f.meaning, 30), f.off));
+            report.fail("AC5", format!("common control header: {} at byte {}, expected {cur}", head(&f.meaning, 30), f.off));
         }
-        cur = cur.saturating_add(f.bits.div_euclid(8));
+        cur = super::int_add(cur, f.bits.div_euclid(8));
     }
     if !out.hdr.is_empty() && cur != 32 {
         report.fail("AC5", format!("the common control header sums to {cur} bytes (the sync header is 32)"));
     }
-    stated_size(ctx, &out.hdr, cur, report);
+    stated_size(ctx, &out.hdr, cur, report)
 }
 
-fn stated_size(ctx: &Ctx, hdr: &[Field], total: i128, report: &mut Report) {
-    let stated = ctx
+fn stated_size(ctx: &Ctx, hdr: &[Field], total: i128, report: &mut Report) -> Flow<()> {
+    let caps = ctx
         .para_with(&[r"common\s+control\s+header", r"\d"])
-        .and_then(|p| py::search(&format!(r"common\s+control\s+header[^\n]*?({NUM})\s*bytes"), p, true))
-        .and_then(|m| to_int(m.g(1)));
+        .and_then(|p| rx(&format!(r"(?i)common\s+control\s+header[^\n]*?({NUM})\s*bytes")).captures(p));
+    let stated = match caps {
+        Some(m) => to_int(m.get(1).map_or("", |m| m.as_str()))?,
+        None => None,
+    };
     match stated {
         None => report.fail("AC5", "no sentence states the common control header's size in bytes"),
         Some(s) if !hdr.is_empty() && s != total => {
@@ -85,30 +91,28 @@ fn stated_size(ctx: &Ctx, hdr: &[Field], total: i128, report: &mut Report) {
     if ctx.para_with(&["reuse", "004-17", "004-18", "004-24", "004-27"]).is_none() {
         report.fail("AC5", "no sentence says that 004-17, 004-18, 004-24 and 004-27 reuse the common control header");
     }
+    Ok(())
 }
 
-fn sync_order(ctx: &Ctx, out: &Layout, report: &mut Report) {
+fn sync_order(ctx: &Ctx, out: &Layout, report: &mut Report) -> Flow<()> {
     let mut sync_keys: Vec<Option<&str>> = Vec::new();
     match ctx.span(r"^sync\s+request\s+and\s+reply", Some(2)) {
         None => report.fail("AC5", "no 'Sync request and reply' section in wire.md to compare the header with"),
         Some(span) => {
-            if let Some(st) = first_table(&ctx.text(span), is_field_table) {
+            if let Some(st) = first_field_table(&ctx.text(span)) {
                 // `key_of(r[3])` raises IndexError on a row of fewer than
                 // four cells; the script dies there.
                 for r in st.rows.iter().take(7) {
-                    match r.get(3) {
+                    match r.cells.get(3) {
                         Some(c) => sync_keys.push(key_of(c)),
-                        None => {
-                            report.fail("CRASH", "IndexError: a sync header row has fewer than four cells");
-                            return;
-                        }
+                        None => return crash("IndexError: a sync header row has fewer than four cells"),
                     }
                 }
             }
         }
     }
     if sync_keys.is_empty() || out.hdr_keys.is_empty() || sync_keys == out.hdr_keys {
-        return;
+        return Ok(());
     }
     let differing: Vec<&str> = out
         .hdr_keys
@@ -119,22 +123,22 @@ fn sync_order(ctx: &Ctx, out: &Layout, report: &mut Report) {
         .collect();
     let excuse = prose_blocks(out.hdr_sub.as_deref().unwrap_or(""))
         .into_iter()
-        .find(|(k, t)| *k == 'p' && py::has_i(r"differs\s+from\s+the\s+sync\s+header", t))
-        .map(|(_, t)| t);
+        .find(|b| b.kind == BlockKind::Prose && has_i(r"differs\s+from\s+the\s+sync\s+header", &b.text))
+        .map(|b| b.text);
     let Some(excuse) = excuse else {
         report.fail("AC5", format!("the hello header order {:?} differs from the sync header order {sync_keys:?}; the only excuse is a paragraph in the Common control header subsection that says 'differs from the sync header' and names the fields", out.hdr_keys));
-        return;
+        return Ok(());
     };
     for k in differing {
         // `KEY_LABEL[k]` raises KeyError for a row of no known field.
         if k == "None" {
-            report.fail("CRASH", "KeyError: None (a header row names no known field)");
-            return;
+            return crash("KeyError: None (a header row names no known field)");
         }
-        if !py::has_i(key_label(k), &excuse) {
+        if !has_i(key_label(k), &excuse) {
             report.fail("AC5", format!("the 'differs from the sync header' paragraph does not name the differing field '{k}'"));
         }
     }
+    Ok(())
 }
 
 fn hello_layout(ctx: &Ctx, out: &mut Layout, report: &mut Report) {
@@ -143,7 +147,7 @@ fn hello_layout(ctx: &Ctx, out: &mut Layout, report: &mut Report) {
     match subs.first() {
         None => report.fail("AC5", "no '### Hello layout' subsection with the hello's field table"),
         Some((_, x)) => {
-            table = first_table(x, is_field_table);
+            table = first_field_table(x);
             if table.is_none() {
                 report.fail("AC5", "the hello layout subsection has no five-column field table");
             }
@@ -158,7 +162,7 @@ fn hello_layout(ctx: &Ctx, out: &mut Layout, report: &mut Report) {
         } else {
             for (a, b) in lay.iter().take(7).zip(&out.hdr) {
                 if (a.off, a.bits, &a.ty) != (b.off, b.bits, &b.ty) {
-                    report.fail("AC5", format!("hello header row {} differs from the common control header in offset, width or type", py::head(&b.meaning, 30)));
+                    report.fail("AC5", format!("hello header row {} differs from the common control header in offset, width or type", head(&b.meaning, 30)));
                 }
             }
         }
@@ -166,21 +170,21 @@ fn hello_layout(ctx: &Ctx, out: &mut Layout, report: &mut Report) {
     let mut cur: i128 = 0;
     for f in lay {
         if f.off != cur {
-            report.fail("AC5", format!("hello layout: '{}' at byte {}, expected {cur} (rows must tile)", py::head(&f.meaning, 40), f.off));
+            report.fail("AC5", format!("hello layout: '{}' at byte {}, expected {cur} (rows must tile)", head(&f.meaning, 40), f.off));
         }
-        if f.size_bits().rem_euclid(8) != 0 {
-            report.fail("AC5", format!("hello layout: '{}' is not a whole number of bytes", py::head(&f.meaning, 40)));
+        if super::size_bits(f).rem_euclid(8) != 0 {
+            report.fail("AC5", format!("hello layout: '{}' is not a whole number of bytes", head(&f.meaning, 40)));
         }
-        cur = f.off.saturating_add(f.size_bits().div_euclid(8));
+        cur = super::int_add(f.off, super::size_bits(f).div_euclid(8));
     }
     out.h_bytes = cur;
 }
 
 /// AC5 and the layout the later criteria read.
-pub(crate) fn layout(ctx: &Ctx, report: &mut Report) -> Layout {
+pub(crate) fn layout(ctx: &Ctx, report: &mut Report) -> Flow<Layout> {
     let mut out = Layout::default();
-    header(ctx, &mut out, report);
-    sync_order(ctx, &out, report);
+    header(ctx, &mut out, report)?;
+    sync_order(ctx, &out, report)?;
     hello_layout(ctx, &mut out, report);
-    out
+    Ok(out)
 }
