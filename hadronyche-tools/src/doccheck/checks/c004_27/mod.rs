@@ -108,6 +108,7 @@ pub const SPEC: CheckSpec = CheckSpec {
     known_differences: KNOWN,
     denials: denials::DENIALS,
     toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.

@@ -23,22 +23,26 @@
 //!
 //! The ports of these scripts name their criteria the same way.
 //!
-//! **Opt-in, per port** (coordinator's ruling): the reader applies only to
-//! the ports listed in [`SELECTED`]; every other port's script is read by
-//! the other readers alone, unchanged. One reader per port: a port listed
-//! here selects no other unlabelled-line reader. The list is interim:
-//! when `m/doccheck-lib` gives a port a single explicit reader setting,
-//! each listed port sets it there and this list goes.
+//! **Opt-in, per port**: a port selects this reader, and only this one, by
+//! `fail_reader: equiv::labels002::READER` in its `CheckSpec`; no other port
+//! is touched. A message no call site reads gives the pseudo-criterion
+//! [`UNREADABLE`] (the row never reads "same").
 
 use std::collections::BTreeSet;
 
-/// The ports that select this reader: the bash scripts of epic 002 ported
-/// by WP1.
-pub const SELECTED: &[&str] = &["002-02", "002-03", "002-04"];
+use super::script::{FailReader, UNREADABLE};
 
-/// True when the port `id` selected this reader.
-pub fn selected(id: &str) -> bool {
-    SELECTED.contains(&id)
+/// The reader, for a port's `CheckSpec::fail_reader`.
+pub const READER: FailReader = read;
+
+/// The criteria of every `FAIL: message` line; [`UNREADABLE`] added when a
+/// message is not attributed to exactly one criterion.
+fn read(script: &str, lines: &[&str]) -> BTreeSet<String> {
+    let (mut criteria, unread) = unlabelled_failures(script, lines);
+    if !unread.is_empty() {
+        criteria.insert(UNREADABLE.to_string());
+    }
+    criteria
 }
 
 /// One `bad` call site.
@@ -270,9 +274,9 @@ fn closing(c: &[char], open: usize, l: char, r: char) -> Option<usize> {
 }
 
 /// The criteria of the `FAIL: message` lines of `output`, read against the
-/// `bad` call sites of `script`. `Err` lists the messages no site reads
-/// (or that sites of different criteria read equally well).
-pub fn unlabelled_failures(script: &str, lines: &[&str]) -> Result<BTreeSet<String>, Vec<String>> {
+/// `bad` call sites of `script`, and the messages no site reads (or that
+/// sites of different criteria read equally well).
+pub fn unlabelled_failures(script: &str, lines: &[&str]) -> (BTreeSet<String>, Vec<String>) {
     let sites = sites(script);
     let mut out = BTreeSet::new();
     let mut unread = Vec::new();
@@ -299,11 +303,7 @@ pub fn unlabelled_failures(script: &str, lines: &[&str]) -> Result<BTreeSet<Stri
             Err(why) => unread.push(format!("{msg:?}: {why}")),
         }
     }
-    if unread.is_empty() {
-        Ok(out)
-    } else {
-        Err(unread)
-    }
+    (out, unread)
 }
 
 fn best(sites: &[Site], msg: &str) -> Result<String, String> {
@@ -363,9 +363,16 @@ bad() { printf 'FAIL: %s\n' "$*"; fail=$((fail + 1)); }
 "#;
 
     #[test]
-    fn only_the_selecting_ports_use_the_reader() {
-        assert!(selected("002-02") && selected("002-04"));
-        assert!(!selected("002-13") && !selected("004-27") && !selected("002-01"));
+    fn the_reader_marks_an_unread_message() {
+        let got = READER(
+            SCRIPT,
+            &[
+                "FAIL: sub-section is too long (5 non-empty lines, limit 45 — about one page)",
+                "FAIL: nobody prints this",
+            ],
+        );
+        assert!(got.contains("AC1") && got.contains(UNREADABLE));
+        assert!(READER(SCRIPT, &["PASS: x"]).is_empty());
     }
 
     #[test]
@@ -391,7 +398,8 @@ bad() { printf 'FAIL: %s\n' "$*"; fail=$((fail + 1)); }
         assert_eq!(s.len(), 7, "{s:?}");
         let out = "PASS: x\nFAIL: report missing: doc/r.md\nFAIL: sub-section is too long (52 non-empty lines, limit 45 — about one page)\nFAIL: exclusion entry lacks pointer reason: - a \"quoted\" (x) line\nFAIL: fixed text and more\nFAIL: (d) line 7 carries a file:line pointer but no evidence tag\n\n3 passed, 4 failed\n";
         let lines: Vec<&str> = out.lines().collect();
-        let got = unlabelled_failures(SCRIPT, &lines).expect("all read");
+        let (got, unread) = unlabelled_failures(SCRIPT, &lines);
+        assert!(unread.is_empty(), "{unread:?}");
         let want: BTreeSet<String> = ["Helpers", "AC1", "Work step 2", "DoD"]
             .iter()
             .map(|s| s.to_string())
@@ -402,14 +410,15 @@ bad() { printf 'FAIL: %s\n' "$*"; fail=$((fail + 1)); }
     #[test]
     fn an_unread_message_is_reported_never_dropped() {
         let lines = ["FAIL: something no site prints"];
-        assert!(unlabelled_failures(SCRIPT, &lines).is_err());
+        assert!(!unlabelled_failures(SCRIPT, &lines).1.is_empty());
         // the most literal template wins: "(d) line 7: x" is read by the
         // Work step 2 site (" line ", ": "), and the DoD site is longer only
         // for its own message
         let lines = ["FAIL: AC 1: (d) line 7: x"];
-        let got = unlabelled_failures(SCRIPT, &lines).expect("read");
+        let (got, unread) = unlabelled_failures(SCRIPT, &lines);
+        assert!(unread.is_empty());
         assert!(got.contains("Work step 2"));
         let multi = ["FAIL: report missing: a", "b"];
-        assert!(unlabelled_failures(SCRIPT, &multi).is_ok());
+        assert!(unlabelled_failures(SCRIPT, &multi).1.is_empty());
     }
 }

@@ -570,6 +570,7 @@ mod tests {
             known_differences: &[],
             denials: &[],
             toml: TomlReader::Tomllib,
+            fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
         }
     }
 

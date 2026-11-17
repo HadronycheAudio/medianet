@@ -60,6 +60,9 @@ pub const SPEC: CheckSpec = CheckSpec {
     denials: denials::DENIALS,
     // the script reads no TOML; the field is required
     toml: TomlReader::Subset004_18,
+    // the script prints unlabelled `FAIL: message` lines: the criterion is
+    // the banner above the `bad` call that printed it
+    fail_reader: crate::doccheck::equiv::labels002::READER,
 };
 
 /// The differences the harness found and a reviewer accepted.
