@@ -272,7 +272,6 @@ hadronyche_tools::denial_tests!(
     review_r3_054_toml_dscp_4_0,
     review_r3_055_toml_single_quoted_name,
     review_r3_056_toml_key_with_spaces_on_the_reply_not_exempt_1,
-    ; slow:
     review_r3_026_backtracking_aab_b_24_before_a_non_member_token_in_an_outcom,
     review_r3_027_backtracking_aab_b_28_before_a_non_member_token,
     review_r3_028_backtracking_aab_b_32_before_a_non_member_token,
