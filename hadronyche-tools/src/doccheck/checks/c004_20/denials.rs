@@ -1148,4 +1148,53 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "every 100 ms", "every 100000000000000000000000000000000000000000000 ms"))),
         expect: &[("INT_LIMIT", "")],
     },
+    // the guard word starts exactly 25 characters before BogusReason: inside the look-back.
+    Denial {
+        name: "lb_denial_lookback_at_exactly_25",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| pr(b, |t| lit(t, "drop and count under UnadmittedSource", "drop and count under UnadmittedSource, never xxxxxxxxxxxxxxxxxx BogusReason"))),
+        expect: &[],
+    },
+    // the guard word starts 26 characters before BogusReason: outside the look-back.
+    Denial {
+        name: "lb_denial_lookback_at_26",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| pr(b, |t| lit(t, "drop and count under UnadmittedSource", "drop and count under UnadmittedSource, never xxxxxxxxxxxxxxxxxxx BogusReason"))),
+        expect: &[("AC5", "")],
+    },
+    // `µ` glued to the guard word inside the 25-character window: no `\\b`, not negated.
+    Denial {
+        name: "lb_denial_lookback_with_a_word_character_at_its_edge",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| pr(b, |t| lit(t, "drop and count under UnadmittedSource", "drop and count under UnadmittedSource, µnever xxxxxxxxxxxxxxxxx BogusReason"))),
+        expect: &[("AC5", "")],
+    },
+    // A blank line before a row: the rows after it are a headerless run, not read.
+    Denial {
+        name: "tbl_denial_a_blank_line_inside_the_validity_table",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| pr(b, |t| lit(t, "| probe datagram size not 48 bytes, at 8 bytes or more |", "\n| probe datagram size not 48 bytes, at 8 bytes or more |"))),
+        expect: &[],
+    },
+    // An escaped pipe stays inside its cell.
+    Denial {
+        name: "tbl_denial_an_escaped_pipe_in_a_form_cell",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| pr(b, |t| lit(t, "| probe datagram size not 48 bytes, at 8 bytes or more |", "| probe datagram size not 48 bytes \\| an escaped pipe, at 8 bytes or more |"))),
+        expect: &[],
+    },
+    // A row with one cell more than the header.
+    Denial {
+        name: "tbl_denial_a_ragged_validity_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| pr(b, |t| lit(t, "| probe datagram size not 48 bytes, at 8 bytes or more |", "| probe datagram size not 48 bytes, at 8 bytes or more | an extra cell |"))),
+        expect: &[],
+    },
+    // A duplicate form row (the same form twice).
+    Denial {
+        name: "tbl_denial_a_duplicate_validity_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| pr(b, |t| lit(t, "| probe datagram size not 48 bytes, at 8 bytes or more |", "| probe datagram size not 48 bytes, at 8 bytes or more | drop and count under BadLength |\n| probe datagram size not 48 bytes, at 8 bytes or more |"))),
+        expect: &[],
+    },
 ];

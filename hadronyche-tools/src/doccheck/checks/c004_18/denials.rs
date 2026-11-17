@@ -1278,4 +1278,53 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|b| toml(b, |t| lit(t, "name = \"PacketRate\"\nvalue = 1\n", "name = \"PacketRate\"\nvalue = 9223372036854775808\n"))),
         expect: &[("AC7", "")],
     },
+    // the guard word starts exactly 24 characters before ForeignDomain: inside the look-back.
+    Denial {
+        name: "lb_denial_lookback_at_exactly_24",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| lit(t, "never ForeignDomain (C-173); no refusal is sent", "never xxxxxxxxxxxxxxxxx ForeignDomain (C-173); no refusal is sent"))),
+        expect: &[],
+    },
+    // the guard word starts 25 characters before ForeignDomain: outside the look-back.
+    Denial {
+        name: "lb_denial_lookback_at_25",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| lit(t, "never ForeignDomain (C-173); no refusal is sent", "never xxxxxxxxxxxxxxxxxx ForeignDomain (C-173); no refusal is sent"))),
+        expect: &[],
+    },
+    // `µ` glued to the guard word inside the 24-character window: no `\\b`, not negated.
+    Denial {
+        name: "lb_denial_lookback_with_a_word_character_at_its_edge",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| lit(t, "never ForeignDomain (C-173); no refusal is sent", "µnever xxxxxxxxxxxxxxxx ForeignDomain (C-173); no refusal is sent"))),
+        expect: &[],
+    },
+    // A blank line before a row: the rows after it are a headerless run, not read.
+    Denial {
+        name: "tbl_denial_a_blank_line_inside_the_validity_table",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| lit(t, "| foreign domain: a non-zero domain id other than the local domain (C-11) |", "\n| foreign domain: a non-zero domain id other than the local domain (C-11) |"))),
+        expect: &[("AC6", "")],
+    },
+    // An escaped pipe stays inside its cell.
+    Denial {
+        name: "tbl_denial_an_escaped_pipe_in_a_form_cell",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| lit(t, "| foreign domain: a non-zero domain id other than the local domain (C-11) |", "| foreign domain: a non-zero domain id other than the local domain \\| an escaped pipe (C-11) |"))),
+        expect: &[],
+    },
+    // A row with one cell more than the header.
+    Denial {
+        name: "tbl_denial_a_ragged_validity_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| lit(t, "| foreign domain: a non-zero domain id other than the local domain (C-11) |", "| foreign domain: a non-zero domain id other than the local domain (C-11) | an extra cell |"))),
+        expect: &[("AC6", "")],
+    },
+    // A duplicate form row (the same form twice).
+    Denial {
+        name: "tbl_denial_a_duplicate_validity_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| lit(t, "| foreign domain: a non-zero domain id other than the local domain (C-11) |", "| foreign domain: a non-zero domain id other than the local domain (C-11) | drop and count under ForeignDomain |\n| foreign domain: a non-zero domain id other than the local domain (C-11) |"))),
+        expect: &[],
+    },
 ];
