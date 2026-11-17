@@ -10,7 +10,8 @@ Each result is written in a canonical form (`q` below) that the Rust tests
 in hadronyche-tools/src/doccheck/mdproof.rs rebuild from the library's
 helpers and compare. For a whole document the line holds the FNV-1a 64
 hash of the document text and of the canonical result, so the corpus stays
-small; the test skips (and counts) a document whose text has changed since.
+small; the test fails, naming the regeneration command, on a document
+whose text has changed since.
 
 Record: kind TAB id TAB input TAB expected, strings escaped by `esc`.
 
@@ -108,6 +109,8 @@ def sources():
         "caption_004_15": func("004-15", "caption_above"),
         "stem_006_01": assign("006-01", "STOPWORDS") + func("006-01", "norm_text")
         + func("006-01", "heading_tokens"),
+        "norm_006_01": func("006-01", "norm_text"),
+        "norm_006_02": func("006-02", "norm_text"),
         "cell_004_14": assign("004-14", "NUM_RE") + assign("004-14", "DASHES")
         + func("004-14", "to_int") + func("004-14", "first_int") + func("004-14", "label_of")
         + func("004-14", "parse_num"),
@@ -134,6 +137,7 @@ DOC_CASES = [
     "\t```\n## tab fence\n\t```\n## out\n",
     "~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n",
     "```\n~~~\n## mixed\n~~~\n```\n## out\n",
+    "## a\n```\nnever closed\n", "~~~~\n~~~\nstill open\n", "```\n``` tail\nopen\n", "  ````\n```\n",
     "# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n",
     "## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n",
     "Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n",
@@ -147,6 +151,14 @@ DOC_CASES = [
     "",
     "\n\n",
     "## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n",
+]
+
+NORM_CASES = [
+    "", " ", "a  b", " a\tb\n", "a\u00a0b", "a\u2007b\u202fc\u2009d\u200ae", "a\u200bb\ufeffc",
+    "x \u2010 \u2011 \u2012 \u2013 \u2014 \u2015 \u2212 y", "\u2018q\u2019 \u201cqq\u201d",
+    "10\u207b\u00b3 \u00b5s \u00b2 \u2074\u2075\u2076\u2079 \u2081\u2082\u2083 \u2153 \u2154",
+    "a\x1cb\x1dc\x1ed\x1ff", "a\x0bb\x0cc\rd", "C-17 \u2013 C-22", "**bold** `code` __u__",
+    "\u00a7 3.5 \u00b1 \u00d7 \u00f7 \u2192 \u2264 \u2265 \u2248 \u2260",
 ]
 
 STEM_CASES = [
@@ -233,6 +245,11 @@ if mode == "markdown":
             return q(g["parse_tables"](lines, g["visible_lines"](lines)))
         if key in ("heads_a", "heads_b", "heads_c"):
             return q(g["heading_index"](lines))
+        if key == "fence_end_006_01":
+            _, errs, _ = fns["t006_01"]["scan_fences_and_headings"](lines)
+            return q([e for e in errs if "unclosed code fence" in e])
+        if key in ("norm_006_01", "norm_006_02"):
+            return q([g["norm_text"](l) for l in lines])
         if key == "fence_004_14":
             return "".join("1" if f else "0" for f in g["fence_mask"](lines))
         if key == "fence_006_01":
@@ -261,13 +278,17 @@ if mode == "markdown":
             return q([[t["start"], t["end"], t["header"], t["rows"], t["caption"]] for t in h["section_tables"](lines, fm)])
         raise KeyError(key)
     doc_kinds = ["tables_a", "tables_b", "t006_01", "t006_02", "heads_a", "heads_b", "heads_c", "fence_004_14",
-                 "fence_006_01", "fence_006_02", "heads_006_01", "find_006_02", "caption_004_14", "caption_004_15"]
+                 "fence_006_01", "fence_006_02", "heads_006_01", "find_006_02", "caption_004_14", "caption_004_15",
+                 "norm_006_01", "norm_006_02", "fence_end_006_01"]
     for line in data["rows"]:
         for key in ("row_family", "row_004_14", "row_006"):
             rec(key, "-", esc(line), q(fns[key]["split_row"](line)))
     for i, text in enumerate(data["doc_cases"]):
         for key in doc_kinds:
             rec(key, "case%d" % i, esc(text), canon(key, text))
+    for t in data["norms"]:
+        for key in ("norm_006_01", "norm_006_02"):
+            rec(key, "-", esc(t), q(fns[key]["norm_text"](t)))
     for t in data["stems"]:
         g = fns["stem_006_01"]
         n = g["norm_text"](t).lower()
@@ -334,7 +355,7 @@ def main():
     if args.mode == "lookaround":
         docs = [d for d in docs if d[0] in LOOK_DOCS]
     payload = {"mode": args.mode, "docs": docs, "rows": ROW_CASES, "doc_cases": DOC_CASES,
-               "stems": STEM_CASES, "cells": CELL_CASES, "windows": WINDOW_CASES, "nums": NUM_CASES,
+               "stems": STEM_CASES, "norms": NORM_CASES, "cells": CELL_CASES, "windows": WINDOW_CASES, "nums": NUM_CASES,
                "patterns": lookaround_patterns() if args.mode == "lookaround" else [],
                "src": sources()}
     runs = []

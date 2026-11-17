@@ -1,9 +1,12 @@
 //! The structured mutation corpus: deterministic from a seed.
 //!
-//! For each target section the generator lists every mutation of seven
+//! For each target section the generator lists every mutation of nine
 //! kinds — delete a table row, delete a unit (paragraph or list item),
 //! delete a subsection, strip a tag, negate a keyword, alter a number,
-//! rename a heading — then shuffles each with the seed, interleaves the
+//! rename a heading, inflate a number (to 10^20 and to a 45-digit value,
+//! beyond `i64` and `i128`), insert a repertoire character next to a digit
+//! or at a word boundary (`²` after, `µ` before) — then shuffles each with
+//! the seed, interleaves the
 //! targets of a kind, and takes the kinds round-robin, so a limited corpus
 //! still covers every kind and every target.
 
@@ -59,7 +62,10 @@ fn mk(file: &str, edit: Edit, what: String) -> Mutation {
     }
 }
 
-/// Every mutation of the seven kinds in one target, grouped by kind.
+/// The number of mutation kinds.
+const KINDS: usize = 9;
+
+/// Every mutation of the nine kinds in one target, grouped by kind.
 pub fn candidates(docs: &Docs, target: &Target, keywords: &[&str]) -> Vec<Vec<Mutation>> {
     let Some(text) = docs.read(target.file) else {
         return Vec::new();
@@ -74,7 +80,7 @@ pub fn candidates(docs: &Docs, target: &Target, keywords: &[&str]) -> Vec<Vec<Mu
     };
     let f = target.file;
     let name = short(f);
-    let mut kinds: Vec<Vec<Mutation>> = vec![Vec::new(); 7];
+    let mut kinds: Vec<Vec<Mutation>> = vec![Vec::new(); KINDS];
     for t in md.tables(span) {
         for r in &t.rows {
             let what = format!(
@@ -148,6 +154,7 @@ fn line_mutations(
     let name = short(f);
     let tag = rx(r"\[(code|measured|kernel-doc|standard|memory|decision)\]");
     let number = rx(r"\b\d+\b");
+    let word = rx(r"\b[A-Za-z]{3,}\b");
     let extra: Vec<(String, String)> = keywords
         .iter()
         .map(|k| (k.to_string(), format!("not {k}")))
@@ -190,7 +197,10 @@ fn line_mutations(
             let Ok(n) = crate::doccheck::pycompat::parse_int(m.as_str()) else {
                 continue;
             };
-            let to = (n + 1).to_string();
+            let Some(next) = n.checked_add(1) else {
+                continue;
+            };
+            let to = next.to_string();
             let what = format!("{name}:{at} number {} -> {to}", m.as_str());
             let edit = Edit::ReplaceSpan {
                 line: i,
@@ -199,6 +209,43 @@ fn line_mutations(
                 to,
             };
             kinds[5].push(mk(f, edit, what));
+            // review round 5: the classes the random corpus never reached
+            for big in [
+                format!("1{}", "0".repeat(20)),
+                format!("1{}", "0".repeat(44)),
+            ] {
+                let what = format!("{name}:{at} inflate {} -> {big}", m.as_str());
+                let edit = Edit::ReplaceSpan {
+                    line: i,
+                    start: m.start(),
+                    end: m.end(),
+                    to: big,
+                };
+                kinds[7].push(mk(f, edit, what));
+            }
+            for (pos, ch) in [(m.end(), "\u{b2}"), (m.start(), "\u{b5}")] {
+                let what = format!(
+                    "{name}:{at} insert {ch} at byte {pos} next to {}",
+                    m.as_str()
+                );
+                let edit = Edit::ReplaceSpan {
+                    line: i,
+                    start: pos,
+                    end: pos,
+                    to: ch.to_string(),
+                };
+                kinds[8].push(mk(f, edit, what));
+            }
+        }
+        if let Some(w) = word.find(line) {
+            let what = format!("{name}:{at} insert \u{b2} after the word {}", w.as_str());
+            let edit = Edit::ReplaceSpan {
+                line: i,
+                start: w.end(),
+                end: w.end(),
+                to: "\u{b2}".into(),
+            };
+            kinds[8].push(mk(f, edit, what));
         }
     }
 }
@@ -228,7 +275,7 @@ pub fn corpus(
     limit: usize,
 ) -> Vec<Mutation> {
     let mut rng = Rng(seed.max(1));
-    let mut per_target: Vec<Vec<Vec<Mutation>>> = vec![Vec::new(); 7];
+    let mut per_target: Vec<Vec<Vec<Mutation>>> = vec![Vec::new(); KINDS];
     for t in targets {
         for (k, mut group) in candidates(docs, t, keywords).into_iter().enumerate() {
             rng.shuffle(&mut group);
@@ -273,7 +320,7 @@ mod tests {
     fn every_kind_is_generated_inside_the_section_only() {
         let kinds = candidates(&docs(), &T, &[]);
         let counts: Vec<usize> = kinds.iter().map(Vec::len).collect();
-        assert_eq!(counts, vec![1, 3, 1, 1, 2, 2, 1]);
+        assert_eq!(counts, vec![1, 3, 1, 1, 2, 2, 1, 4, 7]);
         let all: Vec<String> = kinds.concat().into_iter().map(|m| m.label).collect();
         assert!(
             all.iter()
@@ -297,7 +344,7 @@ mod tests {
             })
             .collect();
         assert!(kinds.len() >= 4);
-        assert_eq!(corpus(&docs(), &[T], &[], 7, 100).len(), 11);
+        assert_eq!(corpus(&docs(), &[T], &[], 7, 100).len(), 22);
         let full = corpus(&docs(), &[T], &[], 7, 100);
         let m = full.iter().find(|m| m.label.contains("number 12")).unwrap();
         assert!(m.apply_text(TEXT).contains("is 13 bits"));

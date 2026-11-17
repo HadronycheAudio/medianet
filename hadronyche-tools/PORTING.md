@@ -404,7 +404,7 @@ the same words occur in an earlier section.
 | `family004` | the 004 family's helpers: `Field`, `width_of`, `fields_of`, `is_field_table`, `tables`, `first_field_table`, `subsections`, `find_sub`, `sentences`, `Ctx` (`span_of`, `body`) |
 | `rx` | `Rx`, `M`, `Caps`: one regex API over both engines, Python's empty-match rule; `BACKTRACK_LIMIT`; engine failures recorded for `evaluate` |
 | `policy` | `FencePolicy`, `HeadingMatch`, `SectionEnd`, `RowSplit`, `SeparatorRule`, `HeaderlessRuns`, `TableRules`, `LineSplit`, `PathNorm`, `TomlReader` |
-| `markdown` | `code_mask` (a script's fence mask), `stem_tokens`/`stem_match` (006-01's stemmed heading match), headings with GitHub anchors, `section`, `section_with`, `find`, `find_by` (literal variants never compile a regex), `find_path`, `head_norms`, `tables_with(span, TableRules)` |
+| `markdown` | `code_mask` (a script's fence mask), `fence_scan` (the mask plus `open_at_end`: the fence left open at the end, as 006-01 reports it), `stem_tokens`/`stem_match` (006-01's stemmed heading match), headings with GitHub anchors, `section`, `section_with`, `find`, `find_by` (literal variants never compile a regex), `find_path`, `head_norms`, `tables_with(span, TableRules)` |
 | `tables` | `Table`, `Row`, `split_row_with`, `is_separator`, `is_separator_line`, `split_row_char_walk`, `is_dash_cells`, `caption_above` (004-14/15), `cell_label`, `cell_number_004_14`, `first_int_004_14` |
 | `units` | `units`, `prose_blocks`, `strip_fences`, `clean_start` |
 | `links` | `links`, `resolve`, `file_slugs` |
@@ -423,6 +423,8 @@ the same words occur in an earlier section.
 | `sentences` | `split` (`SentenceSplit`: `PERIOD_SEMI`, `LINES_004_12`, `NEWLINES_004_20`, `PARAGRAPHS_004_29`, `BLOCKS_004_25`, `COLON_004_24`, `TERMINAL_004_04`), `split_raw` with the `RAW_*` cuts, `first_sentence_004_29` |
 | `negation` | `negated` (`Lookback`: `WINDOW_24_004_16`, `WINDOW_25_004_19`, `ANYWHERE_004_16`; character windows, as Python slices) |
 | `numwin` | `window(text, start, end, before, after)`: `text[max(0, s-b):e+a]` in characters |
+| `family006` | `norm_text` (006-01/006-02: NFKC, spaces, dashes, quotes, whitespace runs), `norm_lines` |
+| `checked` | `add`, `sub`, `mul`, `sum`, `product`: arithmetic on document numbers that records `INT_LIMIT` on overflow (R21) |
 | `denial` | `Denial`, `DenialEdit`, `CRASH` |
 | `testing` | `repo`, `report_of`, `red_phase`, `check_denial`, `denial_tests!` |
 
@@ -473,6 +475,49 @@ as above:
   `family002`);
 - 003-08's three-tag rule and 004-04's list inheritance;
 - 004-21's and 004-04's TOML readers.
+
+## Re-proof checklist (mandatory for every port)
+
+Review round 5 found that the packages' own proofs missed the classes
+below: their denials and corpora came from the same model as their code
+(realistic edits of real text), never fed a number beyond `i64`, a
+repertoire character next to a digit or a look-around boundary, an
+order-sensitive output, or Python's `int`/`str` edge forms, and verdict
+agreement hid differing intermediate values. Every port, now and in
+future packages, goes through all ten points before it is pushed:
+
+1. **No private Python.** Delete every private helper that re-implements
+   script Python. Map it to a library helper proven by a corpus, or keep it
+   only with its own generator that `exec`s the script's function at a
+   pinned commit and a test that fails on an altered corpus line. No Python
+   truth written by hand.
+2. **The harness, committed.** Run `doccheck-equiv` with the committed
+   defaults (four seeds × 2 000, plus the denials): zero weaker, zero
+   unexcused, zero known differences without a lead ruling. Commit the
+   summary from a clean tree.
+3. **Every numeric read** gets denials for `0`, `007`, `+7`, `1_2`, `2^63`,
+   a 20-digit and a 45-digit value (expect `INT_LIMIT`), and `²`/`³`/`µ`
+   immediately before and after the digits.
+4. **Every look-around or look-back** gets inputs with the guard word
+   exactly at the window edge (n and n+1 characters), and a repertoire
+   non-ASCII word character at the boundary.
+5. **Every table reader** gets each separator variant, an escaped pipe, a
+   headerless run, ragged rows, a blank line inside the table, and a fenced
+   table.
+6. **Every enumeration or list output** gets a tie, a swap, a duplicate,
+   the threshold boundary (9/10/11 for the tolerant rule), and an assertion
+   on order wherever Python's order reaches a verdict or a message.
+7. **Every script crash path** gets a denial whose script output is a
+   traceback; the port must report `Report::crash`.
+8. **Every sentence split or normaliser** gets abbreviations, `.;:` at the
+   end of a line, double spaces, `—`/`–`, and markup (`**`, `` ` ``, `_`).
+9. **Mechanical rules:** no `.parse`, `unwrap_or(0)`, `saturating_*`,
+   `wrapping_*` or numeric `as` casts on document numbers (arithmetic
+   through `doccheck::checked`); no `static`; no import of another port;
+   `rx` only (never `rx_raw`). The source tests enforce them.
+10. **(Library side)** The harness's random corpus inflates numbers to
+    10^20 and beyond `i128`, and inserts `²`/`µ` next to digits and at word
+    boundaries, so it reaches these classes too.
 
 ## Procedure
 
@@ -534,7 +579,8 @@ cargo run --release -p hadronyche-tools --bin doccheck-equiv -- <id> --denials-o
   the same criteria;
 - **(c)** four seeds (2026, 7, 31337 and 99) of 2 000 structured mutations each: rows,
   units and subsections deleted, tags stripped, keywords negated, numbers
-  incremented, headings renamed. Each (kind, target) group is shuffled by
+  incremented, headings renamed, numbers inflated (to 10^20 and to a
+  45-digit value), and `²`/`µ` inserted next to a digit or after a word. Each (kind, target) group is shuffled by
   the seed, then targets and kinds take turns;
 - **(d)** the denial list, on both the script and the port.
 
@@ -586,7 +632,9 @@ about 30 minutes per check on a quiet machine.
 - A summary (`--out`) is refused from a tree with uncommitted changes to
   tracked files other than `hadronyche-tools/equivalence/` (the summaries
   themselves); `--allow-dirty` names them in the header instead. The tree
-  is recorded when the run starts.
+  is read once, when the run starts, and recorded in every summary; the
+  run aborts if HEAD or the tracked files change before a summary is
+  written.
 - A script that prints FAIL and exits 0 counts as red and is reported as an
   anomaly; in (a) or (b) it fails the run.
 - A port red on `REPERTOIRE` is classified "outside repertoire" by the

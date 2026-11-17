@@ -20,7 +20,7 @@
 
 use std::cell::RefCell;
 
-use super::pycompat::{IntError, PyStr, parse_int};
+use super::pycompat::{PyStr, parse_int};
 use super::pyvalue::repr_float;
 
 /// The criterion of an integer beyond `i128`.
@@ -265,10 +265,16 @@ impl EvalError {
     }
 }
 
-/// `eval(expr)` for an expression of decimal literals (`12`, `1.5`), `+`,
-/// `-`, `*`, `**`, unary `+`/`-` and spaces, with Python's precedence
-/// (`-2**2` is -4, `2**3**2` is 512), its literal rule (`01` is a syntax
-/// error, `00` is 0) and its types (`2**-1` is the float 0.5).
+/// `eval(expr)` for an arithmetic expression: integer literals (`12`,
+/// `1_000`, `0x10`, `0o17`, `0b101`), float literals (`1.5`, `.5`, `1e3`),
+/// `+`, `-`, `*`, `**`, unary `+`/`-`, parentheses and spaces, with
+/// Python's precedence (`-2**2` is -4, `2**3**2` is 512, `-(2)` is -2), its
+/// literal rules (`01` and `1__0` are syntax errors, `00` is 0) and its
+/// types (`2**-1` is the float 0.5). Any other input (a name, `/`, `%`, a
+/// call) is `SyntaxError` here where Python would evaluate it: the scripts
+/// filter the expression to this alphabet first (004-15 by `[\d+\-*]+`,
+/// 004-25/28 by digits, spaces and operators), so the domain is complete
+/// for them; a port passing other text must filter it the same way.
 pub fn eval_arith(expr: &str) -> Result<PyNum, EvalError> {
     let toks = tokens(expr)?;
     let mut p = Parser { toks: &toks, at: 0 };
@@ -286,6 +292,8 @@ enum Tok {
     Minus,
     Star,
     Pow,
+    Open,
+    Close,
 }
 
 fn tokens(s: &str) -> Result<Vec<Tok>, EvalError> {
@@ -302,9 +310,18 @@ fn tokens(s: &str) -> Result<Vec<Tok>, EvalError> {
                 i += 1;
             }
             '*' => out.push(Tok::Star),
+            '(' => out.push(Tok::Open),
+            ')' => out.push(Tok::Close),
             d if d.is_ascii_digit() || d == '.' => {
                 let start = i;
-                while i + 1 < c.len() && (c[i + 1].is_ascii_digit() || c[i + 1] == '.') {
+                // a literal: alphanumerics, `_`, `.`, and a sign right after
+                // a decimal exponent (`1e-3`; not after a hex digit `e`)
+                while let Some(&n) = c.get(i + 1) {
+                    let hex = c[start..=i].iter().any(|x| matches!(x, 'x' | 'X'));
+                    let sign = matches!(n, '+' | '-') && matches!(c[i], 'e' | 'E') && !hex;
+                    if !(n.is_ascii_alphanumeric() || n == '_' || n == '.' || sign) {
+                        break;
+                    }
                     i += 1;
                 }
                 let lit: String = c[start..=i].iter().collect();
@@ -317,23 +334,39 @@ fn tokens(s: &str) -> Result<Vec<Tok>, EvalError> {
     Ok(out)
 }
 
+/// A Python numeric literal (the lexer's rules: underscores only between
+/// digits, or after a base prefix).
 fn literal(lit: &str) -> Result<PyNum, EvalError> {
-    if lit.contains('.') {
-        if lit.matches('.').count() > 1 || lit == "." {
-            return Err(EvalError::SyntaxError);
+    const D: &str = r"[0-9](?:_?[0-9])*";
+    let based = [
+        ("x", r"^0[xX](?:_?[0-9a-fA-F])+$", 16),
+        ("o", r"^0[oO](?:_?[0-7])+$", 8),
+        ("b", r"^0[bB](?:_?[01])+$", 2),
+    ];
+    for (_, pat, radix) in based {
+        if super::text::rx(pat).is_match(lit) {
+            let digits: String = lit[2..].chars().filter(|&c| c != '_').collect();
+            return i128::from_str_radix(&digits, radix)
+                .map(PyNum::Int)
+                .map_err(|_| int_limit(lit));
         }
-        return py_float(lit)
+    }
+    if super::text::rx(r"^(?:0(?:_?0)*|[1-9](?:_?[0-9])*)$").is_match(lit) {
+        let digits: String = lit.chars().filter(|&c| c != '_').collect();
+        return match parse_int(&digits) {
+            Ok(n) => Ok(PyNum::Int(n)),
+            Err(_) => Err(EvalError::IntLimit),
+        };
+    }
+    // a float needs a point or an exponent (`01` is an int literal error)
+    let float = format!(r"^(?:(?:(?:{D})?\.{D}|{D}\.)(?:[eE][+-]?{D})?|{D}[eE][+-]?{D})$");
+    if lit != "." && super::text::rx(&float).is_match(lit) {
+        let clean: String = lit.chars().filter(|&c| c != '_').collect();
+        return py_float(&clean)
             .map(PyNum::Float)
             .ok_or(EvalError::SyntaxError);
     }
-    if lit.len() > 1 && lit.starts_with('0') && lit.chars().any(|x| x != '0') {
-        return Err(EvalError::SyntaxError);
-    }
-    match parse_int(lit) {
-        Ok(n) => Ok(PyNum::Int(n)),
-        Err(IntError::Overflow(_)) => Err(EvalError::IntLimit),
-        Err(IntError::NotInt(_)) => Err(EvalError::SyntaxError),
-    }
+    Err(EvalError::SyntaxError)
 }
 
 struct Parser<'a> {
@@ -442,10 +475,22 @@ impl Parser<'_> {
 
     fn pow(&mut self) -> Val {
         let base = match self.peek() {
-            Some(Tok::Num(n)) => *n,
+            Some(Tok::Num(n)) => {
+                let n = *n;
+                self.at += 1;
+                n
+            }
+            Some(Tok::Open) => {
+                self.at += 1;
+                let v = self.sum()?;
+                if self.peek() != Some(&Tok::Close) {
+                    return Err(EvalError::SyntaxError);
+                }
+                self.at += 1;
+                v
+            }
             _ => return Err(EvalError::SyntaxError),
         };
-        self.at += 1;
         if self.peek() != Some(&Tok::Pow) {
             return Ok(base);
         }

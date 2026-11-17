@@ -54,6 +54,7 @@ pub mod docs;
 pub mod equiv;
 pub mod evidence;
 pub mod family004;
+pub mod family006;
 pub mod items;
 pub mod links;
 pub mod markdown;

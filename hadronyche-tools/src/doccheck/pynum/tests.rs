@@ -2,6 +2,7 @@
 //! unit tests of `pynum`.
 
 use super::*;
+use crate::doccheck::pycompat::IntError;
 use crate::doccheck::pycompat::{nfkc, py_slice};
 use crate::doccheck::pyvalue::PyValue;
 use crate::doccheck::text::rx;
