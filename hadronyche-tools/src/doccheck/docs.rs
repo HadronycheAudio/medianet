@@ -27,6 +27,7 @@ use std::sync::{Arc, Mutex};
 
 use super::checks::CheckSpec;
 use super::pycompat::{PyStr, normpath};
+use super::pynum::{INT_LIMIT, restore_int_limits, take_int_limits};
 use super::repertoire::guard_text;
 use super::report::Report;
 use super::rx::{RxFailure, restore_failures, take_failures};
@@ -284,6 +285,10 @@ impl CheckSpec {
     ///   the verdict red under `REPERTOIRE` alone, one failure per such file
     ///   (R13, R20): inside the repertoire the port equals its script, and
     ///   outside it nothing else it found is meaningful;
+    /// * otherwise, after the regex rule below, an integer beyond `i128`
+    ///   met during the run (`pycompat::parse_int`, `PyValue::py_int`,
+    ///   `pynum::eval_arith`, `pynum::Fraction`) makes the verdict
+    ///   `INT_LIMIT` alone, located where the number is written;
     /// * otherwise a regex engine failure during the run (backtracking
     ///   limit, a pattern that does not compile) makes the verdict red
     ///   under `REGEX_LIMIT` alone, with the pattern and the file:line of
@@ -291,12 +296,15 @@ impl CheckSpec {
     ///   match", and the rest of the verdict cannot be trusted.
     pub fn evaluate(&self, docs: &Docs) -> Report {
         let outer = take_failures();
+        let outer_ints = take_int_limits();
         let log = Arc::new(Mutex::new(ReadLog::new()));
         let mut view = docs.clone();
         view.log = Some(log.clone());
         let report = (self.run)(&view);
         let failures = take_failures();
+        let ints = take_int_limits();
         restore_failures(outer);
+        restore_int_limits(outer_ints);
         let read = std::mem::take(&mut *log.lock().expect("docs log poisoned"));
         let mut guarded = Report::default();
         for (path, text) in &read {
@@ -306,7 +314,11 @@ impl CheckSpec {
             return guarded;
         }
         if failures.is_empty() {
-            return report;
+            return if ints.is_empty() {
+                report
+            } else {
+                int_limited(&read, ints)
+            };
         }
         let mut limited = Report::default();
         for f in dedup(failures) {
@@ -327,6 +339,25 @@ impl CheckSpec {
         }
         limited
     }
+}
+
+/// The verdict when an integer beyond `i128` appeared: `INT_LIMIT` alone,
+/// located where the number's text is found in a document read.
+fn int_limited(read: &ReadLog, ints: Vec<String>) -> Report {
+    let mut out = Report::default();
+    let mut seen = BTreeSet::new();
+    for n in ints.into_iter().filter(|n| seen.insert(n.clone())) {
+        let what = format!(
+            "the integer {} is beyond i128: Python would carry on with it, the check cannot \
+             compare it, so it is red by rule (INT_LIMIT)",
+            head(&n)
+        );
+        match locate(read, &n) {
+            (Some(file), line) => out.fail_at(INT_LIMIT, &file, line, what),
+            (None, _) => out.fail(INT_LIMIT, what),
+        }
+    }
+    out
 }
 
 fn dedup(failures: Vec<RxFailure>) -> Vec<RxFailure> {
@@ -580,6 +611,30 @@ mod tests {
             s.evaluate(&both).failed_criteria(),
             ["REPERTOIRE".to_string()].into()
         );
+    }
+
+    fn reads_an_int(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let text = docs.read("doc/x.md").unwrap_or_default();
+        let n = crate::doccheck::text::first_int(&text);
+        r.check("AC1", n.is_ok_and(|n| n == Some(7)), "seven");
+        r
+    }
+
+    #[test]
+    fn an_integer_beyond_i128_is_red_with_its_place() {
+        let s = spec(reads_an_int);
+        let ok = Docs::dir("/nonexistent-doccheck-tree").with("doc/x.md", "intro\n7\n");
+        assert!(s.evaluate(&ok).passed());
+        let big = "9".repeat(45);
+        let r = s.evaluate(&ok.with("doc/x.md", format!("intro\nsize {big} bytes\n")));
+        assert_eq!(
+            r.failed_criteria(),
+            [INT_LIMIT.to_string()].into(),
+            "{}",
+            r.render()
+        );
+        assert_eq!(r.failures[0].location.as_ref().map(|l| l.line), Some(2));
     }
 
     fn backtracks(docs: &Docs) -> Report {

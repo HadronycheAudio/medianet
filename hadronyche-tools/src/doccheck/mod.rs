@@ -58,6 +58,7 @@ pub mod markdown;
 pub mod mutate;
 pub mod policy;
 pub mod pycompat;
+pub mod pynum;
 pub mod pyvalue;
 pub mod repertoire;
 pub mod report;
