@@ -1059,4 +1059,53 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "16 / 32 / 16 bits", "16 / 32 / 16² bits"))),
         expect: &[("AC2", ""), ("DoD", "")],
     },
+    // 2^63.
+    Denial {
+        name: "num_denial_an_md_offset_of_2_63",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 9223372036854775808 | 8 | u64 | Send timestamp")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_an_md_offset_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 100000000000000000000000000000000000000000000 | 8 | u64 | Send timestamp")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 0: an overlap.
+    Denial {
+        name: "num_denial_an_md_offset_of_zero",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 0 | 8 | u64 | Send timestamp")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // `µ` after the digits.
+    Denial {
+        name: "num_denial_an_md_width_after_a_micro_sign",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 32 | 8µ | u64 | Send timestamp")),
+        expect: &[],
+    },
+    // 2^63.
+    Denial {
+        name: "num_denial_max_size_of_2_63",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 9223372036854775808")),
+        expect: &[("AC1", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_max_size_of_45_digits",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 100000000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // C-36 at 2^63.
+    Denial {
+        name: "num_denial_the_request_rate_of_2_63",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "| 50 per second |", "| 9223372036854775808 per second |"))),
+        expect: &[("W4", "")],
+    },
 ];

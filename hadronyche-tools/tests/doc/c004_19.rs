@@ -143,6 +143,13 @@ hadronyche_tools::denial_tests!(SPEC; dod_denial_a_constant_unreadable, denial_w
     num_denial_the_accepted_rate_of_10_40,
     num_denial_the_epoch_width_of_10_40,
     num_denial_the_epoch_width_glued_to_a_superscript,
+    num_denial_an_md_offset_of_2_63,
+    num_denial_an_md_offset_of_45_digits,
+    num_denial_an_md_offset_of_zero,
+    num_denial_an_md_width_after_a_micro_sign,
+    num_denial_max_size_of_2_63,
+    num_denial_max_size_of_45_digits,
+    num_denial_the_request_rate_of_2_63,
 );
 
 // ---------------------------------------------------------------- red phase

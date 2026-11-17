@@ -168,6 +168,16 @@ hadronyche_tools::denial_tests!(SPEC; dod_denial_a_constant_unreadable, denial_w
     num_denial_a_counted_maximum_of_10_19,
     num_denial_a_duplicate_layout_row,
     num_denial_a_stated_maximum_hello_size_in_groups,
+    num_denial_an_offset_of_2_63,
+    num_denial_an_offset_of_45_digits,
+    num_denial_an_offset_of_zero,
+    num_denial_an_offset_with_an_underscore,
+    num_denial_an_offset_after_a_micro_sign,
+    num_denial_the_bound_of_2_63,
+    num_denial_the_bound_of_45_digits,
+    num_denial_the_bound_after_a_micro_sign,
+    num_denial_max_size_of_2_63,
+    num_denial_max_size_of_45_digits,
 );
 
 // ---------------------------------------------------------------- red phase

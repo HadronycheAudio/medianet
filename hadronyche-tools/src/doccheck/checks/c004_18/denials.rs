@@ -1229,4 +1229,53 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 10 000 000 000 000 000 000 bytes"))),
         expect: &[],
     },
+    // 2^63.
+    Denial {
+        name: "num_denial_a_refusal_value_of_2_63",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| refusal_row(b, "| 1 | PacketRate |", "| 9223372036854775808 | PacketRate |")),
+        expect: &[("AC2", ""), ("AC7", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_a_refusal_value_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| refusal_row(b, "| 1 | PacketRate |", "| 100000000000000000000000000000000000000000000 | PacketRate |")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // `\d+` refuses 0_1.
+    Denial {
+        name: "num_denial_a_refusal_value_with_an_underscore",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| refusal_row(b, "| 1 | PacketRate |", "| 0_1 | PacketRate |")),
+        expect: &[("AC2", ""), ("AC7", "")],
+    },
+    // `µ` next to the digit.
+    Denial {
+        name: "num_denial_a_refusal_value_after_a_micro_sign",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| refusal_row(b, "| 1 | PacketRate |", "| 1µ | PacketRate |")),
+        expect: &[("AC2", ""), ("AC7", "")],
+    },
+    // 0: shared with PortCeiling.
+    Denial {
+        name: "num_denial_a_refusal_value_of_zero",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| refusal_row(b, "| 1 | PacketRate |", "| 0 | PacketRate |")),
+        expect: &[("AC2", ""), ("AC7", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_max_size_of_45_digits",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 239", "max_size = 100000000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 2^63 in TOML.
+    Denial {
+        name: "num_denial_a_toml_refusal_value_of_2_63",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| toml(b, |t| lit(t, "name = \"PacketRate\"\nvalue = 1\n", "name = \"PacketRate\"\nvalue = 9223372036854775808\n"))),
+        expect: &[("AC7", "")],
+    },
 ];

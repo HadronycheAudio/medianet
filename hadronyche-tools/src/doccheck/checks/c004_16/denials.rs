@@ -1376,4 +1376,74 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|b| hello(b, |t| lit(t, "maximum hello size is 1 249 bytes", "maximum hello size is 1 249 000 bytes"))),
         expect: &[("AC2", "")],
     },
+    // 2^63, beyond i64 and within i128.
+    Denial {
+        name: "num_denial_an_offset_of_2_63",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 9223372036854775808 | 8 | u64 | Module id"))),
+        expect: &[("AC5", ""), ("AC6", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_an_offset_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 100000000000000000000000000000000000000000000 | 8 | u64 | Module id"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 0: an overlap.
+    Denial {
+        name: "num_denial_an_offset_of_zero",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 0 | 8 | u64 | Module id"))),
+        expect: &[("AC5", ""), ("AC6", "")],
+    },
+    // `\d+` refuses 3_2.
+    Denial {
+        name: "num_denial_an_offset_with_an_underscore",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 3_2 | 8 | u64 | Module id"))),
+        expect: &[("AC1", ""), ("AC2", ""), ("AC5", ""), ("AC6", "")],
+    },
+    // `µ` next to the digits.
+    Denial {
+        name: "num_denial_an_offset_after_a_micro_sign",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sub(b, "^Hello layout$", |t| lit(t, "| 32 | 8 | u64 | Module id", "| 32µ | 8 | u64 | Module id"))),
+        expect: &[("AC1", ""), ("AC2", ""), ("AC5", ""), ("AC6", "")],
+    },
+    // C-17 at 2^63.
+    Denial {
+        name: "num_denial_the_bound_of_2_63",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 9223372036854775808 bytes"))),
+        expect: &[],
+    },
+    // C-17 at 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_the_bound_of_45_digits",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 100000000000000000000000000000000000000000000 bytes"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // `µ` before bytes.
+    Denial {
+        name: "num_denial_the_bound_after_a_micro_sign",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 1 252µ bytes"))),
+        expect: &[("AC2", ""), ("DoD", "")],
+    },
+    // 2^63 in TOML.
+    Denial {
+        name: "num_denial_max_size_of_2_63",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 9223372036854775808")),
+        expect: &[("AC6", "")],
+    },
+    // 45 digits in TOML: INT_LIMIT.
+    Denial {
+        name: "num_denial_max_size_of_45_digits",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| hello_toml(b, "max_size = 1249", "max_size = 100000000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
 ];

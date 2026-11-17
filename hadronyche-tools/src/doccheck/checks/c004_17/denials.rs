@@ -1105,4 +1105,60 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|b| wire(b, |t| lit(t, "| 1 | BadMagic |", "| 0 | TooShort | x | control |\n| 1 | BadMagic |"))),
         expect: &[],
     },
+    // 2^63.
+    Denial {
+        name: "num_denial_a_type_code_of_2_63",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| cand(b, "| 2 only |", "| 9223372036854775808 only |")),
+        expect: &[("AC1", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_a_type_code_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| cand(b, "| 2 only |", "| 100000000000000000000000000000000000000000000 only |")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 0: outside the block.
+    Denial {
+        name: "num_denial_a_type_code_of_zero",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| cand(b, "| 2 only |", "| 0 only |")),
+        expect: &[("AC1", "")],
+    },
+    // `\d+` reads 0.
+    Denial {
+        name: "num_denial_a_type_code_with_an_underscore",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| cand(b, "| 2 only |", "| 0_2 only |")),
+        expect: &[("AC1", "")],
+    },
+    // `µ` before the digit.
+    Denial {
+        name: "num_denial_a_type_code_after_a_micro_sign",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| cand(b, "| 2 only |", "| µ2 only |")),
+        expect: &[],
+    },
+    // 2^63.
+    Denial {
+        name: "num_denial_max_size_of_2_63",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| cand_toml(b, "max_size = 66", "max_size = 9223372036854775808")),
+        expect: &[("AC6", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_max_size_of_45_digits",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| cand_toml(b, "max_size = 66", "max_size = 100000000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 45 digits: INT_LIMIT.
+    Denial {
+        name: "num_denial_the_bound_of_45_digits",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "at most 1 252 bytes", "at most 100000000000000000000000000000000000000000000 bytes"))),
+        expect: &[("INT_LIMIT", "")],
+    },
 ];

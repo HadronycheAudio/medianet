@@ -161,6 +161,13 @@ hadronyche_tools::denial_tests!(SPEC; ac2_denial_an_admission_row_of_four_cells,
     num_denial_an_offset_of_10_40,
     num_denial_the_bound_of_10_40,
     num_denial_the_bound_of_10_19,
+    num_denial_a_refusal_value_of_2_63,
+    num_denial_a_refusal_value_of_45_digits,
+    num_denial_a_refusal_value_with_an_underscore,
+    num_denial_a_refusal_value_after_a_micro_sign,
+    num_denial_a_refusal_value_of_zero,
+    num_denial_max_size_of_45_digits,
+    num_denial_a_toml_refusal_value_of_2_63,
 );
 
 // ---------------------------------------------------------------- red phase
