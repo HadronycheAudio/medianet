@@ -328,6 +328,10 @@ mod source_rules {
                 "Mutex",
                 "RwLock",
                 "atomic::",
+                // R21: no silent saturation or wrapping on document numbers
+                // (doccheck::checked records INT_LIMIT instead)
+                "saturating_",
+                "wrapping_",
             ]);
         }
         let flat: String = code.chars().filter(|c| !c.is_whitespace()).collect();
@@ -337,12 +341,22 @@ mod source_rules {
             }
         }
         if is_check
-            && regex::Regex::new(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?static\s")
+            && regex::Regex::new(r"(?:^|[^'A-Za-z0-9_])static\b")
                 .expect("pattern")
                 .is_match(code)
         {
             out.push(format!(
                 "{}: declares a `static` (a check keeps no state across evaluations, R19)",
+                path.display()
+            ));
+        }
+        if is_check
+            && regex::Regex::new(r"\bas\s+(?:i|u|f)(?:8|16|32|64|128|size)\b")
+                .expect("pattern")
+                .is_match(code)
+        {
+            out.push(format!(
+                "{}: a numeric `as` cast (R21: use doccheck::checked or parse_int)",
                 path.display()
             ));
         }
@@ -354,6 +368,7 @@ mod source_rules {
                     "rx_raw",
                     "a port uses Python's semantics (text::rx), never rx_raw",
                 ),
+                ("thread", "a check runs on the evaluating thread (R19)"),
             ] {
                 if regex::Regex::new(&format!(r"\b{word}\b"))
                     .expect("pattern")
@@ -463,7 +478,7 @@ mod source_rules {
                 .unwrap_or_default();
             if matches!(
                 name.as_str(),
-                "docs.rs" | "rx.rs" | "pynum.rs" | "testing.rs"
+                "docs.rs" | "rx.rs" | "pynum.rs" | "testing.rs" | "checked.rs"
             ) || p.ends_with("pynum/tests.rs")
             {
                 continue;
@@ -585,6 +600,19 @@ mod source_rules {
             "let r = (SPEC.run)(docs);",
             "let f = crate::doccheck::rx::take_failures();",
             "let f = crate::doccheck::pynum::take_int_limits();",
+            // review round 4, item 1: the two green-with-failure cases
+            "let h = std::thread::spawn(move || has(PAT, &t)); h.join();",
+            "use std::thread as th; th::scope(|s| { s.spawn(|| has(PAT, &t)); });",
+            "static SEEN: OnceLock<bool> = OnceLock::new();\nfn f() -> bool { *SEEN.get_or_init(|| has(PAT, &t)) }",
+            "    pub(crate) static CACHE: std::sync::Mutex<Vec<u8>> = Mutex::new(Vec::new());",
+            "thread_local! { static C: Cell<u8> = Cell::new(0); }",
+            // review round 5, finding 1: a static inside a function body
+            "pub fn cached(t: &str) -> bool { static mut K: Option<bool> = None; unsafe { K.unwrap_or(false) } }",
+            // review round 5, finding 2 (R21)
+            "let s = w.saturating_mul(8);",
+            "let s = w.wrapping_add(1);",
+            "let n = x as i64;",
+            "let n = (x) as usize;",
         ] {
             assert!(!violations(p, bypass, true).is_empty(), "missed: {bypass}");
         }

@@ -46,6 +46,7 @@
 //!   script (a development tool, bin `doccheck-equiv`).
 
 pub mod blocks;
+pub mod checked;
 pub mod checks;
 pub mod claims;
 pub mod denial;
@@ -53,6 +54,7 @@ pub mod docs;
 pub mod equiv;
 pub mod evidence;
 pub mod family004;
+pub mod family006;
 pub mod items;
 pub mod links;
 pub mod markdown;

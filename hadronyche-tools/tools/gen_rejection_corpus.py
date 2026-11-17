@@ -371,6 +371,12 @@ def interpreters(given):
     return found
 
 
+
+def escape_field(s):
+    """One record field on one line: backslash, tab, newline and carriage
+    return escaped (the Rust reader unescapes all four)."""
+    return s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--python", action="append", default=[])
@@ -417,9 +423,9 @@ def main():
     for i, (case, wire_text) in enumerate(job["cases"]):
         print(f"# input {case}: {len(wire_text)} chars")
     for k, o in enumerate(OUTCOMES):
-        print(f"outcome\to{k}\ttext\t" + o.replace("\\", "\\\\").replace("\t", "\\t"))
+        print(f"outcome\to{k}\ttext\t" + escape_field(o))
     for case, v in c185_cases:
-        print(f"c185\t{case}\ttext\t" + v.replace("\\", "\\\\").replace("\t", "\\t"))
+        print(f"c185\t{case}\ttext\t" + escape_field(v))
     print("\n".join(runs[0]["lines"]))
 
 

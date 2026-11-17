@@ -73,10 +73,28 @@ pub fn unnumbered(text: &str) -> String {
 /// every line inside a fence (the scripts' `fence_mask`, `visible_lines`
 /// negated, ...). Proven on `data/markdown_corpus.txt`.
 pub fn code_mask<S: AsRef<str>>(lines: &[S], policy: FencePolicy) -> Vec<bool> {
-    let mut open: Option<(char, usize)> = None;
-    lines
+    fence_scan(lines, policy).mask
+}
+
+/// A fence scan: the mask of [`code_mask`], and whether the text ends
+/// inside an open fence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FenceScan {
+    pub mask: Vec<bool>,
+    /// The fence still open at the end: (0-based line of its opener, the
+    /// marker as written, e.g. "```"). 006-01 reports it as `line N:
+    /// unclosed code fence opened with ```` (N 1-based); proven on the
+    /// corpus (`fence_end_006_01`).
+    pub open_at_end: Option<(usize, String)>,
+}
+
+/// [`code_mask`] with the fence left open at the end, if any.
+pub fn fence_scan<S: AsRef<str>>(lines: &[S], policy: FencePolicy) -> FenceScan {
+    let mut open: Option<(char, usize, usize)> = None;
+    let mask = lines
         .iter()
-        .map(|line| {
+        .enumerate()
+        .map(|(idx, line)| {
             let line = line.as_ref();
             let lead = match policy {
                 // `^[ \t]*`
@@ -101,16 +119,20 @@ pub fn code_mask<S: AsRef<str>>(lines: &[S], policy: FencePolicy) -> Vec<bool> {
             };
             let tail_empty = lead[n..].py_strip().is_empty();
             open = match (open, policy) {
-                (None, _) => Some((c, n)),
-                (Some((oc, on)), FencePolicy::Matching) if oc != c || n < on || !tail_empty => {
-                    Some((oc, on))
+                (None, _) => Some((c, n, idx)),
+                (Some((oc, on, at)), FencePolicy::Matching) if oc != c || n < on || !tail_empty => {
+                    Some((oc, on, at))
                 }
-                (Some((oc, on)), FencePolicy::SameChar) if oc != c => Some((oc, on)),
+                (Some((oc, on, at)), FencePolicy::SameChar) if oc != c => Some((oc, on, at)),
                 (Some(_), _) => None,
             };
             true
         })
-        .collect()
+        .collect();
+    FenceScan {
+        mask,
+        open_at_end: open.map(|(c, n, at)| (at, c.to_string().repeat(n))),
+    }
 }
 
 /// 006-01's `heading_tokens` over a title already normalised with the

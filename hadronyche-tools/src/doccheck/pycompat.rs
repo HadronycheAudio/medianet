@@ -110,6 +110,9 @@ pub fn unsupported(pattern: &str) -> Option<String> {
                 match c.get(i + 1) {
                     Some('Z') if !in_class => return refuse(r"`\Z`"),
                     Some('1'..='9') if !in_class => return refuse("a back-reference"),
+                    Some('p' | 'P') => {
+                        return refuse(r"`\p{…}` (Python 3.10: bad escape; write the class out)");
+                    }
                     _ => {}
                 }
                 i += 2;
@@ -125,8 +128,33 @@ pub fn unsupported(pattern: &str) -> Option<String> {
                 }
             }
             ']' if in_class => in_class = false,
+            // Python reads `[` inside a set as a literal (so `[[:alpha:]]` is
+            // the set `[:alph` then `]`); the regex crate reads a nested
+            // set or a POSIX class, and `&&`, `--`, `~~` as set operations
+            '[' if in_class => {
+                return refuse(
+                    "`[` inside a character set (Python: a literal; POSIX classes and nested sets are not Python)",
+                );
+            }
+            '&' | '-' | '~' if in_class && c.get(i + 1) == Some(&c[i]) => {
+                return refuse(
+                    "a doubled `&`, `-` or `~` inside a character set (a set operation outside Python)",
+                );
+            }
             '(' if !in_class => {
                 let next: String = c[i + 1..].iter().take(3).collect();
+                if next.starts_with("?<") && !next.starts_with("?<=") && !next.starts_with("?<!") {
+                    return refuse(
+                        "`(?<name>…)` (Python 3.10: unknown extension; write `(?P<name>…)`)",
+                    );
+                }
+                if (next.starts_with("?<=") || next.starts_with("?<!"))
+                    && !fixed_width_alternatives(&c[i + 4..group_end(&c, i).saturating_sub(1)])
+                {
+                    return refuse(
+                        "a look-behind whose alternatives differ in width (Python: look-behind requires fixed-width pattern)",
+                    );
+                }
                 if next.starts_with("?P=") {
                     return refuse("a named back-reference");
                 }
@@ -145,6 +173,112 @@ pub fn unsupported(pattern: &str) -> Option<String> {
         i += 1;
     }
     None
+}
+
+/// True when every top-level alternative of a look-behind body has one and
+/// the same width (Python's rule); a width that is not fixed is left to
+/// the engine, which refuses it as Python does.
+fn fixed_width_alternatives(body: &[char]) -> bool {
+    let widths: Vec<Option<usize>> = split_alternatives(body).iter().map(|a| width(a)).collect();
+    widths.iter().any(Option::is_none) || widths.windows(2).all(|w| w[0] == w[1])
+}
+
+fn split_alternatives(body: &[char]) -> Vec<Vec<char>> {
+    let (mut out, mut cur, mut depth, mut in_class, mut i) = (Vec::new(), Vec::new(), 0, false, 0);
+    while i < body.len() {
+        let ch = body[i];
+        match ch {
+            '\\' => {
+                cur.extend(&body[i..(i + 2).min(body.len())]);
+                i += 2;
+                continue;
+            }
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => depth -= 1,
+            '|' if !in_class && depth == 0 => {
+                out.push(std::mem::take(&mut cur));
+                i += 1;
+                continue;
+            }
+            _ => {}
+        }
+        cur.push(ch);
+        i += 1;
+    }
+    out.push(cur);
+    out
+}
+
+/// The fixed width of a pattern, or `None` when it varies.
+fn width(p: &[char]) -> Option<usize> {
+    let (mut total, mut last, mut i) = (0usize, 0usize, 0);
+    while i < p.len() {
+        if let Some(len) = quantifier_at(p, i) {
+            let body: String = p[i..i + len].iter().collect();
+            let n = body.trim_matches(|c| c == '{' || c == '}');
+            let exact = len > 1 && !n.is_empty() && n.chars().all(|d| d.is_ascii_digit());
+            if !exact {
+                return None;
+            }
+            let n = n
+                .chars()
+                .fold(0usize, |v, d| v * 10 + (d as usize - '0' as usize));
+            total = total - last + last * n;
+            i += len;
+            continue;
+        }
+        last = match p[i] {
+            '\\' => {
+                i += 1;
+                usize::from(!matches!(p.get(i), Some('b' | 'B' | 'A' | 'z' | 'Z')))
+            }
+            '[' => {
+                let mut j = i + 1;
+                if p.get(j) == Some(&'^') {
+                    j += 1;
+                }
+                if p.get(j) == Some(&']') {
+                    j += 1;
+                }
+                while j < p.len() && p[j] != ']' {
+                    j += usize::from(p[j] == '\\') + 1;
+                }
+                i = j;
+                1
+            }
+            '(' => {
+                let end = group_end(p, i);
+                let inner = &p[i + 1..end.saturating_sub(1)];
+                let w = if inner.starts_with(&['?', '=']) || inner.starts_with(&['?', '!']) {
+                    0
+                } else {
+                    let inner = if inner.starts_with(&['?', ':']) {
+                        &inner[2..]
+                    } else {
+                        inner
+                    };
+                    let alts: Vec<Option<usize>> =
+                        split_alternatives(inner).iter().map(|a| width(a)).collect();
+                    let first = *alts.first()?;
+                    if alts.iter().any(|w| *w != first) {
+                        return None;
+                    }
+                    first?
+                };
+                i = end;
+                total += w;
+                last = w;
+                continue;
+            }
+            '^' | '$' => 0,
+            _ => 1,
+        };
+        total += last;
+        i += 1;
+    }
+    Some(total)
 }
 
 /// The length of the quantifier at `i` (`*`, `+`, `?`, `{m}`, `{m,}`,
@@ -534,6 +668,14 @@ mod tests {
             ("(?>ab)c", "atomic"),
             ("a**", "repeated"),
             ("a+??", "repeated"),
+            // review round 5, finding 3 (Python 3.10 refuses or reads them
+            // differently)
+            (r"\p{L}", r"\p{"),
+            (r"[\P{L}]", r"\p{"),
+            ("(?<n>a)", "(?<name>"),
+            ("(?<=a|bc)x", "look-behind"),
+            ("[[:alpha:]]", "inside a character set"),
+            ("[a&&b]", "doubled"),
         ] {
             let msg = unsupported(p).unwrap_or_default();
             assert!(msg.contains(why), "{p}: {msg}");
@@ -562,6 +704,12 @@ mod tests {
             r"(?P<n>a)+",
             r"x{a}+",
             r"(?<=a)b+",
+            r"(?<=ab|cd)x",
+            r"(?<=(?:a|b)c)x",
+            r"(?<=a{2}|bc)x",
+            r"(?P<n>a)",
+            r"[\w.\-]",
+            r"[a-z]",
         ] {
             assert_eq!(unsupported(p), None, "{p}");
         }

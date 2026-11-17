@@ -1,6 +1,7 @@
 //! AC1: the probe section and the two message tables (header rows, tiling,
 //! maximum size, type code, padding, identifiers).
 
+use crate::doccheck::checked;
 use std::collections::BTreeSet;
 
 use super::landed::Landed;
@@ -35,7 +36,7 @@ fn tile_problems(fl: &[Field]) -> (i128, Vec<String>) {
         if f.size_bits() % 8 != 0 {
             probs.push(format!("'{m}' is not a whole number of bytes"));
         }
-        cur = f.off.saturating_add(f.size_bits() / 8);
+        cur = checked::add(f.off, f.size_bits() / 8);
     }
     (cur, probs)
 }

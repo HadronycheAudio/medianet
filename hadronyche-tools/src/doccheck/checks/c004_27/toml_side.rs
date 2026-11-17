@@ -9,6 +9,7 @@
 //! crash (`int()` of a list, iterating an int, an unhashable member test),
 //! the port reports the crash ([`Report::crash`]).
 
+use crate::doccheck::checked;
 use crate::doccheck::family004::Field;
 use super::landed::Landed;
 use super::messages::Probe;
@@ -75,8 +76,8 @@ fn toml_layout(tf: &[&Dict]) -> Result<TomlLayout, String> {
         if off != cur {
             probs.push(format!("'{}' at bit {off}, expected {cur}", f.get("name").map(PyValue::py_str).unwrap_or_default()));
         }
-        let size = int_or(f, "width", 0)?.saturating_mul(mult);
-        cur = int_or(f, "offset", 0)?.saturating_add(size);
+        let size = checked::mul(int_or(f, "width", 0)?, mult);
+        cur = checked::add(int_or(f, "offset", 0)?, size);
         sig.push((off, size));
     }
     Ok((cur, probs, sig))
@@ -102,7 +103,7 @@ fn layout(tm: &Dict, fl: &[Field], kind: &str, landed: &Landed, report: &mut Rep
     report.check("AC4", tiles, format!("toml '{name}' fields tile from bit 0 to max_size ({cur} bits against {ms:?} bytes): {probs:?}"));
     let unknown = unknown_reasons(tm, landed)?;
     report.check("AC4", unknown.is_empty(), format!("toml '{name}' rejection_reasons are members of the closed Reject enumeration; not members: {unknown:?}"));
-    let md: Vec<(i128, i128)> = fl.iter().map(|f| (f.off.saturating_mul(8), f.size_bits())).collect();
+    let md: Vec<(i128, i128)> = fl.iter().map(|f| (checked::mul(f.off, 8), f.size_bits())).collect();
     report.check("AC4", !fl.is_empty() && md == tsig, format!("the {kind} rows of wire.md and of toml '{name}' agree row for row in offset and size"));
     let label = |f: &&&Dict| {
         let s = |k: &str| f.get(k).map(PyValue::py_str).unwrap_or_default();
