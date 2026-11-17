@@ -200,24 +200,60 @@ fn make_executable(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The criterion labels of `FAIL <label>: message` lines: everything
+/// between `FAIL ` and the first `:` (letters, digits, spaces, hyphens,
+/// dots), trimmed — `AC1`, `DoD`, `Hand-off` (004-18), `C-40`, `C-100`
+/// (004-20), `WIRE`. Only the acceptance-criterion forms are normalised:
+/// `AC 1` and `AC-1` read `AC1`, as the ports name them.
+fn fail_labels(lines: &[&str]) -> BTreeSet<String> {
+    let label = rx(r"^FAIL ([A-Za-z0-9][A-Za-z0-9 .\-]*?)\s*:");
+    let ac = rx(r"^AC[ -]?([0-9]+)$");
+    lines
+        .iter()
+        .filter_map(|l| label.captures(l).map(|c| c[1].trim().to_string()))
+        .map(|l| match ac.captures(&l) {
+            Some(c) => format!("AC{}", &c[1]),
+            None => l,
+        })
+        .collect()
+}
+
+/// The criteria of the scripts that print their results grouped (006-01,
+/// 006-02, 004-07): a line `  AC1` or `  DoD`, then its checks as
+/// `    OK   message` or `    FAIL message`. Additive: output without such
+/// groups gives nothing. (Taken from the WP9 branch, so it need not edit
+/// this file.)
+fn grouped_failures(lines: &[&str]) -> BTreeSet<String> {
+    let group = rx(r"^  (AC[0-9]+|DoD)\s*$");
+    let mut current: Option<String> = None;
+    let mut out = BTreeSet::new();
+    for line in lines {
+        if let Some(c) = group.captures(line) {
+            current = Some(c[1].to_string());
+        } else if line.starts_with("    FAIL ")
+            && let Some(c) = &current
+        {
+            out.insert(c.clone());
+        }
+    }
+    out
+}
+
 /// The verdict of a script from its exit status and output.
 ///
-/// FAIL labels are `FAIL <label>:` with `<label>` letters, optionally a
-/// space or `-` and digits (`AC1`, `AC 1`, `AC-1`, `DoD`), normalised by
-/// dropping the space or `-`. A crash is the interpreter's own traceback: a
-/// line `Traceback (most recent call last):` at column 0 after the last
-/// FAIL, PASS, OK or NOTE line (a FAIL message that quotes the words is not
-/// one), or a non-zero exit with no FAIL line at all.
+/// The failed criteria are the labels of its `FAIL <label>:` lines
+/// ([`fail_labels`]) and of its grouped results ([`grouped_failures`]). A
+/// crash is the interpreter's own traceback: a line `Traceback (most recent
+/// call last):` at column 0 after the last FAIL, PASS, OK or NOTE line (a
+/// FAIL message that quotes the words is not one), or a non-zero exit with
+/// no failed criterion at all.
 pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
     let lines: Vec<&str> = output.lines().collect();
-    let label = rx(r"^FAIL ([A-Za-z]+(?:[ -]?[0-9]+)?):");
-    let criteria: BTreeSet<String> = lines
-        .iter()
-        .filter_map(|l| label.captures(l).map(|c| c[1].replace([' ', '-'], "")))
-        .collect();
+    let mut criteria = fail_labels(&lines);
+    criteria.extend(grouped_failures(&lines));
     let last_report = lines
         .iter()
-        .rposition(|l| rx(r"^(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
+        .rposition(|l| rx(r"^\s*(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
         .map_or(0, |i| i + 1);
     let traceback = lines[last_report..]
         .iter()
@@ -327,6 +363,44 @@ mod tests {
         );
         let dash = verdict(false, "FAIL AC-1: x\nFAIL AC 2: y");
         assert!(dash.criteria.contains("AC1") && dash.criteria.contains("AC2"));
+        let labels = verdict(
+            false,
+            "FAIL Hand-off: the hand-off is missing\nFAIL C-40: x\nFAIL C-41: y\nFAIL C-13: z\nFAIL C-100: w\nFAIL WIRE: no python\nFAIL v1.2 rule: q\nFAIL: 7 assertion(s) failed\n",
+        );
+        let want: BTreeSet<String> = [
+            "Hand-off",
+            "C-40",
+            "C-41",
+            "C-13",
+            "C-100",
+            "WIRE",
+            "v1.2 rule",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            labels.criteria, want,
+            "labels with hyphens, digits, dots and spaces are kept whole"
+        );
+        assert_eq!(labels.outcome, ScriptOutcome::Red);
+    }
+
+    #[test]
+    fn grouped_output_gives_its_failed_criteria() {
+        let out = "006-01: x\n  AC1\n    OK   fine\n    FAIL no table\n  AC2\n    OK   fine\n  AC3\n    FAIL a\n  DoD\n    FAIL b\nRESULT: FAIL (3 checks failed)\n";
+        let v = verdict(false, out);
+        let want: BTreeSet<String> = ["AC1", "AC3", "DoD"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(v.criteria, want);
+        assert_eq!(
+            v.outcome,
+            ScriptOutcome::Red,
+            "grouped failures are not a crash"
+        );
+        assert!(verdict(true, "  AC1\n    OK   fine\nRESULT: OK\n").passed());
     }
 
     #[test]
