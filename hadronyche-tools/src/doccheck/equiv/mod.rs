@@ -280,7 +280,9 @@ fn red_phase(
     };
     log(&format!("(b) red-phase tree {c}"));
     let old = Docs::at_commit(repo, &c)?;
-    let sb = Sandbox::new(&old, spec.id, text, spec.script_env).map_err(|e| e.to_string())?;
+    let sb = Sandbox::new(&old, spec.id, text, spec.script_env)
+        .map_err(|e| e.to_string())?
+        .with_reader(spec.fail_reader);
     let sb = sb.with_timeout(timeout_s);
     let v = timed(timer, || sb.run());
     let r = row(spec, format!("tree at {}", &c[..10]), v, &old, timer);
@@ -401,11 +403,16 @@ pub fn run(
         script: Duration::ZERO,
         port: Duration::ZERO,
     };
+    // the tree as it was when the run started (not when it ended)
+    let tree = script::head_commit(repo).unwrap_or_else(|| "unknown".into());
     let docs = Docs::dir(repo);
     let boxes = (0..opts.jobs.max(1))
         .map(|_| {
             Sandbox::new(&docs, spec.id, &text, spec.script_env)
-                .map(|sb| sb.with_timeout(opts.script_timeout_s))
+                .map(|sb| {
+                    sb.with_timeout(opts.script_timeout_s)
+                        .with_reader(spec.fail_reader)
+                })
                 .map_err(|e| e.to_string())
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -428,7 +435,7 @@ pub fn run(
     Ok(Outcome {
         id: spec.id.to_string(),
         script_from,
-        tree: script::head_commit(repo).unwrap_or_else(|| "unknown".into()),
+        tree,
         limit: opts.limit,
         current,
         red_commit,
@@ -601,6 +608,7 @@ mod tests {
         known_differences: KNOWN,
         denials: &[],
         toml: TomlReader::Tomllib,
+        fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
     };
 
     fn set(xs: &[&str]) -> BTreeSet<String> {

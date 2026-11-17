@@ -71,24 +71,17 @@ pub const SCRIPT_TIMEOUT_S: u32 = 60;
 pub struct Sandbox {
     pub root: PathBuf,
     script: String,
+    script_text: String,
     env: Vec<(String, String)>,
     timeout_s: u32,
-    /// Read `FAIL: <message>` lines too ([`DOCCHECK_FAIL_FORM`]).
-    colon: bool,
+    reader: FailReader,
 }
-
-/// A `script_env` entry `(DOCCHECK_FAIL_FORM, "colon")` is a directive to
-/// the harness, not passed to the script: the script prints its failures
-/// as `FAIL: <message>` (the epic-002 scripts), whose criteria
-/// [`crate::doccheck::fail_form::colon_criterion`] reads.
-pub const DOCCHECK_FAIL_FORM: &str = "DOCCHECK_FAIL_FORM";
 
 /// A `script_env` entry `(DOCCHECK_EXPORT, "a:b")` is a directive to the
 /// harness, not passed to the script: besides `doc/`, the sandbox holds
 /// these repository paths (files or directories, `:`-separated) from the
 /// same documents, where they exist. For a script that reads a fixed path
-/// outside `doc/` (002-13 and 002-14 read
-/// `checks/002-01-frozen-data.sha256`).
+/// outside `doc/` (002-13 reads `checks/002-01-frozen-data.sha256`).
 pub const DOCCHECK_EXPORT: &str = "DOCCHECK_EXPORT";
 
 /// The extra paths of the [`DOCCHECK_EXPORT`] directives of `env` that
@@ -147,14 +140,20 @@ impl Sandbox {
             script,
             env: env
                 .iter()
-                .filter(|(k, _)| *k != DOCCHECK_FAIL_FORM && *k != DOCCHECK_EXPORT)
+                .filter(|(k, _)| *k != DOCCHECK_EXPORT)
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             timeout_s: SCRIPT_TIMEOUT_S,
-            colon: env
-                .iter()
-                .any(|(k, v)| *k == DOCCHECK_FAIL_FORM && *v == "colon"),
+            script_text: script_text.to_string(),
+            reader: DEFAULT_READER,
         })
+    }
+
+    /// The same sandbox reading the script's FAIL lines with `reader` (the
+    /// port's [`crate::doccheck::checks::CheckSpec::fail_reader`]).
+    pub fn with_reader(mut self, reader: FailReader) -> Sandbox {
+        self.reader = reader;
+        self
     }
 
     /// The same sandbox with a per-script timeout of `seconds`.
@@ -184,16 +183,16 @@ impl Sandbox {
                 tail: format!("timed out after {} s", self.timeout_s),
             },
             Ok(o) => verdict_with(
-                self.colon,
                 o.status.success(),
                 &format!(
                     "{}{}",
                     String::from_utf8_lossy(&o.stdout),
                     String::from_utf8_lossy(&o.stderr)
                 ),
+                &self.script_text,
+                self.reader,
             ),
-            Err(e) => verdict_with(
-                self.colon,
+            Err(e) => verdict(
                 false,
                 &format!("Traceback (most recent call last): harness cannot run bash: {e}"),
             ),
@@ -268,40 +267,76 @@ fn make_executable(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The criterion labels of `FAIL <label>: message` lines: everything
-/// between `FAIL ` and the first `:` (letters, digits, spaces, hyphens,
-/// dots), trimmed — `AC1`, `DoD`, `Hand-off` (004-18), `C-40`, `C-100`
-/// (004-20), `WIRE`. Only the acceptance-criterion forms are normalised:
-/// `AC 1` and `AC-1` read `AC1`, as the ports name them.
-fn fail_labels(lines: &[&str]) -> BTreeSet<String> {
-    let label = rx(r"^FAIL ([A-Za-z0-9][A-Za-z0-9 .\-]*?)\s*:");
-    let ac = rx(r"^AC[ -]?([0-9]+)$");
-    lines
-        .iter()
-        .filter_map(|l| label.captures(l).map(|c| c[1].trim().to_string()))
-        .map(|l| match ac.captures(&l) {
-            Some(c) => format!("AC{}", &c[1]),
-            None => l,
-        })
-        .collect()
+/// How the harness reads a script's failed criteria: `(script text, output
+/// lines) -> criteria`. ONE reader per port, chosen explicitly in its
+/// [`crate::doccheck::checks::CheckSpec::fail_reader`]; [`DEFAULT_READER`]
+/// unless the port's script prints its failures another way (epic 002's
+/// `FAIL: message` lines). A reader lives in its own file; a port never
+/// combines two.
+pub type FailReader = fn(&str, &[&str]) -> BTreeSet<String>;
+
+/// The default reader: [`fail_labels`] (`FAIL <label>:` lines and the
+/// grouped form).
+pub const DEFAULT_READER: FailReader = default_reader;
+
+fn default_reader(_script: &str, lines: &[&str]) -> BTreeSet<String> {
+    fail_labels(lines)
 }
 
-/// The criteria of the scripts that print their results grouped (006-01,
-/// 006-02, 004-07): a line `  AC1` or `  DoD`, then its checks as
-/// `    OK   message` or `    FAIL message`. Additive: output without such
-/// groups gives nothing. (Taken from the WP9 branch, so it need not edit
-/// this file.)
-fn grouped_failures(lines: &[&str]) -> BTreeSet<String> {
-    let group = rx(r"^  (AC[0-9]+|DoD)\s*$");
+/// The pseudo-criterion of a FAIL line the reader cannot attribute: it is
+/// reported (the row can never read "same"), never taken for a crash.
+pub const UNREADABLE: &str = "UNREADABLE";
+
+/// The failed criteria of a script's output, in one pass:
+///
+/// * `FAIL <label>:` with any indentation and spacing, a parenthesised
+///   note before the colon (`FAIL AC2 (constants): …`), or a bracketed
+///   label (`FAIL [AC1] …`); `AC 1` and `AC-1` normalise to `AC1`;
+/// * the grouped form of 006-01, 006-02 and 004-07: a header line
+///   `  AC1`, `  DoD` or `  WIRE` (two spaces, one upper-case label), then
+///   its checks indented below it as `    FAIL message`;
+/// * any other `FAIL <text>` line gives [`UNREADABLE`] (a summary
+///   `FAIL: 3 failed` names no criterion and is skipped).
+fn fail_labels(lines: &[&str]) -> BTreeSet<String> {
+    let label = rx(
+        r"^\s*FAIL\s+(?:\[\s*([A-Za-z0-9][A-Za-z0-9 .\-]*?)\s*\]|([A-Za-z0-9][A-Za-z0-9 .\-]*?)\s*(?:\([^)]*\))?\s*:)",
+    );
+    let group = rx(r"^  ([A-Z][A-Za-z0-9\-]*)\s*$");
+    let ac = rx(r"^AC[ -]?([0-9]+)$");
+    let fail_line = rx(r"^\s*FAIL(?:\s+[^\s:]|\[)");
     let mut current: Option<String> = None;
     let mut out = BTreeSet::new();
     for line in lines {
         if let Some(c) = group.captures(line) {
             current = Some(c[1].to_string());
-        } else if line.starts_with("    FAIL ")
-            && let Some(c) = &current
-        {
-            out.insert(c.clone());
+            continue;
+        }
+        if !line.starts_with(' ') {
+            current = None;
+        }
+        // a FAIL line with a label to read (`FAIL: 3 failed` is a summary)
+        let fail = fail_line.is_match(line);
+        if fail && line.starts_with("    ") && current.is_some() {
+            out.extend(current.clone());
+            continue;
+        }
+        match label.captures(line) {
+            Some(c) => {
+                let l = c
+                    .get(1)
+                    .or(c.get(2))
+                    .map_or("", |m| m.as_str())
+                    .trim()
+                    .to_string();
+                out.insert(match ac.captures(&l) {
+                    Some(n) => format!("AC{}", &n[1]),
+                    None => l,
+                });
+            }
+            None if fail => {
+                out.insert(UNREADABLE.to_string());
+            }
+            None => {}
         }
     }
     out
@@ -310,41 +345,36 @@ fn grouped_failures(lines: &[&str]) -> BTreeSet<String> {
 /// The verdict of a script from its exit status and output.
 ///
 /// The failed criteria are the labels of its `FAIL <label>:` lines
-/// ([`fail_labels`]) and of its grouped results ([`grouped_failures`]). A
+/// and of its grouped results ([`fail_labels`]). A
 /// crash is the interpreter's own traceback: a line `Traceback (most recent
 /// call last):` at column 0 after the last FAIL, PASS, OK or NOTE line (a
 /// FAIL message that quotes the words is not one), or a non-zero exit with
 /// no failed criterion at all.
 pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
-    verdict_with(false, exit_ok, output)
+    verdict_with(exit_ok, output, "", DEFAULT_READER)
 }
 
-/// The criteria of the colon form's `FAIL: <message>` lines
-/// ([`DOCCHECK_FAIL_FORM`]).
-fn colon_failures(lines: &[&str]) -> BTreeSet<String> {
-    lines
-        .iter()
-        .filter_map(|l| l.strip_prefix("FAIL: "))
-        .map(crate::doccheck::fail_form::colon_criterion)
-        .collect()
-}
-
-/// [`verdict`], reading the colon form's `FAIL: <message>` lines as well
-/// when `colon` is set (the port asked for it with [`DOCCHECK_FAIL_FORM`]).
-pub fn verdict_with(colon: bool, exit_ok: bool, output: &str) -> ScriptVerdict {
+/// [`verdict`] with the port's own FAIL-line reader, given the script's
+/// text (a reader may take a criterion from the script, as epic 002's
+/// `# AC n` comments).
+pub fn verdict_with(
+    exit_ok: bool,
+    output: &str,
+    script: &str,
+    reader: FailReader,
+) -> ScriptVerdict {
     let lines: Vec<&str> = output.lines().collect();
-    let mut criteria = fail_labels(&lines);
-    criteria.extend(grouped_failures(&lines));
-    if colon {
-        criteria.extend(colon_failures(&lines));
-    }
+    let criteria = reader(script, &lines);
     let last_report = lines
         .iter()
         .rposition(|l| rx(r"^\s*(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
         .map_or(0, |i| i + 1);
-    let traceback = lines[last_report..]
-        .iter()
-        .any(|l| l.starts_with("Traceback (most recent call last):"));
+    // the interpreter's own traceback: the header at column 0, followed by
+    // a `  File "…"` frame (a quoted header in a message is not one)
+    let rest = &lines[last_report..];
+    let traceback = rest.windows(2).any(|w| {
+        w[0].starts_with("Traceback (most recent call last):") && w[1].starts_with("  File")
+    });
     let crashed = traceback || (!exit_ok && criteria.is_empty());
     let outcome = if crashed {
         ScriptOutcome::Crash
@@ -383,12 +413,25 @@ pub fn script_source(repo: &Path, id: &str) -> Option<(String, String)> {
 /// that commit's).
 pub fn head_commit(repo: &Path) -> Option<String> {
     let head = git(repo, &["rev-parse", "HEAD"])?.trim().to_string();
-    let dirty = git(repo, &["status", "--porcelain", "--untracked-files=no"]).is_some();
-    Some(if dirty {
-        format!("{head} with uncommitted changes")
-    } else {
+    let dirty = dirty_paths(repo);
+    Some(if dirty.is_empty() {
         head
+    } else {
+        format!("{head} with uncommitted changes in {}", dirty.join(", "))
     })
+}
+
+/// The tracked files with uncommitted changes, except the committed
+/// summaries themselves (`hadronyche-tools/equivalence/`, the harness's
+/// output, never its input).
+pub fn dirty_paths(repo: &Path) -> Vec<String> {
+    git(repo, &["status", "--porcelain", "--untracked-files=no"])
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.get(3..))
+        .filter(|p| !p.starts_with("hadronyche-tools/equivalence/"))
+        .map(str::to_string)
+        .collect()
 }
 
 /// The commit that first added `checks/<id>.sh` (the red-phase commit).
@@ -412,6 +455,61 @@ fn git(repo: &Path, args: &[&str]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_port_reads_its_script_with_its_own_reader() {
+        // an epic-002 style script: `FAIL: message`, the criterion in a
+        // comment of the script
+        fn from_comment(script: &str, lines: &[&str]) -> BTreeSet<String> {
+            let ac = script.contains("# AC 3").then(|| "AC3".to_string());
+            lines
+                .iter()
+                .filter(|l| l.starts_with("FAIL: "))
+                .filter_map(|_| ac.clone())
+                .collect()
+        }
+        let out = "FAIL: the table has no row";
+        assert!(
+            verdict(false, out).criteria.is_empty(),
+            "the default reader skips it"
+        );
+        let v = verdict_with(
+            false,
+            out,
+            "# AC 3 — rows\nbad 'the table has no row'",
+            from_comment,
+        );
+        assert_eq!(v.criteria, ["AC3".to_string()].into());
+        assert_eq!(v.outcome, ScriptOutcome::Red);
+    }
+
+    #[test]
+    fn round_three_label_forms_read_or_are_reported() {
+        let read = |out: &str| verdict(false, out).criteria.into_iter().collect::<Vec<_>>();
+        assert_eq!(read("FAIL AC2 (constants): x"), vec!["AC2"]);
+        assert_eq!(read("FAIL [AC1] the table"), vec!["AC1"]);
+        assert_eq!(read("FAIL  AC1: double space"), vec!["AC1"]);
+        assert_eq!(read("  FAIL AC3: indented"), vec!["AC3"]);
+        assert_eq!(
+            read("  WIRE\n    OK   a\n    FAIL wire.toml: b"),
+            vec!["WIRE"]
+        );
+        assert_eq!(read("FAIL what is this"), vec![UNREADABLE]);
+        let quoted = verdict(
+            false,
+            "FAIL AC4: the log says\nTraceback (most recent call last): quoted",
+        );
+        assert_eq!(
+            quoted.outcome,
+            ScriptOutcome::Red,
+            "a quoted header is not a crash"
+        );
+        let real = verdict(
+            false,
+            "FAIL AC4: x\nTraceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nKeyError: 'a'",
+        );
+        assert_eq!(real.outcome, ScriptOutcome::Crash);
+    }
 
     #[test]
     fn fail_lines_give_criteria() {
@@ -531,40 +629,12 @@ mod tests {
     }
 
     #[test]
-    fn the_colon_form_is_read_only_on_request() {
-        let out = "PASS: AC 1: fine\nFAIL: AC 2: section (d) verdict is still pending\nFAIL: stale sync-rate statement (x) a.md:3: 37/s\nFAIL: DoD: y\n\n2 check(s) failed, 1 passed.\n";
-        let v = verdict_with(true, false, out);
-        let want: BTreeSet<String> = ["AC2", "stale sync-rate statement (x) a.md:3: 37/s", "DoD"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        assert_eq!(v.criteria, want);
-        assert_eq!(v.outcome, ScriptOutcome::Red);
-        let plain = verdict(false, out);
-        assert_eq!(
-            plain.outcome,
-            ScriptOutcome::Crash,
-            "without the directive the colon form names no criterion (unchanged behaviour)"
-        );
-        let summary = verdict(false, "FAIL AC1: x\nFAIL: 1 assertion(s) failed\n");
-        assert_eq!(summary.criteria, ["AC1".to_string()].into_iter().collect());
-        let both = verdict_with(true, false, "FAIL AC1: x\nFAIL: report missing: r.md\n");
-        assert_eq!(
-            both.criteria,
-            ["AC1".to_string(), "report missing".to_string()]
-                .into_iter()
-                .collect()
-        );
-    }
-
-    #[test]
-    fn directives_are_read_by_the_harness_and_not_passed_on() {
+    fn the_export_directive_is_read_by_the_harness_and_not_passed_on() {
         let docs = Docs::dir("/nonexistent-doccheck-tree")
             .with("doc/x.md", "x\n")
             .with("checks/manifest.sha256", "abc  f\n");
-        let script = "cd \"$(dirname \"$0\")/..\"\n[ -f checks/manifest.sha256 ] || { echo 'FAIL: AC 7: manifest missing: checks/manifest.sha256'; exit 1; }\n[ -z \"${DOCCHECK_EXPORT:-}${DOCCHECK_FAIL_FORM:-}\" ] || { echo 'FAIL: directive leaked'; exit 1; }\n[ \"${KEEP:-}\" = 1 ] || { echo 'FAIL: env lost'; exit 1; }\necho 'PASS: ok'\n";
+        let script = "cd \"$(dirname \"$0\")/..\"\n[ -f checks/manifest.sha256 ] || { echo 'FAIL AC7: manifest missing'; exit 1; }\n[ -z \"${DOCCHECK_EXPORT:-}\" ] || { echo 'FAIL AC1: directive leaked'; exit 1; }\n[ \"${KEEP:-}\" = 1 ] || { echo 'FAIL AC2: env lost'; exit 1; }\necho 'PASS: ok'\n";
         let env = [
-            (DOCCHECK_FAIL_FORM, "colon"),
             (DOCCHECK_EXPORT, "checks/manifest.sha256:checks/absent.txt"),
             ("KEEP", "1"),
         ];
@@ -576,14 +646,8 @@ mod tests {
         );
         assert!(sb.run().passed(), "{:?}", sb.run());
         let v = sb.run_edited("checks/manifest.sha256", None).unwrap();
-        assert_eq!(v.criteria, ["AC7".to_string()].into_iter().collect());
-        let bare = Sandbox::new(
-            &docs,
-            "000-00",
-            script,
-            &[(DOCCHECK_FAIL_FORM, "colon"), ("KEEP", "1")],
-        )
-        .unwrap();
+        assert!(v.criteria.contains("AC7"));
+        let bare = Sandbox::new(&docs, "000-00", script, &[("KEEP", "1")]).unwrap();
         assert!(
             bare.run().criteria.contains("AC7"),
             "without the export directive only doc/ is exported"

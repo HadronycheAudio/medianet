@@ -33,7 +33,8 @@
 //!
 //! FAIL lines are the script's colon form (`FAIL: <message>`); each failure
 //! is named by [`colon_criterion`] of the script's exact message, as the
-//! harness names the script's.
+//! harness names the script's (this port's `fail_reader` is
+//! `fail_form::colon_reader`).
 //!
 //! AC 7 reads the proof of concept: the recomputed `poc-untouched`
 //! tag-tree fingerprint and the 27-file frozen-data manifest. Those reads
@@ -88,7 +89,6 @@ pub const SPEC: CheckSpec = CheckSpec {
     id: "002-13",
     run,
     script_env: &[
-        ("DOCCHECK_FAIL_FORM", "colon"),
         // AC 7's manifest is read at a fixed path beside the script; the
         // proof of concept itself is read in place, without optional locks
         ("DOCCHECK_EXPORT", "checks/002-01-frozen-data.sha256"),
@@ -147,6 +147,7 @@ pub const SPEC: CheckSpec = CheckSpec {
     ],
     known_differences: KNOWN,
     denials: denials::DENIALS,
+    fail_reader: crate::doccheck::fail_form::colon_reader,
     // the script reads no TOML; the field is required
     toml: TomlReader::Subset004_18,
 };

@@ -244,9 +244,6 @@ hadronyche_tools::denial_tests!(
     review_r097_r2_toml_max_size_date,
     review_r098_r2_tablerules_lineregex_separator_with_spaces,
     review_r099_r2_tablerules_drop_reply_table_without_separator,
-    review_r3_026_backtracking_aab_b_24_before_a_non_member_token_in_an_outcom,
-    review_r3_027_backtracking_aab_b_28_before_a_non_member_token,
-    review_r3_028_backtracking_aab_b_32_before_a_non_member_token,
     review_r3_029_tab_inside_the_separator_t_t,
     review_r3_030_separator_without_a_trailing_pipe,
     review_r3_031_separator_and,
@@ -275,4 +272,8 @@ hadronyche_tools::denial_tests!(
     review_r3_054_toml_dscp_4_0,
     review_r3_055_toml_single_quoted_name,
     review_r3_056_toml_key_with_spaces_on_the_reply_not_exempt_1,
+    ; slow:
+    review_r3_026_backtracking_aab_b_24_before_a_non_member_token_in_an_outcom,
+    review_r3_027_backtracking_aab_b_28_before_a_non_member_token,
+    review_r3_028_backtracking_aab_b_32_before_a_non_member_token,
 );

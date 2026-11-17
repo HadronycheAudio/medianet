@@ -16,11 +16,26 @@
 //! * any other message is its own criterion, whole: each such assertion is
 //!   compared message for message.
 //!
-//! A harness run reads the colon form only for a port that asks for it
-//! (`DOCCHECK_FAIL_FORM=colon` in its `script_env`), so no other script's
-//! summary line (`FAIL: 3 assertion(s) failed`) becomes a criterion.
+//! The harness reads the colon form only for a port that names
+//! [`colon_reader`] as its `CheckSpec::fail_reader` (one reader per port;
+//! 002-13, whose Python prints its labels in the message). The epic-002
+//! BASH scripts use `equiv::labels002` instead (criterion from the banner
+//! above each `bad` call).
+
+use std::collections::BTreeSet;
 
 use super::text::rx;
+
+/// A `FailReader` (`equiv::script::FailReader`): the criteria of the
+/// script's `FAIL: <message>` lines, by [`colon_criterion`]; no other line
+/// form is read.
+pub fn colon_reader(_script: &str, lines: &[&str]) -> BTreeSet<String> {
+    lines
+        .iter()
+        .filter_map(|l| l.strip_prefix("FAIL: "))
+        .map(colon_criterion)
+        .collect()
+}
 
 /// The criterion of the message of a `FAIL: <message>` line.
 pub fn colon_criterion(message: &str) -> String {
@@ -55,6 +70,24 @@ mod tests {
             "report missing"
         );
         assert_eq!(colon_criterion("v1.2 rule : q"), "v1.2 rule");
+    }
+
+    #[test]
+    fn the_reader_reads_colon_lines_only() {
+        let out = [
+            "PASS: AC 1: fine",
+            "FAIL: AC 2: pending",
+            "FAIL: stale (x) a.md:3: 37/s",
+            "FAIL AC9: other form",
+            "",
+            "2 check(s) failed, 1 passed.",
+        ];
+        let got = super::colon_reader("", &out);
+        let want: std::collections::BTreeSet<String> = ["AC2", "stale (x) a.md:3: 37/s"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(got, want);
     }
 
     #[test]
