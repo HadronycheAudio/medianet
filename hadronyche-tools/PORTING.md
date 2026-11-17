@@ -312,8 +312,13 @@ the port must report on them (`Denial { name, file, edit, expect }`):
   `old = "ALL\n"` replaces every newline.
 
 Every port has ONE list (`denials.rs`), used twice:
-- **as tests:** `denial_tests!(SPEC; name, …)` makes one `#[test]` each,
-  plus a test that the list and the tests agree;
+- **as tests:** `denial_tests!(SPEC; name, …; slow: name, …)` makes one
+  `#[test]` each, plus a test that the list and the tests agree. Every
+  denial that expects `REGEX_LIMIT` (a backtracking input: seconds per test
+  in a debug build) must be listed after `slow:`; those are `#[ignore]`d in
+  the default `cargo test` and run in release by CI's "Slow denials" step
+  and the per-change suite (`cargo test --release -p hadronyche-tools
+  --test 'doc_*' -- --ignored`, under a second each);
 - **by the harness against the old script:** the targeted denials are the
   strongest evidence, since a random corpus is only 8–13 % red.
 

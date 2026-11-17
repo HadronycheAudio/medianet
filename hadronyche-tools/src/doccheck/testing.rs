@@ -120,14 +120,61 @@ pub fn assert_all_denials_tested(spec: &CheckSpec, tested: &[&str]) {
     );
 }
 
+/// Panics unless every denial that expects `REGEX_LIMIT` (a backtracking
+/// input: seconds per test in a debug build) is listed in `slow`.
+pub fn assert_slow_denials_listed(spec: &CheckSpec, slow: &[&str]) {
+    let missing: Vec<&str> = spec
+        .denials
+        .iter()
+        .filter(|d| d.criteria().contains(crate::doccheck::docs::REGEX_LIMIT))
+        .map(|d| d.name)
+        .filter(|n| !slow.contains(n))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{}: backtracking denials not in the `slow:` list of denial_tests! {missing:?}",
+        spec.id
+    );
+}
+
+/// The reason a slow denial test is ignored by the default run.
+pub const SLOW: &str = "slow denial (backtracking): run in release by CI's \
+     'Slow denials' step and the per-change suite: cargo test --release -p hadronyche-tools --test 'doc_*' -- --ignored";
+
 /// One `#[test]` per denial of a check, plus a test that the list and the
-/// tests agree:
+/// tests agree. Denials after `; slow:` (every one that expects
+/// `REGEX_LIMIT`, and any other that takes seconds in a debug build) are
+/// `#[ignore]`d in the default `cargo test` and run in release by CI's
+/// "Slow denials" step and the per-change suite (`-- --ignored`):
 ///
 /// ```ignore
-/// hadronyche_tools::denial_tests!(c004_27::SPEC; ac1_denial_no_probe_section, ac3_denial_fewer_than_four_forms);
+/// hadronyche_tools::denial_tests!(c004_27::SPEC; ac1_denial_no_probe_section, ac3_denial_fewer_than_four_forms; slow: review_r3_026_x);
 /// ```
 #[macro_export]
 macro_rules! denial_tests {
+    ($spec:path; $($name:ident),+ $(,)? ; slow: $($slow:ident),+ $(,)?) => {
+        $(
+            #[test]
+            fn $name() {
+                $crate::doccheck::testing::check_denial(&$spec, stringify!($name));
+            }
+        )+
+        $(
+            #[test]
+            #[ignore = "slow denial (backtracking): cargo test --release -p hadronyche-tools --test 'doc_*' -- --ignored"]
+            fn $slow() {
+                $crate::doccheck::testing::check_denial(&$spec, stringify!($slow));
+            }
+        )+
+        #[test]
+        fn every_denial_of_the_list_has_a_test() {
+            $crate::doccheck::testing::assert_all_denials_tested(
+                &$spec,
+                &[$(stringify!($name)),+ , $(stringify!($slow)),+],
+            );
+            $crate::doccheck::testing::assert_slow_denials_listed(&$spec, &[$(stringify!($slow)),+]);
+        }
+    };
     ($spec:path; $($name:ident),+ $(,)?) => {
         $(
             #[test]
@@ -138,6 +185,7 @@ macro_rules! denial_tests {
         #[test]
         fn every_denial_of_the_list_has_a_test() {
             $crate::doccheck::testing::assert_all_denials_tested(&$spec, &[$(stringify!($name)),+]);
+            $crate::doccheck::testing::assert_slow_denials_listed(&$spec, &[]);
         }
     };
 }

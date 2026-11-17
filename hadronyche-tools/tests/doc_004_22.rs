@@ -270,8 +270,6 @@ hadronyche_tools::denial_tests!(
     review_r066_r2_tomllib_width_as_float_16_0_frames,
     review_r067_r2_tomllib_duplicate_key_invalid_toml,
     review_r100_r2_d_non_ascii_duplicate_extra_row_rule,
-    review_r3_001_backtracking_4000_backticked_names_then_zzz_32_bits_samples,
-    review_r3_002_backtracking_6000_backticked_names_then_zzz_32_bits_samples,
     review_r3_003_lone_r_in_the_ticket_s_constants_line_adds_c_999_after_it,
     review_r3_004_crlf_ticket,
     review_r3_005_lone_r_starts_3_8_extra_in_the_architecture_s_section_3,
@@ -295,9 +293,12 @@ hadronyche_tools::denial_tests!(
     review_r3_023_date_as_16_nov_2026_month_date,
     review_r3_024_date_as_16_november_2026,
     review_r3_025_main_branch_split_by_a_tab_b_and_s,
+    review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l,
+    ; slow:
+    review_r3_001_backtracking_4000_backticked_names_then_zzz_32_bits_samples,
+    review_r3_002_backtracking_6000_backticked_names_then_zzz_32_bits_samples,
     review_r3_057_backtracking_list_of_4000_then_zzz_32_bits_samples_at_the_en,
     review_r3_058_backtracking_list_of_6000_then_zzz_32_bits_samples_at_the_en,
-    review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l,
 );
 
 /// Review round 4, item 4: the repertoire guard covers what the check
