@@ -46,6 +46,7 @@
 //!   script (a development tool, bin `doccheck-equiv`).
 
 pub mod blocks;
+pub mod checked;
 pub mod checks;
 pub mod claims;
 pub mod denial;

@@ -226,6 +226,12 @@ parallel without editing the same files.
        `parse::<` (`str::parse::<u32>`, `.parse :: <usize>()`),
        `from_str(`, `unwrap_or(0)` (`unwrap_or( 0 )`), `.evaluate(`; and the
        words `testing` (an aliased `use … testing as t` too) and `rx_raw`;
+     - in a check module (R21, no silent saturation): `saturating_*`,
+       `wrapping_*` and numeric `as` casts. Arithmetic on numbers read from
+       documents goes through `doccheck::checked::{add, sub, mul, sum,
+       product}`, which record `INT_LIMIT` on overflow; a `static`
+       anywhere (also inside a function body) and the word `thread` are
+       refused;
      - everywhere: `run)(`, `take_failures`, `restore_failures` (R19);
      - in a check module (review round 4): `thread::`, a `static` item,
        `OnceLock`, `LazyLock`, `OnceCell`, `thread_local!`, `Mutex`,

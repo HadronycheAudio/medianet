@@ -33,7 +33,11 @@ deletes its private layer, applies the mapping below, and reruns
    - `\Z`, `{,n}`, back-references, possessive quantifiers, atomic groups
      and repeated quantifiers are refused.
    - An engine failure is `REGEX_LIMIT` (R19).
-4. **Integers** go through `pycompat::parse_int` (or `PyValue::py_int`).
+4. **Integers** go through `pycompat::parse_int` (or `PyValue::py_int`),
+   and arithmetic on them through `doccheck::checked::{add, sub, mul,
+   sum, product}` (R21). wp9's private "any number above 10^12 is
+   `INT_LIMIT`" rule is replaced by these: overflow beyond `i128` records
+   `INT_LIMIT`, nothing below it does.
    - Beyond `i128`, a number is red by rule under `INT_LIMIT`, recorded
      automatically. No saturating, clamping, `i64`, `unwrap_or(0)` or
      float fallback.
