@@ -6,20 +6,19 @@
 //! run it on the repository's documents (one `#[test]` per acceptance
 //! criterion and definition-of-done item) and on denial fixtures: the real
 //! documents with one mutation applied in memory, at least one per
-//! assertion of the script. `denials_agree_with_the_script` (ignored by
-//! default: it needs Python and the script from git history) runs every
-//! denial fixture through the harness sandbox against the old script and
-//! requires the script to reject it too.
+//! assertion of the script, listed in `c004_24/denials.rs` with the exact
+//! criteria the old script fails on them (`CRASH` where it stops with a
+//! Python exception); `doccheck-equiv 004-24` runs every denial against the
+//! old script as well.
 //!
-//! Not here, because they run tools or inspect the repository (they are in
-//! `scripts/repo-state-checks.sh`, under 004-24): `cargo run --bin
-//! wire-check` reports "checks clean" (AC5); `cargo test -p hadronyche-tools
-//! --test wire_tables` exits 0 with 0 failed and at least 12 passed (AC5,
-//! the count that stood before this ticket); and the checker reads the
-//! working tree only and runs no other check (DoD: the script grepped its
-//! own text for a ref naming the main branch and for `checks/[0-9]`; the
-//! relocated assertion greps this port's sources for the same ref pattern
-//! and for a spawned process).
+//! Not here, because they run tools (they are in
+//! `scripts/repo-state.d/004-24.sh`): `cargo run --bin wire-check` reports
+//! "checks clean" (AC5); `cargo test -p hadronyche-tools --test wire_tables`
+//! exits 0 with 0 failed and at least 12 passed (AC5, the count that stood
+//! before this ticket). The script's DoD "the checker reads the working tree
+//! only and runs no other check" (it grepped its own text for a ref naming
+//! the main branch and for `checks/[0-9]`) is now the library-wide rule
+//! (`hadronyche-tools/clippy.toml` and `doccheck::testing::source_rules`).
 //!
 //! Header and code: the header's AC4 says a row whose outcome is "not a
 //! rejection", "ignored" or "valid" and names no Reject reason is not
@@ -30,55 +29,14 @@
 //! "every section type"; the code checks the stamp section table and the
 //! request (the section types are 004-25's and 004-28's), as the port does.
 
-use std::sync::OnceLock;
+use hadronyche_tools::doccheck::checks::c004_24::SPEC;
+use hadronyche_tools::doccheck::testing::{red_phase, report_of};
+use hadronyche_tools::doccheck::{Report, assert_criterion};
 
-use hadronyche_tools::doccheck::checks::c004_24::{SPEC, WIRE_MD, run};
-use hadronyche_tools::doccheck::docs::{commit_exists, repo_root};
-use hadronyche_tools::doccheck::equiv::script::{Sandbox, script_source};
-use hadronyche_tools::doccheck::mutate::{
-    delete_row, rename_heading, replace_all, replace_in_line, strip_tags, within_section,
-};
-use hadronyche_tools::doccheck::ticket::CONSTANTS_MD;
-use hadronyche_tools::doccheck::wire_toml::WIRE_TOML;
-use hadronyche_tools::doccheck::{Docs, Report, assert_criterion, assert_fails};
-
-fn base() -> &'static Docs {
-    static DOCS: OnceLock<Docs> = OnceLock::new();
-    DOCS.get_or_init(Docs::repo)
+/// The check on the repository's working tree (computed once).
+fn report() -> Report {
+    report_of(&SPEC)
 }
-
-fn report() -> &'static Report {
-    static REPORT: OnceLock<Report> = OnceLock::new();
-    REPORT.get_or_init(|| run(base()))
-}
-
-fn wire(edit: impl FnOnce(&str) -> String) -> Docs {
-    base().mutate(WIRE_MD, edit)
-}
-
-/// wire.md with `edit` applied to the Regime stamp section only.
-fn stamp(edit: impl FnOnce(&str) -> String) -> Docs {
-    wire(|t| within_section(t, "^Regime stamp$", edit))
-}
-
-/// wire.md with `edit` applied to the `###` section `heading` only.
-fn sub(heading: &'static str, edit: impl FnOnce(&str) -> String) -> Docs {
-    wire(|t| within_section(t, heading, edit))
-}
-
-fn toml(edit: impl FnOnce(&str) -> String) -> Docs {
-    base().mutate(WIRE_TOML, edit)
-}
-
-fn consts(edit: impl FnOnce(&str) -> String) -> Docs {
-    base().mutate(CONSTANTS_MD, edit)
-}
-
-/// The head of the section message of wire.toml.
-const SEC_HEAD: &str = "name = \"regime stamp section\"\nlayer = \"control\"\ndscp = 40\nmax_size = 1252\nsection_of = \"regime stamp\"\n";
-/// The head of the request message of wire.toml.
-const REQ_HEAD: &str =
-    "name = \"regime stamp request\"\nlayer = \"control\"\ndscp = 40\nmax_size = 40\n";
 
 /// Panics when a failure of `criterion` contains `needle`.
 fn assert_none(r: &Report, criterion: &str, needle: &str) {
@@ -89,49 +47,6 @@ fn assert_none(r: &Report, criterion: &str, needle: &str) {
         .map(|f| f.to_string())
         .collect();
     assert!(hits.is_empty(), "{}", hits.join("\n"));
-}
-
-/// One denial: its name, the exact set of criteria both the port and the
-/// old script fail on it (empty: both pass, a fixture that tells the
-/// scripts' Python semantics from a near miss), the criterion and message
-/// the port must report, and the mutated documents. Plain data, so the list
-/// can move into the shared denial-list form.
-struct Denial {
-    name: &'static str,
-    fails: &'static [&'static str],
-    criterion: &'static str,
-    needle: &'static str,
-    docs: fn() -> Docs,
-}
-
-/// Checks one denial on the port: the exact failed set, and the targeted
-/// message.
-fn deny(d: &Denial) {
-    let r = run(&(d.docs)());
-    let got: Vec<String> = r.failed_criteria().into_iter().collect();
-    assert_eq!(got, d.fails, "{}: failed criteria\n{}", d.name, r.render());
-    if !d.fails.is_empty() {
-        assert_fails(&r, d.criterion, d.needle);
-    }
-}
-
-/// Each entry becomes a `Denial` in `DENIALS` and a `#[test]` of it.
-macro_rules! denials {
-    ($($name:ident: [$($f:literal),*], $crit:literal, $needle:literal, $docs:expr;)*) => {
-        const DENIALS: &[Denial] = &[$(Denial {
-            name: stringify!($name),
-            fails: &[$($f),*],
-            criterion: $crit,
-            needle: $needle,
-            docs: || $docs,
-        },)*];
-        $(
-            #[test]
-            fn $name() {
-                deny(DENIALS.iter().find(|d| d.name == stringify!($name)).expect("listed"));
-            }
-        )*
-    };
 }
 
 // ---------------------------------------------------------------- the criteria
@@ -147,7 +62,7 @@ macro_rules! denials {
 /// gone; the constants and the hello's widths read.
 #[test]
 fn ac1_the_section_and_the_request_are_within_the_control_bound() {
-    assert_criterion(report(), "AC1");
+    assert_criterion(&report(), "AC1");
 }
 
 /// AC2 — "The maximum stamp size and per-peer storage are stated as
@@ -161,7 +76,7 @@ fn ac1_the_section_and_the_request_are_within_the_control_bound() {
 /// per-peer figure times C-217 or C-34 with the reason stated.
 #[test]
 fn ac2_the_maximum_stamp_size_and_storage_are_stated_as_numbers() {
-    assert_criterion(report(), "AC2");
+    assert_criterion(&report(), "AC2");
 }
 
 /// AC3 — "The multicast-on-change, 10 s refresh and unicast fetch of C-18
@@ -177,7 +92,7 @@ fn ac2_the_maximum_stamp_size_and_storage_are_stated_as_numbers() {
 /// 005-07).
 #[test]
 fn ac3_the_c18_rules_appear_as_sender_and_receiver_rules() {
-    assert_criterion(report(), "AC3");
+    assert_criterion(&report(), "AC3");
 }
 
 /// AC4 — "At least 7 invalid forms with outcomes."
@@ -191,7 +106,7 @@ fn ac3_the_c18_rules_appear_as_sender_and_receiver_rules() {
 /// cover the table's.
 #[test]
 fn ac4_at_least_seven_invalid_forms_with_outcomes() {
-    assert_criterion(report(), "AC4");
+    assert_criterion(&report(), "AC4");
 }
 
 /// AC5 — "Passes the 004-02 checker."
@@ -203,7 +118,7 @@ fn ac4_at_least_seven_invalid_forms_with_outcomes() {
 /// scripts/repo-state-checks.sh.
 #[test]
 fn ac5_wire_toml_carries_the_stamp_messages() {
-    assert_criterion(report(), "AC5");
+    assert_criterion(&report(), "AC5");
 }
 
 /// DoD — "Every new factual claim carries an evidence tag": every prose line
@@ -211,7 +126,7 @@ fn ac5_wire_toml_carries_the_stamp_messages() {
 /// section carries a tag.
 #[test]
 fn dod_every_new_claim_carries_an_evidence_tag() {
-    assert_none(report(), "DoD", "evidence tag");
+    assert_none(&report(), "DoD", "evidence tag");
 }
 
 /// DoD — "No new open item without an owner and a falsifier": every block
@@ -219,7 +134,7 @@ fn dod_every_new_claim_carries_an_evidence_tag() {
 /// owner and a falsifier.
 #[test]
 fn dod_no_open_item_without_an_owner_and_a_falsifier() {
-    assert_none(report(), "DoD", "Open item");
+    assert_none(&report(), "DoD", "Open item");
 }
 
 /// DoD — "The machine-readable tables parse and round-trip": the document
@@ -227,215 +142,132 @@ fn dod_no_open_item_without_an_owner_and_a_falsifier() {
 /// wire_tables) is in repo-state-checks.sh.
 #[test]
 fn dod_the_tables_parse() {
-    assert_none(report(), "AC5", "does not parse");
+    assert_none(&report(), "AC5", "does not parse");
 }
 
 // ---------------------------------------------------------------- denials
 
-denials! {
-    denial_wire_md_missing: ["AC1", "AC2", "AC3", "AC4", "AC5"], "AC1", "does not exist", base().without(WIRE_MD);
-    denial_wire_toml_missing: ["AC4", "AC5"], "AC5", "does not exist", base().without(WIRE_TOML);
-    ac1_denial_constants_unread: ["AC1", "AC3"], "AC1", "the constants read",
-        consts(|t| replace_in_line(t, r"^\| C-18 \|", "every 10 s", "every ten s"));
-    ac1_denial_a_malformed_hello_header_row: ["AC1"], "AC1", "is not a byte offset",
-        sub("^Common control header$", |t| replace_in_line(t, r"^\| 7 \| 1 \| u8 \| Authentication scheme", r"^\| 7", "| seven"));
-    ac1_denial_a_hello_header_row_missing: ["AC1"], "AC1", "seven rows tiling 32 bytes",
-        sub("^Common control header$", |t| delete_row(t, r"^\| 8 \| 8 \| u64 \| Message counter"));
-    ac1_denial_the_hello_width_unread: ["AC1"], "AC1", "the hello's layout gives the widths",
-        wire(|t| replace_in_line(t, r"^\| 69 \| 4 \| u32 \| Regime stamp version number", r"Regime stamp version number \(C-18\).*\(Regime stamp version number\)", "Stamp generation (C-18)"));
-    ac1_denial_the_block_not_assigned: ["AC1"], "AC1", "a block assigned to 004-24",
-        wire(|t| replace_in_line(t, r"^\| 36 to 47 \|", "004-24", "004-99"));
-    ac1_denial_no_stamp_section: ["AC1", "AC2", "AC3", "AC4", "AC5"], "AC1", "has a '## Regime stamp' section",
-        wire(|t| rename_heading(t, "^Regime stamp$", "Stamp"));
-    ac1_denial_the_placeholder: ["AC1"], "AC1", "not the placeholder",
-        stamp(|t| replace_in_line(t, "^The regime stamp is a module's declaration", "^", "To be filled by 004-24. "));
-    ac1_denial_a_malformed_stamp_row: ["AC1", "AC2", "AC5"], "AC1", "a regime stamp field table: the Width cell",
-        stamp(|t| replace_in_line(t, r"^\| 53 \| 1 \| u8 \| Section count", r"^\| 53 \| 1 \|", "| 53 | one |"));
-    ac1_denial_no_section_table: ["AC1", "AC2", "AC3", "AC4", "AC5"], "AC1", "no section table",
-        stamp(|t| replace_all(t, r"(?i)section index", "section place"));
-    ac3_denial_no_request_table: ["AC1", "AC3", "AC5"], "AC3", "no request table",
-        stamp(|t| replace_all(t, r"(?i)module id", "module key"));
-    ac1_denial_the_section_header_rows_changed: ["AC1"], "AC1", "the section table opens with the seven common control header rows",
-        stamp(|t| replace_in_line(t, r"^\| 7 \| 1 \| u8 \| Authentication scheme", r"\| u8 \|", "| i8 |"));
-    ac1_denial_the_version_width_differs_from_the_hello: ["AC1"], "AC1", "one stamp version number of the hello's width",
-        wire(|t| replace_in_line(t, r"^\| 69 \| 4 \| u32 \| Regime stamp version number", r"\| 4 \| u32", "| 8 | u64"));
-    ac1_denial_no_version_comparison: ["AC1"], "AC1", "the version comparison of the hello",
-        stamp(|t| replace_all(&replace_all(t, r"(?i)hello|serial|modulo|half the range", "x"), r"2\^31", "x"));
-    ac1_denial_no_section_length_row: ["AC1", "AC5"], "AC1", "a row for the section length",
-        stamp(|t| delete_row(t, r"^\| 56 \| 2 \| u16 \| Section length"));
-    ac1_denial_section_rows_that_do_not_tile: ["AC1", "AC5"], "AC1", "the section table tiles its bytes",
-        stamp(|t| replace_in_line(t, r"^\| 52 \| 1 \| u8 \| Section index", r"^\| 52", "| 51"));
-    ac1_denial_the_section_maximum_not_stated: ["AC1"], "AC1", "states the maximum size of a section as 1252 bytes",
-        stamp(|t| replace_all(t, "1 252 bytes", "1 252 octets"));
-    ac1_denial_the_request_header_rows_changed: ["AC1"], "AC1", "the stamp request opens with",
-        sub("^Stamp request$", |t| replace_in_line(t, r"^\| 7 \| 1 \| u8 \| Authentication scheme", r"\| u8 \|", "| i8 |"));
-    ac3_denial_the_requested_module_id_narrowed: ["AC1", "AC3", "AC5"], "AC3", "names the requested module by its",
-        sub("^Stamp request$", |t| replace_in_line(t, r"^\| 32 \| 8 \| u64 \| Requested module id", r"\| 8 \| u64", "| 4 | u32"));
-    ac1_denial_request_rows_that_do_not_tile: ["AC1", "AC5"], "AC1", "the request table tiles its bytes",
-        sub("^Stamp request$", |t| replace_in_line(t, r"^\| 32 \| 8 \| u64 \| Requested module id", r"^\| 32", "| 33"));
-    ac1_denial_the_request_maximum_not_stated: ["AC1"], "AC1", "maximum size of the request as 40 bytes",
-        stamp(|t| replace_all(t, "40 bytes", "40 octets"));
-    ac1_denial_a_type_code_outside_the_block: ["AC1"], "AC1", "the request message type is a code inside the block",
-        sub("^Stamp request$", |t| replace_in_line(t, r"^\| 6 \| 1 \| u8 \| Message type", "37 only", "52 only"));
-    ac2_denial_no_maximum_section_count: ["AC2"], "AC2", "states a maximum section count in its valid range",
-        stamp(|t| replace_in_line(t, r"^\| 53 \| 1 \| u8 \| Section count", "1 to 64", "at least one"));
-    ac2_denial_the_section_count_not_stated: ["AC2"], "AC2", "a sentence states the maximum section count",
-        stamp(|t| replace_in_line(t, r"^\| 53 \| 1 \| u8 \| Section count", "1 to 64", "1 to 77"));
-    ac2_denial_the_peer_constants: ["AC2"], "AC2", "the constants give",
-        consts(|t| replace_in_line(t, r"^\| C-217 \|", "63 peers", "62 peers"));
-    ac2_denial_the_stamp_size_not_stated: ["AC2"], "AC2", "states the maximum stamp size",
-        stamp(|t| replace_all(t, "80 128 bytes", "80 128 octets"));
-    ac2_denial_a_storage_figure_not_a_multiple: ["AC2"], "AC2", "every storage figure stated in bytes",
-        stamp(|t| replace_all(t, "160 256 bytes of storage", "160 000 bytes of storage"));
-    ac2_denial_an_inexact_product: ["AC2"], "AC2", "every product stated in the section is exact",
-        stamp(|t| replace_all(t, "64 × 1 194 = 76 416", "64 × 1 194 = 76 417"));
-    ac2_denial_a_total_without_its_reason: ["AC2"], "AC2", "every total over the peers",
-        stamp(|t| replace_in_line(t, "^A receiver needs at most 160 256 bytes", r"\(C-217; at most 64 modules, C-34\)", "(at most 64 modules)"));
-    ac3_denial_no_multicast_on_change: ["AC3"], "AC3", "multicast to the control group on any regime change",
-        stamp(|t| replace_all(t, "(?i)multicast", "broadcast"));
-    ac3_denial_no_refresh_period: ["AC3"], "AC3", "refreshed every",
-        stamp(|t| replace_all(t, r"\b10 s\b", "ten s"));
-    ac3_denial_no_unicast_request: ["AC3"], "AC3", "a request is unicast",
-        stamp(|t| replace_all(t, "(?i)unicast", "direct"));
-    ac3_denial_no_version_bump: ["AC1", "AC3", "AC4"], "AC3", "bumps the stamp version",
-        stamp(|t| replace_all(t, "(?i)version", "edition"));
-    ac3_denial_no_unknown_type_skip: ["AC3"], "AC3", "skips an unknown section type",
-        stamp(|t| replace_all(t, "(?i)unknown|not know|unrecogni", "odd"));
-    ac3_denial_no_incomplete_discard: ["AC3"], "AC3", "discards an incomplete stamp",
-        stamp(|t| replace_all(t, "(?i)incomplete", "partial"));
-    ac3_denial_no_completeness_test: ["AC3"], "AC3", "holds a complete stamp of one version",
-        stamp(|t| replace_all(t, "(?i)complete", "whole"));
-    ac3_denial_no_sender_part: ["AC3"], "AC3", "has a sender part and a receiver part",
-        wire(|t| rename_heading(t, "^Sender rules$", "Origin rules"));
-    ac3_denial_the_return_path_not_a_decision: ["AC3"], "AC3", "is tagged [decision]",
-        stamp(|t| replace_all(t, r"\[decision\]", "[code]"));
-    ac3_denial_no_first_stamp_rule: ["AC3"], "AC3", "for the first section of a peer",
-        stamp(|t| replace_in_line(&replace_in_line(t, r"^3\. \*\*The first stamp", "starts the reassembly", "opens the reassembly"), "(?i)it starts at 0 when the entry first carries", "first carries", "carries"));
-    ac3_denial_no_new_instance_rule: ["AC3"], "AC3", "a different instance nonce",
-        stamp(|t| replace_in_line(t, r"^2\. \*\*A new instance", "A new instance", "Another instance"));
-    ac3_denial_no_fetch_only_when_stale: ["AC3"], "AC3", "only when its held copy is stale",
-        stamp(|t| replace_in_line(t, r"^9\. \*\*Fetch", "only when", "when"));
-    ac3_denial_the_fetch_load_open_item_without_its_owners: ["AC3"], "AC3", "names 011-23 and 005-07",
-        stamp(|t| replace_all(t, "011-23", "011-99"));
-    ac4_denial_the_enumeration_not_thirteen: ["AC4"], "AC4", "has 13 members",
-        wire(|t| delete_row(t, r"^\| 9 \| BadPacketIndex \|"));
-    ac4_denial_no_validity_table: ["AC4"], "AC4", "has a Validity rules table",
-        stamp(|t| replace_all(t, r"\| Invalid form \|", "| Form |"));
-    ac4_denial_fewer_than_seven_forms: ["AC4"], "AC4", "at least 7 invalid forms",
-        stamp(|t| replace_in_line(t, r"^\| foreign domain: a non-zero", "$", "\n"));
-    ac4_denial_no_oversize_row: ["AC4"], "AC4", "the invalid forms include an oversize section",
-        stamp(|t| delete_row(t, r"^\| oversize: a datagram larger"));
-    ac4_denial_an_outcome_naming_no_member: ["AC4"], "AC4", "names only members of the Rejection enumeration",
-        stamp(|t| replace_in_line(t, r"^\| bad magic", "BadMagic", "WrongMagic"));
-    ac4_denial_oversize_not_oversize_control: ["AC4"], "AC4", "the oversize section (C-17) is outcome OversizeControl",
-        stamp(|t| replace_in_line(t, r"^\| oversize: a datagram larger", "OversizeControl", "BadLength"));
-    ac4_denial_disagreeing_sections_name_two_reasons: ["AC4"], "AC4", "every row whose sections disagree names exactly one",
-        stamp(|t| replace_in_line(t, r"^\| sections of one stamp version disagree", r"\|$", "and ForeignDomain |"));
-    ac4_denial_an_identical_repeat_named_a_rejection: ["AC4"], "AC4", "one stated outcome for an identical repeat",
-        stamp(|t| replace_in_line(t, r"^\| identical repeat:", r"\|$", "and BadLength |"));
-    ac4_denial_a_toml_reason_outside_the_control_layer: ["AC4"], "AC4", "rejection_reasons are members whose Layers include control",
-        toml(|t| replace_all(t, &regex::escape(&format!("{SEC_HEAD}rejection_reasons = [")), &format!("{SEC_HEAD}rejection_reasons = [\"BadChecksum\", ")));
-    ac4_denial_a_table_reason_missing_from_wire_toml: ["AC4"], "AC4", "every reason the stamp's validity table names",
-        toml(|t| replace_all(t, r#", "OversizeControl""#, ""));
-    ac5_denial_wire_toml_does_not_parse: ["AC4", "AC5"], "AC5", "does not parse",
-        toml(|t| format!("{t}\n[[[broken"));
-    ac5_denial_no_section_message: ["AC5"], "AC5", "a wire.toml message with section_of",
-        toml(|t| replace_all(t, &regex::escape(SEC_HEAD), &SEC_HEAD.replace("section_of = \"regime stamp\"\n", "")));
-    ac5_denial_no_request_message: ["AC3", "AC5"], "AC5", "a wire.toml message without section_of",
-        sub("^Stamp request$", |t| replace_in_line(t, r"^\| 32 \| 8 \| u64 \| Requested module id", r"\| 8 \| u64", "| 4 × max 2 | u32"));
-    ac5_denial_a_parent_that_is_not_a_name: ["AC5"], "AC5", "names its parent",
-        toml(|t| replace_all(t, &regex::escape(SEC_HEAD), &SEC_HEAD.replace("\"regime stamp\"\n", "true\n")));
-    ac5_denial_a_max_size_off_the_tiling: ["AC5"], "AC5", "tiles from bit 0 to max_size",
-        toml(|t| replace_all(t, &regex::escape(SEC_HEAD), &SEC_HEAD.replace("1252", "1253")));
-    ac5_denial_the_section_message_not_the_table: ["AC5"], "AC5", "a stamp section message of wire.toml is the markdown section table",
-        toml(|t| replace_all(t, &regex::escape(SEC_HEAD), &SEC_HEAD.replace("1252", "1253")));
-    ac5_denial_the_wrong_dscp: ["AC5"], "AC5", "is layer control at dscp",
-        toml(|t| replace_all(t, &regex::escape(SEC_HEAD), &SEC_HEAD.replace("dscp = 40", "dscp = 46")));
-    ac5_denial_an_exemption: ["AC5"], "AC5", "carries no exemption",
-        toml(|t| replace_all(t, &regex::escape(SEC_HEAD), &format!("{SEC_HEAD}exempt_from_control_bound = \"C-116\"\n")));
-    ac5_denial_the_request_size_differs: ["AC5"], "AC5", "agree row for row in offset, width and count, and in size",
-        toml(|t| replace_all(t, &regex::escape(REQ_HEAD), &REQ_HEAD.replace("max_size = 40", "max_size = 41")));
-    dod_denial_an_untagged_line: ["DoD"], "DoD", "every prose paragraph of 5 or more words in the regime stamp section",
-        stamp(|t| strip_tags(t, "^The maximum section count is 64"));
-    dod_denial_an_untagged_subsection: ["DoD"], "DoD", "every subsection of the regime stamp section carries an evidence tag",
-        stamp(|t| strip_tags(t, "^wire.toml declares the stamp section as"));
-    dod_denial_an_open_item_without_an_owner: ["DoD"], "DoD", "every Open item paragraph",
-        stamp(|t| replace_in_line(t, r"^\*\*Open item 1 —", "^", "Open item 99: the stamp's spare bits are unassigned `[decision]`.\n\n"));
-    ac5_denial_a_multi_line_string_the_reader_rejects: ["AC4", "AC5"], "AC5", "does not parse",
-        toml(|t| format!("{t}\n[[message]]\nname = \"\"\"spare\"\"\"\n"));
-    ac4_denial_a_heading_after_a_python_line_break: ["AC3", "AC4", "DoD"], "AC4", "has a Validity rules table",
-        stamp(|t| replace_in_line(t, "^Every malformed section or request is dropped", "^", "\u{2028}## Interlude\u{2028}"));
-    ac1_denial_a_word_character_only_python_knows: ["AC1"], "AC1", "a row for the typed body",
-        stamp(|t| replace_all(&replace_all(t, r"\bBody\b", "Body²"), r"\bbody\b", "body²"));
-    ac4_denial_a_validity_table_without_separator: ["AC4"], "AC4", "has a Validity rules table",
-        stamp(|t| replace_all(t, r"\| Invalid form \| Required outcome \|\n\|---\|---\|\n", "| Invalid form | Required outcome |\n"));
-    accepted_a_separator_row_only_the_scripts_accept: [], "", "",
-        stamp(|t| replace_all(t, r"\| Invalid form \| Required outcome \|\n\|---\|---\|\n", "| Invalid form | Required outcome |\n| - - | :-: |\n"));
-    ac1_denial_no_control_bound_where_the_script_stops: ["AC1"], "AC1", "the script stops here with a Python exception",
-        consts(|t| delete_row(t, r"^\| C-17 \|"));
-}
-
-/// Every denial fixture, run against the old script in the harness sandbox
-/// (the documents exported from the same in-memory fixture): the script's
-/// failed criteria must be exactly the denial's, as the port's are.
-/// Ignored by default: it needs Python and the script (from the working
-/// tree, or from git history once deleted).
-#[test]
-#[ignore = "runs the old script; needs python3 and git history"]
-fn denials_agree_with_the_script() {
-    let (text, from) =
-        script_source(&repo_root(), SPEC.id).expect("the script, in the tree or its history");
-    let control = Sandbox::new(base(), SPEC.id, &text, SPEC.script_env)
-        .expect("sandbox")
-        .run();
-    assert!(
-        control.passed,
-        "the script must pass on the unmutated documents: {}",
-        control.tail
-    );
-    let mut disagree = Vec::new();
-    for d in DENIALS {
-        let v = Sandbox::new(&(d.docs)(), SPEC.id, &text, SPEC.script_env)
-            .expect("sandbox")
-            .run();
-        let got: Vec<&str> = v.criteria.iter().map(String::as_str).collect();
-        let port: Vec<String> = run(&(d.docs)()).failed_criteria().into_iter().collect();
-        println!(
-            "DENIAL {} | port {:?} | script {:?} passed={}",
-            d.name, port, got, v.passed
-        );
-        if got != d.fails || v.passed != d.fails.is_empty() {
-            disagree.push(format!(
-                "{}: the script fails {got:?} (passed {}), the denial says {:?} ({})",
-                d.name, v.passed, d.fails, v.tail
-            ));
-        }
-    }
-    assert!(
-        disagree.is_empty(),
-        "script {from}:\n{}",
-        disagree.join("\n")
-    );
-}
+hadronyche_tools::denial_tests!(
+    SPEC;
+    denial_wire_md_missing,
+    denial_wire_toml_missing,
+    ac1_denial_constants_unread,
+    ac1_denial_a_malformed_hello_header_row,
+    ac1_denial_a_hello_header_row_missing,
+    ac1_denial_the_hello_width_unread,
+    ac1_denial_the_block_not_assigned,
+    ac1_denial_no_stamp_section,
+    ac1_denial_the_placeholder,
+    ac1_denial_a_malformed_stamp_row,
+    ac1_denial_no_section_table,
+    ac3_denial_no_request_table,
+    ac1_denial_the_section_header_rows_changed,
+    ac1_denial_the_version_width_differs_from_the_hello,
+    ac1_denial_no_version_comparison,
+    ac1_denial_no_section_length_row,
+    ac1_denial_section_rows_that_do_not_tile,
+    ac1_denial_the_section_maximum_not_stated,
+    ac1_denial_the_request_header_rows_changed,
+    ac3_denial_the_requested_module_id_narrowed,
+    ac1_denial_request_rows_that_do_not_tile,
+    ac1_denial_the_request_maximum_not_stated,
+    ac1_denial_a_type_code_outside_the_block,
+    ac2_denial_no_maximum_section_count,
+    ac2_denial_the_section_count_not_stated,
+    ac2_denial_the_peer_constants,
+    ac2_denial_the_stamp_size_not_stated,
+    ac2_denial_a_storage_figure_not_a_multiple,
+    ac2_denial_an_inexact_product,
+    ac2_denial_a_total_without_its_reason,
+    ac3_denial_no_multicast_on_change,
+    ac3_denial_no_refresh_period,
+    ac3_denial_no_unicast_request,
+    ac3_denial_no_version_bump,
+    ac3_denial_no_unknown_type_skip,
+    ac3_denial_no_incomplete_discard,
+    ac3_denial_no_completeness_test,
+    ac3_denial_no_sender_part,
+    ac3_denial_the_return_path_not_a_decision,
+    ac3_denial_no_first_stamp_rule,
+    ac3_denial_no_new_instance_rule,
+    ac3_denial_no_fetch_only_when_stale,
+    ac3_denial_the_fetch_load_open_item_without_its_owners,
+    ac4_denial_the_enumeration_not_thirteen,
+    ac4_denial_no_validity_table,
+    ac4_denial_fewer_than_seven_forms,
+    ac4_denial_no_oversize_row,
+    ac4_denial_an_outcome_naming_no_member,
+    ac4_denial_oversize_not_oversize_control,
+    ac4_denial_disagreeing_sections_name_two_reasons,
+    ac4_denial_an_identical_repeat_named_a_rejection,
+    ac4_denial_a_toml_reason_outside_the_control_layer,
+    ac4_denial_a_table_reason_missing_from_wire_toml,
+    ac5_denial_wire_toml_does_not_parse,
+    ac5_denial_no_section_message,
+    ac5_denial_no_request_message,
+    ac5_denial_a_parent_that_is_not_a_name,
+    ac5_denial_a_max_size_off_the_tiling,
+    ac5_denial_the_section_message_not_the_table,
+    ac5_denial_the_wrong_dscp,
+    ac5_denial_an_exemption,
+    ac5_denial_the_request_size_differs,
+    dod_denial_an_untagged_line,
+    dod_denial_an_untagged_subsection,
+    dod_denial_an_open_item_without_an_owner,
+    ac5_denial_a_multi_line_string_the_reader_rejects,
+    ac4_denial_a_heading_after_a_python_line_break,
+    ac1_denial_a_word_character_only_python_knows,
+    ac4_denial_a_validity_table_without_separator,
+    accepted_a_separator_row_only_the_scripts_accept,
+    ac1_denial_no_control_bound_where_the_script_stops,
+    num_c17_ten_to_19,
+    num_c17_ten_to_20,
+    num_c17_ten_to_36,
+    num_c17_beyond_i128,
+    num_c17_leading_zero,
+    num_c17_leading_plus,
+    num_c17_superscript_after,
+    num_c17_superscript_before,
+    num_c17_underscore,
+    num_enum_big_value,
+    num_enum_beyond_i128,
+    num_enum_leading_zeros,
+    num_enum_empty_value,
+    num_enum_superscript,
+    num_enum_duplicate_row,
+    num_enum_duplicate_row_same_value,
+    num_enum_missing_layers_cell,
+    num_toml_dscp_underscore,
+    num_toml_dscp_string,
+    num_toml_dscp_padded_signed_string,
+    num_toml_dscp_bad_string,
+    num_toml_dscp_superscript_string,
+    num_toml_dscp_big,
+    num_toml_dscp_beyond_i128,
+    num_toml_dscp_float,
+    num_toml_dscp_plus,
+    num_toml_max_size_float,
+    num_toml_max_size_string,
+    num_toml_max_size_bool,
+    num_toml_max_size_bad_string,
+    num_toml_reasons_unhashable,
+    num_toml_reasons_an_integer,
+    num_request_empty_width_cell,
+    num_request_row_cut_to_two_cells,
+    num_figure_superscript_before,
+    num_figure_superscript_after,
+    num_figure_leading_zero,
+    num_figure_big,
+    num_figure_beyond_i128,
+);
 
 // ---------------------------------------------------------------- red phase
 
 /// The tree at the commit that added the script (045f432, "failing checks
 /// for the regime stamp message and request") fails every criterion, as
-/// the script did. Skipped when the commit is not in the clone.
+/// the script did. A missing commit fails the test
+/// (`DOCCHECK_ALLOW_SHALLOW=1` skips it visibly).
 #[test]
 fn red_phase_tree_fails_every_criterion() {
-    let commit = "045f4321a06f998d5161406b56d75c9cc7ec662c";
-    if !commit_exists(&repo_root(), commit) {
-        eprintln!("skipped: {commit} is not in this clone");
-        return;
-    }
-    let r = run(&Docs::at_commit(repo_root(), commit));
-    let failed: Vec<String> = r.failed_criteria().into_iter().collect();
-    assert_eq!(
-        failed,
-        ["AC1", "AC2", "AC3", "AC4", "AC5", "DoD"],
-        "{}",
-        r.render()
-    );
+    red_phase(&SPEC, "045f4321a06f998d5161406b56d75c9cc7ec662c", &["AC1", "AC2", "AC3", "AC4", "AC5", "DoD"]);
 }

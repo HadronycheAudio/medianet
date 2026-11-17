@@ -3,9 +3,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::landed::Landed;
+use super::hello::Landed;
 use super::stamp::Stamp;
 use crate::doccheck::Report;
+use crate::doccheck::rejection_members::reasons::{CAMEL_DIGITS, NON_REJECTION_004_24};
 use crate::doccheck::text::{has, has_i, head, rx};
 
 /// One validity row: (invalid form, outcome).
@@ -14,14 +15,12 @@ pub(crate) type Form = (String, String);
 /// 004-24's reason tokens (`outcome_tokens`): `[A-Z][a-z]+` then one or more
 /// `[A-Z][a-z0-9]+`.
 pub(crate) fn tokens(cell: &str) -> Vec<String> {
-    rx(r"\b[A-Z][a-z]+(?:[A-Z][a-z0-9]+)+\b").find_iter(cell).map(|m| m.as_str().to_string()).collect()
+    rx(CAMEL_DIGITS).find_iter(cell).map(|m| m.as_str().to_string()).collect()
 }
 
-/// 004-24's `NONREJ_RE` (it has `\bvalid\b` and lacks `no reason`).
-const NONREJ: &str = r"not a rejection|never a rejection|\bignored\b|\bvalid\b";
 
 fn members_of(o: &str, landed: &Landed) -> Vec<String> {
-    tokens(o).into_iter().filter(|t| landed.members.contains_key(t)).collect()
+    tokens(o).into_iter().filter(|t| landed.is_member(t)).collect()
 }
 
 fn category(form: &str) -> Option<&'static str> {
@@ -78,7 +77,7 @@ fn categories(invalid: &[&Form], landed: &Landed, report: &mut Report) {
     }
     for row in invalid {
         let mem = members_of(&row.1, landed);
-        let unknown: Vec<String> = tokens(&row.1).into_iter().filter(|t| !landed.members.contains_key(t)).collect();
+        let unknown: Vec<String> = tokens(&row.1).into_iter().filter(|t| !landed.is_member(t)).collect();
         let ok = !mem.is_empty() && unknown.is_empty() && mem.iter().all(|t| landed.layer(t).contains("control"));
         report.check("AC4", ok, format!("the outcome of '{}' names only members of the Rejection enumeration whose Layers include control; names {mem:?} and {unknown:?}", head(&row.0, 48)));
     }
@@ -99,7 +98,7 @@ fn repeats(st: &Stamp, all: &[Form], landed: &Landed, report: &mut Report) {
     let one = |r: &Form| members_of(&r.1, landed).into_iter().collect::<BTreeSet<_>>().len() == 1;
     report.check("AC4", !disagree.is_empty() && disagree.iter().all(|r| one(r)), "every row whose sections disagree names exactly one Reject reason");
     let ident: Vec<&Form> = all.iter().filter(|r| has_i("identical", &r.0)).collect();
-    let row_ok = ident.iter().any(|r| members_of(&r.1, landed).is_empty() && has_i(NONREJ, &r.1) && has_i("kept|held", &r.1));
+    let row_ok = ident.iter().any(|r| members_of(&r.1, landed).is_empty() && NON_REJECTION_004_24.is_match(&r.1) && has_i("kept|held", &r.1));
     let sent_ok = st.paras().any(|t| {
         has_i("identical", t)
             && has_i("repeat", t)
@@ -114,7 +113,7 @@ fn repeats(st: &Stamp, all: &[Form], landed: &Landed, report: &mut Report) {
 /// AC4; returns the reasons the invalid forms name (`_reasons_md`).
 pub(crate) fn ac4(st: &Stamp, landed: &Landed, report: &mut Report) -> BTreeSet<String> {
     let all = rows(st, report);
-    let invalid: Vec<&Form> = all.iter().filter(|r| !(has_i(NONREJ, &r.1) && members_of(&r.1, landed).is_empty())).collect();
+    let invalid: Vec<&Form> = all.iter().filter(|r| !(NON_REJECTION_004_24.is_match(&r.1) && members_of(&r.1, landed).is_empty())).collect();
     report.check("AC4", invalid.len() >= 7, format!("the stamp section lists at least 7 invalid forms with outcomes, not counting rows whose outcome is not a rejection (found {})", invalid.len()));
     categories(&invalid, landed, report);
     repeats(st, &all, landed, report);

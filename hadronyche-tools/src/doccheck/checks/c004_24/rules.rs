@@ -1,9 +1,9 @@
 //! AC3: the sender and receiver rules, and the review findings (first
 //! stamp, restarted peer, fetch only when stale, the fetch-load open item).
 
-use super::landed::Landed;
-use super::py::sentences_lower;
+use super::hello::Landed;
 use super::stamp::Stamp;
+use crate::doccheck::sentences::{SentenceSplit, split};
 use crate::doccheck::Report;
 use crate::doccheck::evidence::has_tag;
 use crate::doccheck::text::{has, has_i, head};
@@ -12,10 +12,8 @@ fn sender_receiver(st: &Stamp, landed: &Landed, report: &mut Report) {
     report.check("AC3", st.any_sent(&["multicast", "change"]), "a sender rule says the stamp is multicast to the control group on any regime change (C-18)");
     // Python formats None as "None" into the pattern; it can only match the
     // literal text "None s", which no sentence (lowered) contains.
-    let refresh = match landed.refresh_s {
-        Some(n) => format!(r"(?:^|[^\d.]){n} ?(s|seconds)\b"),
-        None => r"(?:^|[^\d.])None ?(s|seconds)\b".to_string(),
-    };
+    let n = landed.refresh_s.map_or("None".to_string(), |n| n.to_string());
+    let refresh = format!(r"(?<![\d.]){n} ?(s|seconds)\b");
     report.check("AC3", st.any_sent(&[&refresh, "refresh|every|period|interval"]), format!("a sender rule says the stamp is refreshed every {:?} s (C-18)", landed.refresh_s));
     report.check("AC3", st.any_sent(&["unicast", "request|fetch"]), "a request is unicast and gives an immediate fetch of the stamp (C-18)");
     report.check("AC3", st.any_sent(&["version", "bump|increment|advance|change"]), "the sender bumps the stamp version on any change of its stamp");
@@ -29,7 +27,7 @@ fn sender_receiver(st: &Stamp, landed: &Landed, report: &mut Report) {
 }
 
 fn review_findings(st: &Stamp, report: &mut Report) {
-    let tagged: Vec<String> = st.paras().filter(|t| has_tag(t)).flat_map(|t| sentences_lower(t, ".;:")).collect();
+    let tagged: Vec<String> = st.paras().filter(|t| has_tag(t)).flat_map(|t| split(t, SentenceSplit::COLON_004_24)).collect();
     let first = tagged.iter().any(|x| has(r"\bfirst\b|nothing held|no stamp held|none held|nothing is held", x) && has("section|stamp", x) && has(r"\baccept|\bstart|\bbegin", x));
     report.check("AC3", first, "a tagged receiver rule gives the outcome (accept, start or begin) for the first section of a peer when nothing is held or reassembled");
     let nonce = tagged.iter().any(|x| x.contains("nonce") && has(r"\bdifferent\b|\bnew\b|restart", x) && has("discard|replace|drop", x));
