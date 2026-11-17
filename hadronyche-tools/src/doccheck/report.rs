@@ -40,6 +40,11 @@ pub struct Report {
     pub failures: Vec<Failure>,
     /// The assertions that held, as (criterion, message), for the log.
     pub passes: Vec<(String, String)>,
+    /// Set when the script, on these documents, would have stopped with an
+    /// uncaught exception (a traceback, no FAIL line, exit 1): the port
+    /// models the crash as an outcome of its own, so the harness can match
+    /// it to the script's crash (lead ruling R14). A crashed report is red.
+    pub crash: Option<String>,
 }
 
 impl Report {
@@ -83,7 +88,15 @@ impl Report {
 
     /// True when nothing failed.
     pub fn passed(&self) -> bool {
-        self.failures.is_empty()
+        self.failures.is_empty() && self.crash.is_none()
+    }
+
+    /// Records that the script would crash here (the first crash wins: the
+    /// script stops at it).
+    pub fn crash(&mut self, why: impl Into<String>) {
+        if self.crash.is_none() {
+            self.crash = Some(why.into());
+        }
     }
 
     /// The criteria with at least one failure.
@@ -101,11 +114,13 @@ impl Report {
 
     /// Every failure, one per line.
     pub fn render(&self) -> String {
-        self.failures
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n")
+        let mut lines: Vec<String> = self.failures.iter().map(ToString::to_string).collect();
+        if let Some(why) = &self.crash {
+            lines.push(format!(
+                "CRASH (the script stops with an uncaught exception): {why}"
+            ));
+        }
+        lines.join("\n")
     }
 }
 

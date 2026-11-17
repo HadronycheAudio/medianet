@@ -66,7 +66,7 @@ pub fn norm_title(text: &str) -> String {
 
 /// A heading text without its section number (`3.7 Copies` -> `Copies`).
 pub fn unnumbered(text: &str) -> String {
-    rx(r"^\d+(\.\d+)*\.?\s+").replace(text, "").into_owned()
+    rx(r"^\d+(\.\d+)*\.?\s+").replace(text, "")
 }
 
 fn fence_mask(lines: &[String], policy: FencePolicy) -> Vec<bool> {

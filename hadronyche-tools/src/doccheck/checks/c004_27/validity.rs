@@ -4,7 +4,7 @@
 use crate::doccheck::pycompat::PyStr;
 use super::landed::Landed;
 use super::messages::Probe;
-use super::{sentences, tables};
+use crate::doccheck::family004::{sentences, tables};
 use crate::doccheck::Report;
 use crate::doccheck::text::{has, has_i, rx};
 

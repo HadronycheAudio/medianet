@@ -2,11 +2,11 @@
 //!
 //! ```text
 //! cargo run --release -p hadronyche-tools --bin doccheck-equiv -- <id>|--all
-//!     [--seeds 2026,7] [--limit 2000] [--no-red] [--no-denials] [--denials-only]
+//!     [--seeds 2026,7,31337,99] [--limit 2000] [--no-red] [--no-denials] [--denials-only] [--jobs 4]
 //!     [--out FILE] [--full]
 //! ```
 //!
-//! The defaults are the committed run: (a), (b), two seeds of 2 000
+//! The defaults are the committed run: (a), (b), four seeds of 2 000
 //! mutations and the denial list. `--denials-only` runs (a) and the denial
 //! list against the old script (no corpus). `--all` runs every registered
 //! port (after any library change) and, with `--out DIR`, writes
@@ -14,6 +14,8 @@
 //! row). Exits 1 when a port is not equivalent. A development tool: it
 //! needs the old scripts and Python, and is never run by the per-change
 //! suite.
+
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: a command-line tool
 
 use std::process::exit;
 
@@ -24,7 +26,7 @@ use hadronyche_tools::doccheck::equiv::{Options, render, render_full, run};
 fn usage() -> ! {
     let ids: Vec<&str> = checks::registry().iter().map(|s| s.id).collect();
     eprintln!(
-        "usage: doccheck-equiv <id>|--all [--seeds A,B] [--limit N] [--no-red] [--no-denials] [--denials-only] [--out PATH] [--full]\nported checks: {}",
+        "usage: doccheck-equiv <id>|--all [--seeds A,B] [--limit N] [--no-red] [--no-denials] [--denials-only] [--jobs N] [--out PATH] [--full]\nported checks: {}",
         ids.join(", ")
     );
     exit(2)
@@ -72,6 +74,7 @@ fn parse() -> Args {
             }
             "--out" => a.out = Some(value()),
             "--full" => a.full = true,
+            "--jobs" => a.opts.jobs = value().parse().unwrap_or_else(|_| usage()),
             _ => usage(),
         }
     }
@@ -81,6 +84,12 @@ fn parse() -> Args {
 fn main() {
     let a = parse();
     let all = a.ids.len() > 1;
+    if all && let Some(dir) = &a.out {
+        std::fs::create_dir_all(dir).unwrap_or_else(|e| {
+            eprintln!("cannot create {dir}: {e}");
+            exit(2)
+        });
+    }
     let mut failed = false;
     for spec in &a.ids {
         let outcome = match run(spec, &repo_root(), &a.opts, &mut |l| {

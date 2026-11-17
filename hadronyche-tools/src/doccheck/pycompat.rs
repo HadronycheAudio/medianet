@@ -46,19 +46,37 @@ pub fn is_nd(c: char) -> bool {
 const PY_W: &str = r"\p{L}\p{N}_";
 const PY_S: &str = r"\s\x1c-\x1f";
 
-/// Rewrites a Python pattern for the `regex` crate with Python's classes:
-/// `\w` `\W` `\s` `\S`, inside and outside character classes. Everything
-/// else passes through (`\d` is Unicode `Nd` in both).
-pub fn translate(pattern: &str) -> String {
+/// Rewrites a Python pattern with Python's classes and boundaries: `\w`
+/// `\W` `\s` `\S` inside and outside character classes, and `\b` `\B` as
+/// look-arounds over Python's word class. Returns the pattern and whether
+/// it needs look-around (`fancy-regex`). Everything else passes through
+/// (`\d` is Unicode `Nd` in both).
+pub fn translate(pattern: &str) -> (String, bool) {
+    translate_with(pattern, PY_BOUNDARY, PY_NOT_BOUNDARY)
+}
+
+/// The pattern with `\b`/`\B` removed: it matches wherever the translated
+/// pattern does (and more), so it is a sound prefilter for it.
+pub fn relaxed(pattern: &str) -> String {
+    translate_with(pattern, "", "").0
+}
+
+fn translate_with(pattern: &str, boundary: &str, not_boundary: &str) -> (String, bool) {
     let mut out = String::with_capacity(pattern.len() + 16);
     let mut chars = pattern.chars().peekable();
     let mut in_class = false;
+    let mut fancy = false;
     while let Some(c) = chars.next() {
         if c == '\\' {
             let Some(n) = chars.next() else {
                 out.push('\\');
                 break;
             };
+            if !in_class && (n == 'b' || n == 'B') {
+                fancy = true;
+                out.push_str(if n == 'b' { boundary } else { not_boundary });
+                continue;
+            }
             out.push_str(&escape_for(n, in_class));
             continue;
         }
@@ -80,8 +98,16 @@ pub fn translate(pattern: &str) -> String {
         }
         out.push(c);
     }
-    out
+    (out, fancy)
 }
+
+/// Python's `\b`: between a Python word character and a non-word one (or
+/// the start or end of the text).
+const PY_BOUNDARY: &str =
+    r"(?:(?<=[\p{L}\p{N}_])(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])(?=[\p{L}\p{N}_]))";
+/// Python's `\B`.
+const PY_NOT_BOUNDARY: &str =
+    r"(?:(?<=[\p{L}\p{N}_])(?=[\p{L}\p{N}_])|(?<![\p{L}\p{N}_])(?![\p{L}\p{N}_]))";
 
 fn escape_for(n: char, in_class: bool) -> String {
     match (n, in_class) {
@@ -357,15 +383,27 @@ mod tests {
     fn python_word_class() {
         assert!(is_word('²') && is_word('a') && is_word('_') && is_word('٣'));
         assert!(!is_word('\u{301}') && !is_word('-'));
-        let re = regex::Regex::new(&translate(r"[^\w\- ]")).unwrap();
+        let re = regex::Regex::new(&translate(r"[^\w\- ]").0).unwrap();
         assert!(!re.is_match("²"), "² is a Python word character");
         assert!(re.is_match("\u{301}"), "a combining mark is not");
-        let w = regex::Regex::new(&translate(r"^\w+$")).unwrap();
+        let w = regex::Regex::new(&translate(r"^\w+$").0).unwrap();
         assert!(w.is_match("x²"));
-        let s = regex::Regex::new(&translate(r"^\s$")).unwrap();
+        let s = regex::Regex::new(&translate(r"^\s$").0).unwrap();
         assert!(s.is_match("\u{1c}") && s.is_match(" "));
-        assert_eq!(translate(r"a\\w[]x]"), r"a\\w[\]x]");
-        assert_eq!(translate(r"\d\.\("), r"\d\.\(");
+        assert_eq!(translate(r"a\\w[]x]").0, r"a\\w[\]x]");
+        assert_eq!(translate(r"\d\.\(").0, r"\d\.\(");
+        assert!(translate(r"\bx").1 && !translate(r"x").1);
+        let b = crate::doccheck::text::rx(r"branch\b");
+        assert!(
+            !b.is_match("branch²"),
+            "² is a Python word character: no boundary"
+        );
+        assert!(
+            b.is_match("branch\u{301}"),
+            "a combining mark is not: a boundary"
+        );
+        assert!(b.is_match("branch.") && b.is_match("branch"));
+        assert!(crate::doccheck::text::rx(r"a\Bb").is_match("ab"));
     }
 
     #[test]

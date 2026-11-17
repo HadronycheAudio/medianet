@@ -201,13 +201,28 @@ fn make_executable(_path: &Path) -> std::io::Result<()> {
 }
 
 /// The verdict of a script from its exit status and output.
+///
+/// FAIL labels are `FAIL <label>:` with `<label>` letters, optionally a
+/// space or `-` and digits (`AC1`, `AC 1`, `AC-1`, `DoD`), normalised by
+/// dropping the space or `-`. A crash is the interpreter's own traceback: a
+/// line `Traceback (most recent call last):` at column 0 after the last
+/// FAIL, PASS, OK or NOTE line (a FAIL message that quotes the words is not
+/// one), or a non-zero exit with no FAIL line at all.
 pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
-    let criteria: BTreeSet<String> = rx(r"(?m)^FAIL ([A-Za-z]+ ?[0-9]*):")
-        .captures_iter(output)
-        .map(|c| c[1].replace(' ', ""))
+    let lines: Vec<&str> = output.lines().collect();
+    let label = rx(r"^FAIL ([A-Za-z]+(?:[ -]?[0-9]+)?):");
+    let criteria: BTreeSet<String> = lines
+        .iter()
+        .filter_map(|l| label.captures(l).map(|c| c[1].replace([' ', '-'], "")))
         .collect();
-    let crashed =
-        output.contains("Traceback (most recent call last)") || (!exit_ok && criteria.is_empty());
+    let last_report = lines
+        .iter()
+        .rposition(|l| rx(r"^(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
+        .map_or(0, |i| i + 1);
+    let traceback = lines[last_report..]
+        .iter()
+        .any(|l| l.starts_with("Traceback (most recent call last):"));
+    let crashed = traceback || (!exit_ok && criteria.is_empty());
     let outcome = if crashed {
         ScriptOutcome::Crash
     } else if exit_ok && criteria.is_empty() {
@@ -215,7 +230,6 @@ pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
     } else {
         ScriptOutcome::Red
     };
-    let lines: Vec<&str> = output.lines().collect();
     ScriptVerdict {
         outcome,
         anomaly: exit_ok && !criteria.is_empty(),
@@ -293,6 +307,26 @@ mod tests {
         assert_eq!(verdict(false, "").outcome, ScriptOutcome::Crash);
         let odd = verdict(true, "FAIL AC1: x");
         assert!(odd.anomaly && odd.outcome == ScriptOutcome::Red);
+        let quoted = verdict(
+            false,
+            "FAIL AC2: the text says Traceback (most recent call last): x",
+        );
+        assert_eq!(
+            quoted.outcome,
+            ScriptOutcome::Red,
+            "a quoted traceback is not a crash"
+        );
+        let after = verdict(
+            false,
+            "FAIL AC1: x\nTraceback (most recent call last):\n  File",
+        );
+        assert_eq!(
+            after.outcome,
+            ScriptOutcome::Crash,
+            "a traceback after the last FAIL is"
+        );
+        let dash = verdict(false, "FAIL AC-1: x\nFAIL AC 2: y");
+        assert!(dash.criteria.contains("AC1") && dash.criteria.contains("AC2"));
     }
 
     #[test]

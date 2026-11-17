@@ -1,0 +1,52 @@
+# hadronyche-tools: a document check reads only the `Docs` it is given (lead
+# ruling R16, which replaced the textual scan of round 1). Clippy resolves
+# these paths through aliases and renamed imports (`use std::{fs as f}`).
+# The allow-list is explicit: `#![allow(clippy::disallowed_methods,
+# clippy::disallowed_types)]` appears only in src/doccheck/docs.rs (which
+# implements the document sources), src/doccheck/testing.rs (the test
+# helpers: the working tree, the red-phase tree, and the source tests),
+# src/doccheck/equiv/ (the harness, which runs scripts in sandboxes), the
+# crate's other tools (src/wire_tables.rs, src/metrics_check.rs, src/bin/,
+# build.rs) and their own test files (tests/wire_tables.rs,
+# tests/metrics_check.rs). A source test in testing.rs fails if any check
+# module or check test file names one of these attributes.
+disallowed-methods = [
+    { path = "std::fs::read", reason = "a check reads only its Docs" },
+    { path = "std::fs::read_to_string", reason = "a check reads only its Docs" },
+    { path = "std::fs::read_dir", reason = "a check reads only its Docs" },
+    { path = "std::fs::write", reason = "a check writes nothing" },
+    { path = "std::fs::copy", reason = "a check writes nothing" },
+    { path = "std::fs::rename", reason = "a check writes nothing" },
+    { path = "std::fs::create_dir", reason = "a check writes nothing" },
+    { path = "std::fs::create_dir_all", reason = "a check writes nothing" },
+    { path = "std::fs::remove_file", reason = "a check writes nothing" },
+    { path = "std::fs::remove_dir_all", reason = "a check writes nothing" },
+    { path = "std::fs::metadata", reason = "a check reads only its Docs" },
+    { path = "std::fs::symlink_metadata", reason = "a check reads only its Docs" },
+    { path = "std::fs::canonicalize", reason = "a check reads only its Docs" },
+    { path = "std::fs::File::open", reason = "a check reads only its Docs" },
+    { path = "std::fs::File::create", reason = "a check writes nothing" },
+    { path = "std::path::Path::exists", reason = "a check reads only its Docs (Docs::is_file)" },
+    { path = "std::path::Path::is_file", reason = "a check reads only its Docs (Docs::is_file)" },
+    { path = "std::path::Path::is_dir", reason = "a check reads only its Docs" },
+    { path = "std::path::Path::read_dir", reason = "a check reads only its Docs" },
+    { path = "std::process::Command::new", reason = "a check runs no process" },
+    { path = "std::process::exit", reason = "a check reports, never exits" },
+    { path = "std::env::var", reason = "a check reads no environment" },
+    { path = "std::env::var_os", reason = "a check reads no environment" },
+    { path = "std::env::vars", reason = "a check reads no environment" },
+    { path = "std::env::args", reason = "a check reads no environment" },
+    { path = "std::env::current_dir", reason = "a check reads no environment" },
+    { path = "std::env::temp_dir", reason = "a check reads no environment" },
+    { path = "hadronyche_tools::doccheck::docs::Docs::repo", reason = "a check reads only the Docs it is given (tests: doccheck::testing)" },
+    { path = "hadronyche_tools::doccheck::docs::Docs::dir", reason = "a check reads only the Docs it is given" },
+    { path = "hadronyche_tools::doccheck::docs::Docs::at_commit", reason = "a check reads only the Docs it is given (red phase: testing::red_phase)" },
+    { path = "hadronyche_tools::doccheck::docs::repo_root", reason = "a check reads only the Docs it is given" },
+    { path = "hadronyche_tools::doccheck::docs::commit_exists", reason = "a check reads only the Docs it is given" },
+]
+disallowed-types = [
+    { path = "std::fs::File", reason = "a check reads only its Docs" },
+    { path = "std::fs::OpenOptions", reason = "a check reads only its Docs" },
+    { path = "std::process::Command", reason = "a check runs no process" },
+    { path = "std::process::Child", reason = "a check runs no process" },
+]

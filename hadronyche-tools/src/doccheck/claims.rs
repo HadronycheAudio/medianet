@@ -1,22 +1,68 @@
-//! Positive statements, verdict words and designations.
+//! Positive statements, verdict words and designations, for NEW checks.
 //!
-//! The recurrent defect this module exists for: a keyword regex satisfied by
-//! its own denial ("not confirmed" matching "confirmed"). A positive
-//! statement is a keyword match in a clause with no negation word before it,
-//! in one of two explicit directions ([`must_affirm`], [`claims`]); a verdict
-//! is exactly one of a set of words stated positively; a designation is a
-//! pattern that a bare year never satisfies.
+//! Scope (lead ruling R15): natural-language negation cannot be made
+//! complete. These are keyword detectors, not semantics. A PORT never uses
+//! them in place of its script's own regex: it reproduces the script's
+//! pattern exactly. A new check may use them, knowing what they handle:
+//!
+//! * negation words: not, never, no, nor, cannot, without, neither, any
+//!   `n't`, nobody, none (also "none of"), nothing, nowhere, hardly,
+//!   scarcely, barely, "far from", "failed to"/"fails to"/"fail to";
+//! * not negations: "not only", "without doubt", "no doubt";
+//! * a clause ends at `.` `;` `:` `!` `?` (not inside a number), a comma, a
+//!   dash, a parenthesis, "but", "whereas", "while"; a sentence that ends
+//!   with `?` states nothing;
+//! * [`must_affirm`] ("the document must say X"): X with no negation word
+//!   before it in its clause;
+//! * [`claims`] ("the document must not say X"): X counts as said unless an
+//!   odd number of negation words stand before it AFTER the last of "and",
+//!   "or", "that", "which", "because", "if", "so" in its clause ("Not
+//!   refuted and confirmed" says "confirmed"; "never was it doubted that it
+//!   is confirmed" says it).
+//!
+//! Known limits: a negation in a governing clause before "that" is not seen
+//! by [`claims`] ("it is not true that it was never confirmed" does not
+//! count as saying "confirmed"); negative verbs and adjectives ("denied",
+//! "lacks", "unconfirmed", "doubtful") are not negations; irony, scope over
+//! lists, and negation carried across sentences are not handled; quoted
+//! speech counts as stated.
+//!
+//! A verdict is exactly one of a set of words stated positively; a
+//! designation is a pattern that no bare year or year range satisfies.
 
 use super::text::rx;
 
-/// The negation words of a clause: not, never, no, nor, cannot, without,
-/// neither, and any `n't` contraction.
-pub const NEGATION: &str = r"(?i)\b(?:not|never|no|nor|cannot|without|neither)\b|n't\b|n’t\b";
+/// The negation words of a clause.
+pub const NEGATION: &str = concat!(
+    r"(?i)\b(?:not|never|no|nor|cannot|without|neither|nobody|none|nothing|nowhere|hardly|scarcely|barely)\b",
+    r"|n't\b|n’t\b|(?i:\bfar\s+from\b|\bfail(?:s|ed)?\s+to\b)"
+);
 
-/// The clauses of `text`: cut at sentence punctuation (`.` `;` `:` `!` `?`
-/// not inside a number), commas, dashes, parentheses and the conjunctions
-/// "but", "whereas", "while".
+/// Phrases that contain a negation word but do not negate.
+const NOT_NEGATION: &str = r"(?i)^(?:not\s+only\b|without\s+(?:a\s+)?doubt\b|no\s+doubt\b)";
+
+/// Words after which a negation before them no longer governs ([`claims`]).
+const SCOPE_BREAK: &str = r"(?i)\b(?:and|or|that|which|because|if|so)\b";
+
+/// The clauses of `text` that are statements: cut at sentence punctuation
+/// (`.` `;` `:` `!` `?` not inside a number), commas, dashes, parentheses and
+/// the conjunctions "but", "whereas", "while"; the clauses of a sentence that
+/// ends with `?` are dropped.
 pub fn clauses(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    for m in rx(r"[.!?](?:\s|$)").find_iter(text) {
+        let sentence = &text[start..m.end()];
+        start = m.end();
+        if !sentence.trim_end().ends_with('?') {
+            out.extend(sentence_clauses(sentence));
+        }
+    }
+    out.extend(sentence_clauses(&text[start..]));
+    out
+}
+
+fn sentence_clauses(text: &str) -> Vec<&str> {
     let cut = rx(r"(?i)[;:!?,()—–]|\.(?:\s|$)|\s-\s|\b(?:but|whereas|while)\b");
     let mut out = Vec::new();
     let mut start = 0;
@@ -33,62 +79,62 @@ pub fn clauses(text: &str) -> Vec<&str> {
 
 /// True when `clause` holds a negation word anywhere.
 pub fn is_negated(clause: &str) -> bool {
-    rx(NEGATION).is_match(clause)
+    negations_in(clause, 0, clause.len()) > 0
 }
 
-/// The negation words of `clause` before byte `at`, "not only" excluded
-/// (it introduces an addition, not a denial).
-pub fn negations_before(clause: &str, at: usize) -> usize {
-    let head = &clause[..at];
+/// The negation words of `clause[from..to]`, the non-negating phrases left
+/// out.
+fn negations_in(clause: &str, from: usize, to: usize) -> usize {
     rx(NEGATION)
-        .find_iter(head)
-        .filter(|m| !rx(r"(?i)^not\s+only\b").is_match(&clause[m.start()..]))
+        .find_iter(&clause[..to])
+        .filter(|m| m.start() >= from && !rx(NOT_NEGATION).is_match(&clause[m.start()..]))
         .count()
 }
 
-fn matches_with_negations<'a>(text: &'a str, pattern: &str) -> Vec<(&'a str, usize)> {
-    let re = rx(pattern);
-    let mut out = Vec::new();
-    for c in clauses(text) {
-        for m in re.find_iter(c) {
-            out.push((c, negations_before(c, m.start())));
-        }
-    }
-    out
+/// The negation words of `clause` before byte `at` ([`must_affirm`]).
+pub fn negations_before(clause: &str, at: usize) -> usize {
+    negations_in(clause, 0, at)
+}
+
+/// The negation words before byte `at` that still govern it: those after
+/// the last scope break ([`claims`]).
+fn governing_negations(clause: &str, at: usize) -> usize {
+    let from = rx(SCOPE_BREAK)
+        .find_iter(&clause[..at])
+        .last()
+        .map_or(0, |m| m.end());
+    negations_in(clause, from, at)
 }
 
 /// Direction "must affirm": true when some clause of `text` states
-/// `pattern` with no negation word before it in the clause. "Confirmed and
-/// not refuted" affirms "confirmed"; "not confirmed" and a double negation
-/// ("not true that it was never confirmed") do not; a negation in another
-/// sentence or clause does not count. Use it where the document must SAY
-/// something; never for a prohibition (see [`claims`]).
+/// `pattern` with no negation word before it in the clause (see the module
+/// documentation for the forms handled and the limits). Never for a
+/// prohibition: use [`claims`].
 pub fn must_affirm(text: &str, pattern: &str) -> bool {
-    matches_with_negations(text, pattern)
+    let re = rx(pattern);
+    clauses(text)
         .iter()
-        .any(|(_, n)| *n == 0)
+        .any(|c| re.find_iter(c).any(|m| negations_before(c, m.start()) == 0))
 }
 
 /// Direction "must not claim": true when some clause of `text` states
-/// `pattern` with an even number of negation words before it (none, or a
-/// double negation, which affirms). Only a single negation before the
-/// keyword in the same clause makes a mention harmless. Use it where the
-/// document must NOT say something.
+/// `pattern` without an odd number of governing negation words before it
+/// (see the module documentation).
 pub fn claims(text: &str, pattern: &str) -> bool {
-    matches_with_negations(text, pattern)
-        .iter()
-        .any(|(_, n)| n % 2 == 0)
+    let re = rx(pattern);
+    clauses(text).iter().any(|c| {
+        re.find_iter(c)
+            .any(|m| governing_negations(c, m.start()).is_multiple_of(2))
+    })
 }
 
 /// The clauses of `text` that state `pattern` positively ([`must_affirm`]).
 pub fn positive_clauses<'a>(text: &'a str, pattern: &str) -> Vec<&'a str> {
-    let mut out: Vec<&str> = matches_with_negations(text, pattern)
+    let re = rx(pattern);
+    clauses(text)
         .into_iter()
-        .filter(|(_, n)| *n == 0)
-        .map(|(c, _)| c)
-        .collect();
-    out.dedup();
-    out
+        .filter(|c| re.find_iter(c).any(|m| negations_before(c, m.start()) == 0))
+        .collect()
 }
 
 /// [`must_affirm`], under its former name.
@@ -121,12 +167,13 @@ pub fn exactly_one_of<'w>(text: &str, words: &[&'w str]) -> Result<&'w str, Vec<
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Designation {
     /// "2nd edition", "edition 3", "Ed. 2", "third edition" (an edition
-    /// number has one or two digits, so "edition 2019" is not one); or a document
-    /// number with its year: a standards body prefix (IEEE, IEC, ISO, AES,
-    /// ITU-T, ANSI, SMPTE, EBU, ETSI, RFC) and a number, or letters joined to
-    /// a number of two digits or more ("IEEE 1588-2019", "AES67-2018",
-    /// "IEC 61883-6:2005"). A bare year or year range ("2019-2020", "In
-    /// 2019-2020", "Q3-2019", "May 1-2019") is not an edition.
+    /// number has one or two digits); or a document identifier followed by
+    /// its year: optional letters ("IEEE ", "ST ", "G.", "AES", "ISO/IEC ")
+    /// and a number whose leading digits are two or more and are not
+    /// themselves a year ("802.1AS-2020", "G.8275.1-2016", "ST 2110-30:2017",
+    /// "IEEE 1588-2019", "AES67-2018", "IEC 61883-6:2005"). No bare year or
+    /// year range is an edition, whatever precedes it ("2019-2020", "IEEE
+    /// 2019-2020", "FY2019-2020", "Q3-2019", "May 1-2019").
     Edition,
     /// "draft-ietf-tsvwg-foo-05", "Draft 3", "D3.1" after a document number.
     Draft,
@@ -145,8 +192,7 @@ pub fn designation_pattern(kind: Designation) -> String {
     match kind {
         Designation::Edition => concat!(
             r"(?i:\b(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+edition\b)",
-            r"|(?i:\bedition\s+\d{1,2}(?:\.\d+)?\b)|\bEd\.\s?\d{1,2}\b",
-            r"|\b(?:(?:IEEE|IEC|ISO|ISO/IEC|AES|ITU-T|ANSI|SMPTE|EBU|ETSI|RFC)\s?[A-Z]?\d[\d.]*(?:-\d+)*|[A-Z]{2,}\d{2,}(?:-\d+)*)[-:](?:19|20)\d\d\b"
+            r"|(?i:\bedition\s+\d{1,2}(?:\.\d+)?\b)|\bEd\.\s?\d{1,2}\b"
         )
         .to_string(),
         Designation::Draft => {
@@ -164,17 +210,40 @@ pub fn designation_pattern(kind: Designation) -> String {
     }
 }
 
-/// The designations of `kind` in `text`, as written.
-pub fn designations(text: &str, kind: Designation) -> Vec<String> {
-    rx(&designation_pattern(kind))
-        .find_iter(text)
-        .map(|m| m.as_str().to_string())
+/// A document identifier and its year (see [`Designation::Edition`]): the
+/// candidates, filtered so that the identifier's number is not a year.
+const ID_YEAR: &str = r"\b((?:[A-Z][A-Za-z]*(?:/[A-Z]+)?[.\s]?)*)(\d+(?:\.\d+)*[A-Za-z]*(?:-\d+)*)[-:]((?:19|20)\d\d)\b";
+
+fn identifier_year(text: &str) -> Vec<String> {
+    rx(ID_YEAR)
+        .captures_iter(text)
+        .filter(|c| {
+            let lead: String = c[2].chars().take_while(char::is_ascii_digit).collect();
+            let year_like = lead.len() == 4 && (lead.starts_with("19") || lead.starts_with("20"));
+            lead.len() >= 2 && !year_like
+        })
+        .map(|c| c[0].to_string())
         .collect()
 }
 
-/// True when `text` holds a designation of `kind` in a positive clause.
+/// The designations of `kind` in `text`, as written.
+pub fn designations(text: &str, kind: Designation) -> Vec<String> {
+    let mut out: Vec<String> = rx(&designation_pattern(kind))
+        .find_iter(text)
+        .map(|m| m.as_str().to_string())
+        .collect();
+    if kind == Designation::Edition {
+        out.extend(identifier_year(text));
+    }
+    out
+}
+
+/// True when `text` holds a designation of `kind` in a clause with no
+/// negation word ([`must_affirm`]'s direction).
 pub fn states_designation(text: &str, kind: Designation) -> bool {
-    affirms(text, &designation_pattern(kind))
+    clauses(text)
+        .iter()
+        .any(|c| !is_negated(c) && !designations(c, kind).is_empty())
 }
 
 #[cfg(test)]
@@ -212,13 +281,39 @@ mod tests {
             !must_affirm(t, "(?i)confirmed"),
             "must affirm wants a plain statement"
         );
-        assert!(claims(t, "(?i)confirmed"), "a double negation is a claim");
+        assert!(
+            !claims(t, "(?i)confirmed"),
+            "known limit: the negation before 'that' is not seen"
+        );
         // a guard word in another sentence
         let t = "It was not tested. It is confirmed.";
         assert!(must_affirm(t, "(?i)confirmed"));
         assert!(claims(t, "(?i)confirmed"));
         let t = "It was not confirmed.";
         assert!(!must_affirm(t, "(?i)confirmed") && !claims(t, "(?i)confirmed"));
+    }
+
+    #[test]
+    fn the_review_round_2_sentences() {
+        let c = "(?i)confirmed";
+        for t in [
+            "Not refuted and confirmed.",
+            "Never was it doubted that it is confirmed.",
+            "Without doubt confirmed.",
+        ] {
+            assert!(claims(t, c), "claims: {t}");
+        }
+        for t in [
+            "Nobody confirmed it.",
+            "None of the runs confirmed it.",
+            "It is hardly confirmed.",
+            "It is far from confirmed.",
+            "It failed to be confirmed.",
+            "It was confirmed? No.",
+        ] {
+            assert!(!must_affirm(t, c), "must_affirm: {t}");
+        }
+        assert!(must_affirm("No doubt it is confirmed.", c));
     }
 
     #[test]
@@ -265,6 +360,25 @@ mod tests {
             assert!(designations(bare, ed).is_empty(), "{bare}");
         }
         assert!(!designations("ISO/IEC 9899:2018", ed).is_empty());
+        for bare in [
+            "IEEE 2019-2020",
+            "ISO 2019:2020",
+            "RFC 2020-2021",
+            "AES 2019-2020",
+            "FY2019-2020",
+            "CY2020-2021",
+        ] {
+            assert!(designations(bare, ed).is_empty(), "{bare}");
+        }
+        for real in [
+            "802.1AS-2020",
+            "ITU-T G.8275.1-2016",
+            "SMPTE ST 2110-30:2017",
+            "IEEE 802.1AS-2020",
+            "AES67-2018",
+        ] {
+            assert!(!designations(real, ed).is_empty(), "{real}");
+        }
         assert_eq!(
             designations("IEEE 1588-2019 clause 7", ed),
             vec!["IEEE 1588-2019"]

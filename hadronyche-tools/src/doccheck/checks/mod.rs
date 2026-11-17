@@ -66,6 +66,10 @@ pub enum DiffClass {
     /// The script crashed (a traceback, no FAIL line) on input the port
     /// reports as a failure.
     ScriptCrashed,
+    /// An input holds a character outside the repertoire: the port is red by
+    /// rule. Applied by the harness itself whenever the port reports
+    /// `REPERTOIRE`; never listed in `KNOWN`.
+    OutsideRepertoire,
 }
 
 /// How the two verdicts differ.
@@ -99,7 +103,7 @@ impl DiffKind {
     /// True when `class` may excuse a difference of this kind.
     pub fn excused_by(self, class: DiffClass) -> bool {
         use DiffClass::*;
-        match self {
+        let by_kind = match self {
             DiffKind::ScriptRedPortPass | DiffKind::ScriptCrashPortPass => {
                 class == SubsetTomlReader
             }
@@ -111,7 +115,16 @@ impl DiffKind {
             }
             DiffKind::PortMissingCriteria => matches!(class, ScriptWrong | SubsetTomlReader),
             DiffKind::ScriptCrashPortRed => class == ScriptCrashed,
-        }
+        };
+        by_kind || (class == OutsideRepertoire && !self.weaker_if_port_passes())
+    }
+
+    /// True for the kinds where the port passes (no rule makes those red).
+    fn weaker_if_port_passes(self) -> bool {
+        matches!(
+            self,
+            DiffKind::ScriptRedPortPass | DiffKind::ScriptCrashPortPass
+        )
     }
 }
 
@@ -134,103 +147,43 @@ pub fn find(id: &str) -> Option<&'static CheckSpec> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
-
-    /// What a check, or a check's test file, must not use: a check reads
-    /// only the `Docs` it is given (lead ruling R4; it replaces 004-27's
-    /// self-grep "reads the working tree only, runs no other check"). Test
-    /// files get their documents from `doccheck::testing`, the allow-list.
-    const FORBIDDEN: &[&str] = &[
-        "std::process",
-        "Command",
-        "std::fs",
-        "fs::",
-        "File::",
-        "read_to_string",
-        "std::env",
-        "env::var",
-        "env!(",
-        "option_env!",
-        "include_str!",
-        "include_bytes!",
-        "std::net",
-        "at_commit",
-        "Docs::repo",
-        "Docs::dir",
-        "repo_root",
-        "commit_exists",
-        "PathBuf",
-        "std::path",
-    ];
-
-    fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
-        for e in std::fs::read_dir(dir).expect("readable").flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                sources(&p, out);
-            } else if p.extension().is_some_and(|x| x == "rs") {
-                out.push(p);
+    /// The real documents with one local corruption each, so the deep paths
+    /// behind a real probe section and a real traceability table run (review
+    /// round 2, e).
+    #[test]
+    fn no_check_panics_on_real_documents_with_one_corruption() {
+        let big = "9".repeat(60);
+        let base = crate::doccheck::testing::repo().clone();
+        let md = |old: &str, new: String| -> Box<dyn Fn(&str) -> String + 'static> {
+            let old = old.to_string();
+            Box::new(move |t: &str| t.replacen(&old, &new, 1))
+        };
+        type Edit = Box<dyn Fn(&str) -> String>;
+        let cases: Vec<(&str, Edit)> = vec![
+            ("doc/design/spec/wire.md", md("| 52 | 2 | u16 | Intended packet size", format!("| 52 | {big} | u16 | Intended packet size"))),
+            ("doc/design/spec/wire.md", md("| 54 | 1 × max 65453 |", format!("| {big} | 1 × max {big} |"))),
+            ("doc/design/spec/wire.md", md("| Rule 7 |", format!("| Rule {big} |"))),
+            ("doc/design/spec/wire.md", md("| C-122 |", format!("| C-{big} |"))),
+            ("doc/design/spec/wire.md", md("The reply's maximum size is 54 bytes", format!("The reply's maximum size is {big} bytes"))),
+            ("doc/design/spec/wire.md", md("### Path-MTU probe request", "#".to_string())),
+            ("doc/design/spec/wire.toml", md("offset = 384", "offset = 9223372036854775807\nwidth = 9223372036854775807\nmax_count = 9223372036854775807".into())),
+            ("doc/design/spec/wire.toml", md("max_size = 65507", format!("max_size = {big}"))),
+            ("doc/design/spec/wire.toml", md("dscp = 40", "field = \"x\"\nrejection_reasons = 7".into())),
+            ("doc/design/spec/wire.toml", md("[[message.field]]", "[[message.field]]\nname = [1]".into())),
+            ("doc/design/02-constants.md", md("1 280 bytes", format!("{big} bytes"))),
+        ];
+        for spec in super::registry() {
+            for (file, edit) in &cases {
+                let docs = base.mutate(file, |t| edit(t));
+                let run = spec.run;
+                let outcome = std::panic::catch_unwind(|| run(&docs));
+                assert!(
+                    outcome.is_ok(),
+                    "{} panicked on a corrupted {file}",
+                    spec.id
+                );
             }
         }
-    }
-
-    /// `bad` in `code` as a whole path (`refs::` does not contain `fs::`).
-    fn uses(code: &str, bad: &str) -> bool {
-        crate::doccheck::text::rx_raw(&format!(r"(?:^|[^A-Za-z0-9_]){}", regex::escape(bad)))
-            .is_match(code)
-    }
-
-    fn code_lines(text: &str) -> Vec<(usize, String)> {
-        text.lines()
-            .enumerate()
-            .map(|(i, l)| (i + 1, l.split("//").next().unwrap_or("").to_string()))
-            .collect()
-    }
-
-    #[test]
-    fn checks_read_only_their_docs() {
-        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut files = Vec::new();
-        sources(&crate_dir.join("src/doccheck/checks"), &mut files);
-        files.retain(|f| {
-            f.file_name().is_some_and(|n| n != "mod.rs")
-                || f.parent() != Some(&crate_dir.join("src/doccheck/checks"))
-        });
-        let tests = std::fs::read_dir(crate_dir.join("tests"))
-            .expect("tests/")
-            .flatten();
-        files.extend(tests.map(|e| e.path()).filter(|p| {
-            p.file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with("doc_"))
-        }));
-        assert!(files.len() >= 2, "the scan found no check source");
-        let mut hits = Vec::new();
-        for f in &files {
-            let text = std::fs::read_to_string(f).expect("readable");
-            for (n, code) in code_lines(&text) {
-                for bad in FORBIDDEN.iter().filter(|b| uses(&code, b)) {
-                    hits.push(format!("{}:{n}: uses `{bad}`", f.display()));
-                }
-            }
-        }
-        assert!(
-            hits.is_empty(),
-            "a check must read only the Docs it is given:\n{}",
-            hits.join("\n")
-        );
-    }
-
-    #[test]
-    fn the_scan_catches_a_process() {
-        let lines = code_lines(
-            "let x = 1; // std::process is fine in a comment\nstd::process::Command::new(\"git\");",
-        );
-        let found: Vec<_> = lines
-            .iter()
-            .filter(|(_, c)| FORBIDDEN.iter().any(|b| c.contains(b)))
-            .collect();
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].0, 2);
     }
 
     /// Lead ruling R8: a check reports, never panics, on malformed input.
@@ -257,7 +210,7 @@ mod tests {
             "[[message]]\n[[message.field]]\nwidth = 1".into(),
         ];
         let constants = format!("| C-06 | x | {big} |\n| C-17 | x | at most {big} bytes |");
-        let base = crate::doccheck::Docs::repo();
+        let base = crate::doccheck::testing::repo().clone();
         for spec in super::registry() {
             for md in &wire_md {
                 for t in &wire_toml {

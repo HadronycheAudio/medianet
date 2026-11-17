@@ -1,7 +1,7 @@
 //! AC1 (rules 1 to 22) and AC2 (the constants of the ticket's list).
 
-use crate::doccheck::pycompat::{PyStr, parse_int, py_eq_int};
-use toml::Value;
+use crate::doccheck::pycompat::{PyStr, parse_int};
+use crate::doccheck::pyvalue::PyValue;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::refs::{base_of, dangling, py_list, reference_resolves, rule_number};
@@ -85,7 +85,7 @@ const UNIT_AFTER: &str = r"\b(bytes?|ns|fs|ps|µs|us|ms|samples?|frames?|packets
 /// "`name` (N bits, unit)" or "`a`, `b`: N bits each, unit", N equal to a
 /// wire.toml width of the field (bytes converted), a unit after the width,
 /// and no other wire.toml field of the row without a width.
-pub fn width_problems(row: &Row, widths: &BTreeMap<String, Vec<Option<Value>>>) -> (usize, Vec<String>) {
+pub fn width_problems(row: &Row, widths: &BTreeMap<String, Vec<Option<PyValue>>>) -> (usize, Vec<String>) {
     let text = row.joined();
     let res = [
         rx(&format!(r"{NAMES}\s*\(\s*(\d+)\s*(bits?|bytes?)\b([^)]*)\)")),
@@ -106,7 +106,7 @@ pub fn width_problems(row: &Row, widths: &BTreeMap<String, Vec<Option<Value>>>) 
                 match (widths.get(n), bits) {
                     (None, _) => problems.push(format!("`{n}` is not a wire.toml field")),
                     (Some(_), None) => problems.push(format!("`{n}` is stated at {} {}, beyond what the check can compare", &gm[2], &gm[3])),
-                    (Some(w), Some(b)) if !w.iter().flatten().any(|v| py_eq_int(v, b)) => {
+                    (Some(w), Some(b)) if !w.iter().flatten().any(|v| v.eq_int(b)) => {
                         problems.push(format!("`{n}` is stated at {b} bits but wire.toml gives {}", py_list(w)));
                     }
                     (Some(_), Some(_)) => {}
@@ -184,7 +184,7 @@ fn not_visible_reasons(trace: Option<&Trace>, report: &mut Report) {
         let Some(m) = rx(r"(?i)not wire[- ]visible|not on the wire").find(&text) else { continue };
         let ids = expand_constant_ids(&text);
         let Some(first) = ids.first() else { continue };
-        let rest = rx(r"^[\s:;,\-–—(]+").replace(&text[m.end()..], "").into_owned();
+        let rest = rx(r"^[\s:;,\-–—(]+").replace(&text[m.end()..], "");
         if rest.py_split().count() < 3 {
             report.fail_at("AC2", WIRE_MD, row.line + 1, format!("a row says {} is not wire-visible without a reason of at least three words", cid(*first)));
         }

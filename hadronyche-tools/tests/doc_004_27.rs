@@ -14,7 +14,7 @@
 //! ticket). The script's DoD "the checker reads the working tree only and
 //! runs no other check" (it grepped its own text for a ref naming the main
 //! branch and for a sibling check) is now the library-wide test
-//! `doccheck::checks::tests::checks_read_only_their_docs`, which fails if
+//! `the clippy configuration (hadronyche-tools/clippy.toml) and doccheck::testing::source_rules`, which fails if
 //! any check or test file uses a process, a file, the environment, git or
 //! any document source other than the `Docs` it is given.
 //!
@@ -148,7 +148,8 @@ fn red_phase_tree_fails_every_criterion() {
 // One test per entry of the check's denial list
 // (`src/doccheck/checks/c004_27/denials.rs`), the same list the harness runs
 // against the old script (`doccheck-equiv 004-27 --denials-only`).
-hadronyche_tools::denial_tests!(SPEC;
+hadronyche_tools::denial_tests!(
+    SPEC;
     ac1_denial_no_probe_section,
     ac1_denial_the_placeholder,
     ac1_denial_a_header_row_missing,
@@ -189,4 +190,58 @@ hadronyche_tools::denial_tests!(SPEC;
     review_1f_a_triple_quoted_string_the_subset_reader_rejects,
     review_stricter_dscp_written_as_a_float,
     review_2_a_separator_with_an_inner_colon,
+    review_r026_ac3_outcome_names_a_non_member_badmagik,
+    review_r027_ac4_dscp_40_46_request,
+    review_r028_ac2_exemption_removed_from_request,
+    review_r029_ac2_exemption_added_to_reply,
+    review_r030_ac4_rejection_reasons_a_string_not_an_array,
+    review_r031_ac4_triple_quoted_string_valid_toml,
+    review_r032_ac4_dscp_as_float_40_0,
+    review_r033_ac1_width_changed_in_the_request_table,
+    review_r034_ac1_maximum_size_sentence_changed,
+    review_r035_ac1_reply_says_padded,
+    review_r036_ac1_cs5_40_cs5_48,
+    review_r037_ac1_rule_11_removed,
+    review_r038_ac1_decision_tag_removed_from_the_ruling,
+    review_r039_ac1_hello_header_width_changed,
+    review_r040_ac2_a_second_exemption_cited,
+    review_r041_dod_open_item_without_falsifier,
+    review_r042_dod_u_2028_starts_an_untagged_subsection,
+    review_r043_dod_form_feed_starts_an_untagged_subsection,
+    review_r044_ac3_separator_row_variant_in_validity_rules,
+    review_r046_crlf_line_ends_in_wire_md,
+    review_r047_const_c_17_bound_changed,
+    review_r048_ac1_fallback_number_removed_from_section,
+    review_r068_r2_b_before_combining_mark_reply_is_padded_u_0301,
+    review_r069_r2_re_i_dotted_i_reply_i_s_padded,
+    review_r070_r2_re_i_dotted_i_on_a_heading_vali_dity_rules,
+    review_r071_r2_split_with_x1f_untagged_5_word_paragraph,
+    review_r072_r2_lstrip_x1c_before_a_request_field_row,
+    review_r073_r2_lstrip_extra_padding_row_in_the_reply_prefixed_by_x1f,
+    review_r074_r2_universal_newlines_lone_r_starts_extra,
+    review_r075_r2_splitlines_x85_starts_extra,
+    review_r076_r2_splitlines_x1d_starts_extra,
+    review_r077_r2_d_non_ascii_width_magic,
+    review_r078_r2_d_non_ascii_maximum_size_bytes,
+    review_r079_r2_offset_cell_4_0_python_fullmatch_d_fails,
+    review_r080_r2_toml_offset_as_string_384,
+    review_r081_r2_toml_offset_as_string_with_non_ascii_digits,
+    review_r082_r2_toml_offset_as_string_with_underscore_3_84,
+    review_r083_r2_toml_dscp_hex_0x28,
+    review_r084_r2_toml_dscp_octal_0o50,
+    review_r085_r2_toml_dscp_leading_zero_040_invalid_toml,
+    review_r086_r2_toml_dscp_bool_true,
+    review_r087_r2_toml_duplicate_key_dscp,
+    review_r088_r2_toml_literal_multi_line_string_three_single_quotes,
+    review_r089_r2_toml_dotted_key_on_the_message,
+    review_r090_r2_toml_unicode_escape_in_layer,
+    review_r091_r2_toml_bare_unquoted_value_c_116_invalid_toml,
+    review_r092_r2_toml_rejection_reasons_an_integer,
+    review_r093_r2_toml_rejection_reasons_an_inline_table,
+    review_r094_r2_toml_rejection_reasons_mixed_array,
+    review_r095_r2_toml_comment_inside_multi_line_array,
+    review_r096_r2_toml_max_size_float_65507_0,
+    review_r097_r2_toml_max_size_date,
+    review_r098_r2_tablerules_lineregex_separator_with_spaces,
+    review_r099_r2_tablerules_drop_reply_table_without_separator,
 );

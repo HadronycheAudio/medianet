@@ -98,6 +98,8 @@
 //! cargo run --release --bin metrics-check -- <directory-or-file>
 //! ```
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: a tool of its own, not a document check
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

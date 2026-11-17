@@ -9,35 +9,36 @@ use super::pycompat::PyStr;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use regex::Regex;
-
-use super::pycompat::{IntError, is_nd, parse_int, translate};
+use super::pycompat::{IntError, is_nd, parse_int, relaxed, translate};
+use super::rx::Rx;
 
 /// The most distinct patterns the cache keeps. Patterns are keyed by their
 /// text; nearly all are literals written in the checks (a few hundred), a
 /// few embed a number read from a document (`\b1280\b`). Past the bound a
 /// pattern is compiled and returned without being cached, so a long harness
 /// run over thousands of mutated numbers cannot grow the cache without
-/// limit. Nothing is leaked: entries are `Arc`s.
+/// limit. Nothing is leaked: entries are `Arc`s (lead ruling R12: bounded).
 pub const RX_CACHE_LIMIT: usize = 4096;
 
-type Cache = Mutex<HashMap<String, Arc<Regex>>>;
+type Cache = Mutex<HashMap<String, Arc<Rx>>>;
 static PY_CACHE: OnceLock<Cache> = OnceLock::new();
 static RAW_CACHE: OnceLock<Cache> = OnceLock::new();
 
-fn cached(pattern: &str, python: bool) -> Arc<Regex> {
+fn cached(pattern: &str, python: bool) -> Arc<Rx> {
     let cache =
         if python { &PY_CACHE } else { &RAW_CACHE }.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
         return found.clone();
     }
-    let source = if python {
+    let (source, fancy) = if python {
         translate(pattern)
     } else {
-        pattern.to_string()
+        (pattern.to_string(), false)
     };
-    let compiled =
-        Arc::new(Regex::new(&source).unwrap_or_else(|e| panic!("bad pattern {pattern:?}: {e}")));
+    let pre = fancy.then(|| relaxed(pattern));
+    let compiled = Arc::new(
+        Rx::new(&source, pre.as_deref()).unwrap_or_else(|e| panic!("bad pattern {pattern:?}: {e}")),
+    );
     let mut cache = cache.lock().expect("regex cache");
     if cache.len() < RX_CACHE_LIMIT {
         cache.insert(pattern.to_string(), compiled.clone());
@@ -49,18 +50,18 @@ fn cached(pattern: &str, python: bool) -> Arc<Regex> {
 /// text (see [`RX_CACHE_LIMIT`]).
 ///
 /// Patterns are written as in the scripts; prefix `(?i)` for `re.I`. The
-/// classes `\w`, `\W`, `\s`, `\S` are Python's
-/// ([`super::pycompat::translate`]). The compiled regex is shared, not
-/// cloned: a clone of a [`Regex`] starts with an empty match cache. A bad
-/// pattern is a programming error in a check and panics with the pattern; a
-/// pattern that embeds document text must escape it ([`regex::escape`]).
-pub fn rx(pattern: &str) -> Arc<Regex> {
+/// classes `\w`, `\W`, `\s`, `\S` and the boundaries `\b`, `\B` are
+/// Python's ([`super::pycompat::translate`]); a pattern with `\b`/`\B` runs
+/// on `fancy-regex` ([`super::rx`]). A bad pattern is a programming error in
+/// a check and panics with the pattern; a pattern that embeds document text
+/// must escape it ([`regex::escape`]).
+pub fn rx(pattern: &str) -> Arc<Rx> {
     cached(pattern, true)
 }
 
 /// As [`rx`], with the `regex` crate's own semantics (Unicode properties
 /// written by the library itself, never a script's pattern).
-pub fn rx_raw(pattern: &str) -> Arc<Regex> {
+pub fn rx_raw(pattern: &str) -> Arc<Rx> {
     cached(pattern, false)
 }
 
@@ -161,9 +162,7 @@ pub fn head(text: &str, n: usize) -> String {
 
 /// Strips Markdown links to their text: `[text](target)` becomes `text`.
 pub fn strip_links(text: &str) -> String {
-    rx(r"\[([^\]]*)\]\([^)]*\)")
-        .replace_all(text, "$1")
-        .into_owned()
+    rx(r"\[([^\]]*)\]\([^)]*\)").replace_all(text, "$1")
 }
 
 #[cfg(test)]

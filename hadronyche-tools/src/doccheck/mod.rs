@@ -10,6 +10,8 @@
 //! * [`pycompat`] — the Python semantics the scripts ran on (`\w`,
 //!   `splitlines`, universal newlines, `normpath`, checked `int()`, `strip`,
 //!   TOML values as Python reads them);
+//! * [`repertoire`] — the characters the ports accept; outside them a
+//!   check is red by rule (criterion REPERTOIRE);
 //! * [`text`] — text helpers and the bounded regex cache (Python classes);
 //! * [`policy`] — the named variants of rules the scripts implement
 //!   differently (fences, heading match, section end, row split);
@@ -17,6 +19,7 @@
 //! * [`tables`] — tables as rows with header lookup;
 //! * [`units`] — paragraphs, list items, table rows and prose blocks with
 //!   line numbers;
+//! * [`family004`] — the 004 family's field-table and section helpers;
 //! * [`links`] — links and anchor resolution across files;
 //! * [`evidence`] — the six evidence tags and the named variants of the
 //!   untagged-claim rule;
@@ -26,6 +29,10 @@
 //!   exactly-one-of verdicts, designation patterns;
 //! * [`ticket`] — tickets (acceptance criteria, constants lists, depends-on)
 //!   and the constants table;
+//! * [`pyvalue`] — Python values as a script's TOML reader built them;
+//! * [`tomlsubset`], [`tomllib`] — the scripts' TOML readers: a faithful
+//!   port of the 004 family's hand-written reader, and `tomllib` through
+//!   the crate's parser, both proven on a committed corpus;
 //! * [`wire_toml`] — `wire.toml` through the crate's TOML parser;
 //! * [`mutate`] — mutation helpers for denial fixtures;
 //! * [`report`] — the result type and the test assertions;
@@ -44,17 +51,23 @@ pub mod denial;
 pub mod docs;
 pub mod equiv;
 pub mod evidence;
+pub mod family004;
 pub mod items;
 pub mod links;
 pub mod markdown;
 pub mod mutate;
 pub mod policy;
 pub mod pycompat;
+pub mod pyvalue;
+pub mod repertoire;
 pub mod report;
+pub mod rx;
 pub mod tables;
 pub mod testing;
 pub mod text;
 pub mod ticket;
+pub mod tomllib;
+pub mod tomlsubset;
 pub mod units;
 pub mod wire_toml;
 

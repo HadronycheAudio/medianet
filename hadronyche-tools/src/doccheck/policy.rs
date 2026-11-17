@@ -149,23 +149,19 @@ pub enum PathNorm {
     PyNormpath,
 }
 
-/// Which TOML reader the script used (review finding 1f, lead ruling R3).
-/// Ports read wire.toml with the crate's parser either way; the policy names
-/// what the harness must expect and how differences are classified.
+/// Which TOML reader the script used (lead ruling R14). A port reads
+/// `wire.toml` through a faithful port of ITS script's reader, so the
+/// script's verdict on any input is reproduced, not excused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TomlReader {
-    /// `tomllib` (004-22): a full TOML parser, the same language.
+    /// `tomllib` (004-22): the crate's TOML parser, values as Python's
+    /// ([`super::tomllib`]); its differences from `tomllib` on the corpus are
+    /// listed in `tomllib::KNOWN_DIFFERENCES`.
     Tomllib,
-    /// The hand-written subset reader of the 004 family (004-03, 06, 08-13,
-    /// 16-20, 24-29). It rejects valid TOML (`"""` strings) and accepts
-    /// invalid TOML (bare keys with spaces, integers beyond 64 bits).
-    /// Values are read through [`super::pycompat`] (`py_int`, `py_iter`,
-    /// `py_eq_int`) so type errors the script caught still fail. Where only
-    /// the readers differ, the difference is classified
-    /// `DiffClass::SubsetTomlReader` (the subset reader rejected valid TOML)
-    /// or `DiffClass::PortStricterTyped` (the typed parser rejects what the
-    /// subset reader let through).
-    SubsetReader,
+    /// The statement-scanner subset reader of 004-03 (a variant), 06, 08-13,
+    /// 16-20 and 24-29 (byte-identical in 004-06, 18, 24, 27), ported in
+    /// [`super::tomlsubset`] and proven on the corpus.
+    Subset004_18,
 }
 
 /// The regex word class (lead ruling R1). Not a parameter: every pattern

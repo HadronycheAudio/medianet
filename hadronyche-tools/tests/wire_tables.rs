@@ -84,6 +84,8 @@
 //! model then differs, and `RoundTrip` is the correct report. The fixture
 //! documents this locally.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the wire-table checker's own tests
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 

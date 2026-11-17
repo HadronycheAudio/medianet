@@ -14,7 +14,8 @@ use crate::doccheck::text::{rx, strip_links};
 pub fn rule_number(cell: &str) -> Option<u32> {
     rx(r"(?i)^\**\s*(?:rule\s*)?(\d{1,2})\s*\**$")
         .captures(cell.py_strip())
-        .and_then(|c| c[1].parse().ok())
+        .and_then(|c| crate::doccheck::pycompat::parse_int(&c[1]).ok())
+        .and_then(|n| u32::try_from(n).ok())
 }
 
 /// `reference_resolves`: a plain heading name, "Section, Subsection" or a
@@ -68,10 +69,10 @@ pub fn base_of(path: &str) -> &str {
 }
 
 /// Python's `repr` of a list of optional values: `[16, None]`.
-pub fn py_list(values: &[Option<toml::Value>]) -> String {
+pub fn py_list(values: &[Option<crate::doccheck::pyvalue::PyValue>]) -> String {
     let items: Vec<String> = values
         .iter()
-        .map(|v| v.as_ref().map_or("None".to_string(), |v| v.to_string()))
+        .map(|v| v.as_ref().map_or("None".to_string(), |v| v.py_repr()))
         .collect();
     format!("[{}]", items.join(", "))
 }
@@ -91,6 +92,6 @@ mod tests {
         assert!(reference_resolves("see `Copies`", &n));
         assert!(reference_resolves("x; Field table.", &n));
         assert!(!reference_resolves("Media packet, Field table", &n));
-        assert_eq!(py_list(&[Some(toml::Value::Integer(16)), None]), "[16, None]");
+        assert_eq!(py_list(&[Some(crate::doccheck::pyvalue::PyValue::Int(16)), None]), "[16, None]");
     }
 }

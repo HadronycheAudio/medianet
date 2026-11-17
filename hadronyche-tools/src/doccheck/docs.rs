@@ -9,6 +9,8 @@
 //!
 //! Paths are repository-relative with `/` separators (`doc/design/spec/wire.md`).
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the document sources themselves
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -5,7 +5,7 @@
 # has 0 failed and at least 12 passed (the count that stood before 004-27).
 # The script's self-greps (DoD "reads the working tree only and runs no
 # other check") are not here: the library test
-# doccheck::checks::tests::checks_read_only_their_docs scans every check's
+# the clippy configuration (hadronyche-tools/clippy.toml) and doccheck::testing::source_rules scans every check's
 # and test file's code for processes, files, the environment and any
 # other document source (lead ruling R4).
 if [ "$wire_check_rc" -eq 0 ] && printf '%s\n' "$wire_check_out" | grep -q 'checks clean'; then
