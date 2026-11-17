@@ -3,20 +3,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::doccheck::wp7::py;
 use super::Ctx;
 use crate::doccheck::Report;
+use crate::doccheck::rejection_members::reasons::{CAMEL_LETTERS, LOOKBACK_004_19, NON_REJECTION_004_20, negated_at};
+use crate::doccheck::text::{has, has_i, head, rx};
 
 const SHORT_FORM: &str = r"too\s+short|shorter\s+than|fewer\s+than|less\s+than|under\s+\d+\s+(?:bytes?|octets?)";
 
-/// 004-20's `NON_REJECTION`.
-pub(crate) const NON_REJECTION: &str = r"not\s+a\s+rejection|never\s+a\s+rejection|cannot\s+occur|ignored|is\s+not\s+counted|not\s+counted";
-
-const NEGATED: &str = r"\b(?:never|not|nor|rather than|instead of)\b[^|.;]*$";
-
 /// `category(form)`.
 fn category(form: &str) -> Option<&'static str> {
-    let h = |p: &str| py::has_i(p, form);
+    let h = |p: &str| has_i(p, form);
     Some(if h("dscp|codepoint") {
         "dscp"
     } else if h(SHORT_FORM) {
@@ -33,7 +29,7 @@ fn category(form: &str) -> Option<&'static str> {
         "reply"
     } else if h("bundle") {
         "bundle"
-    } else if py::has(r"\bA\b", form) {
+    } else if has(r"\bA\b", form) {
         "a"
     } else {
         return None;
@@ -51,31 +47,31 @@ fn exact(cat: &str) -> Option<&'static str> {
 }
 
 fn names_member(ctx: &Ctx, outcome: &str) -> bool {
-    ctx.members.names().any(|n| py::has(&format!(r"\b{n}\b"), outcome))
+    ctx.members.names().any(|n| has(&format!(r"\b{n}\b"), outcome))
 }
 
 fn rows_check(rows: &[Vec<String>], ctx: &Ctx, report: &mut Report) {
     let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
     for r in rows {
         let (form, outcome) = (&r[0], r[1..].join(" | "));
-        let argued = names_member(ctx, &outcome) || py::has_i(NON_REJECTION, &outcome);
+        let argued = names_member(ctx, &outcome) || NON_REJECTION_004_20.is_match(&outcome);
         let Some(cat) = category(form) else {
             if !argued {
-                report.fail("AC5", format!("the invalid-form row '{}' is outside the ticket's list and its outcome names no member of the closed enumeration nor argues a non-rejection: {}", py::head(form, 60), py::head(&outcome, 90)));
+                report.fail("AC5", format!("the invalid-form row '{}' is outside the ticket's list and its outcome names no member of the closed enumeration nor argues a non-rejection: {}", head(form, 60), head(&outcome, 90)));
             }
             continue;
         };
         *seen.entry(cat).or_default() += 1;
         if let Some(reason) = exact(cat)
-            && !py::has(&format!(r"\b{reason}\b"), &outcome)
+            && !has(&format!(r"\b{reason}\b"), &outcome)
         {
-            report.fail("AC5", format!("the invalid form '{}' must be counted under {reason} (the ticket names it): {}", py::head(form, 60), py::head(&outcome, 90)));
+            report.fail("AC5", format!("the invalid form '{}' must be counted under {reason} (the ticket names it): {}", head(form, 60), head(&outcome, 90)));
         }
         if matches!(cat, "bundle" | "a" | "reply") && !argued {
-            report.fail("AC5", format!("the invalid form '{}' needs a member reason or an argued non-rejection: {}", py::head(form, 60), py::head(&outcome, 90)));
+            report.fail("AC5", format!("the invalid form '{}' needs a member reason or an argued non-rejection: {}", head(form, 60), head(&outcome, 90)));
         }
-        if cat == "dscp" && !(py::has_i(NON_REJECTION, &outcome) || py::has("ReservedNonZero", &outcome)) {
-            report.fail("AC5", format!("the DSCP-above-63 form must say it cannot occur (6-bit field) or name the padding reason ReservedNonZero: {}", py::head(&outcome, 90)));
+        if cat == "dscp" && !(NON_REJECTION_004_20.is_match(&outcome) || has("ReservedNonZero", &outcome)) {
+            report.fail("AC5", format!("the DSCP-above-63 form must say it cannot occur (6-bit field) or name the padding reason ReservedNonZero: {}", head(&outcome, 90)));
         }
     }
     let wanted = [
@@ -102,16 +98,14 @@ fn tokens(rows: &[Vec<String>], ctx: &Ctx, report: &mut Report) -> BTreeSet<Stri
     let mut named = BTreeSet::new();
     for r in rows {
         let outcome = r[1..].join(" | ");
-        for h in py::finditer(r"\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b", &outcome, false) {
-            let at = py::char_index(&outcome, h.start);
-            let before = py::slice(&outcome, at.saturating_sub(25), at);
-            let negated = py::has_i(NEGATED, before);
-            if ctx.members.contains(h.all()) {
+        for h in rx(CAMEL_LETTERS).find_iter(&outcome) {
+            let negated = negated_at(&outcome, outcome[..h.start()].chars().count(), LOOKBACK_004_19);
+            if ctx.members.contains(h.as_str()) {
                 if !negated {
-                    named.insert(h.all().to_string());
+                    named.insert(h.as_str().to_string());
                 }
             } else if !negated {
-                report.fail("AC5", format!("the outcome names '{}', which is not in the closed enumeration", h.all()));
+                report.fail("AC5", format!("the outcome names '{}', which is not in the closed enumeration", h.as_str()));
             }
         }
     }
@@ -135,9 +129,9 @@ pub(crate) fn forms(ctx: &Ctx, report: &mut Report) -> (Vec<Vec<String>>, BTreeS
     }
     rows_check(&rows, ctx, report);
     let named = tokens(&rows, ctx, report);
-    for h in py::finditer(r"\bunder\s+`?([A-Z][A-Za-z]+)`?", &format!("{}\n{}", ctx.rep.text, ctx.prb.text), false) {
-        if !ctx.members.contains(h.g(1)) {
-            report.fail("AC5", format!("the section counts a rejection under '{}', not a member of the closed enumeration", h.g(1)));
+    for h in rx(r"\bunder\s+`?([A-Z][A-Za-z]+)`?").captures_iter(&format!("{}\n{}", ctx.rep.text, ctx.prb.text)) {
+        if !ctx.members.contains(h.get(1).map_or("", |m| m.as_str())) {
+            report.fail("AC5", format!("the section counts a rejection under '{}', not a member of the closed enumeration", h.get(1).map_or("", |m| m.as_str())));
         }
     }
     (rows, named)
