@@ -389,7 +389,7 @@ fn ac4_control_example_carries_c159_counters_and_demoted_health() {
 /// AC 5: the validation runs in a plain `cargo test`, unprivileged. The test
 /// target opens files with `std::fs` only: no socket, no device, no root.
 /// Where the kernel exposes it, this also asserts the effective uid is not 0,
-/// the same rule `checks/007a-01.sh` AC 4 applies to the suite.
+/// the same rule `scripts/repo-state.d/007a-01.sh` AC 4 applies to the suite.
 #[test]
 fn ac5_runs_as_a_plain_unprivileged_cargo_test() {
     // The fixtures are readable with no privilege escalation.

@@ -3,7 +3,7 @@
 //!
 //! This module is compiled only into the `vector_files` test target, so it may
 //! use `std`: the crate itself stays `#![no_std]` (007a-01 AC 1, and
-//! `checks/007a-01.sh` builds it for a bare-metal target). Integration tests
+//! `scripts/repo-state.d/007a-01.sh` builds it for a bare-metal target). Integration tests
 //! cannot see `#[cfg(test)]` internals, so the whole schema lives here rather
 //! than in `src/`.
 //!
