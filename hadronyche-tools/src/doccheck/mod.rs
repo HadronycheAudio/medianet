@@ -23,6 +23,8 @@
 //!   exactly-one-of verdicts, designation patterns;
 //! * [`ticket`] — tickets (acceptance criteria, constants lists, depends-on)
 //!   and the constants table;
+//! * [`rejection_members`] — the closed rejection-reason enumeration of
+//!   `wire.md`, parsed as the 004 scripts parse it (each check pins its count);
 //! * [`wire_toml`] — `wire.toml` through the crate's TOML parser;
 //! * [`mutate`] — mutation helpers for denial fixtures;
 //! * [`report`] — the result type and the test assertions;
@@ -41,6 +43,7 @@ pub mod links;
 pub mod markdown;
 pub mod mutate;
 pub mod policy;
+pub mod rejection_members;
 pub mod report;
 pub mod tables;
 pub mod text;
