@@ -43,16 +43,18 @@ mod ac2;
 mod ac3;
 mod ac4;
 mod ac5;
+mod denials;
 mod dod;
 pub(crate) mod num;
 mod setup;
 mod units;
 
-use super::c004_14::util::Stop;
 use super::{CheckSpec, Target};
+use crate::doccheck::policy::TomlReader;
+use crate::doccheck::pycompat::universal_newlines;
+use crate::doccheck::report::{Earlier, Flow, exit};
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
-use num::{Fails, R};
 
 /// The specification.
 pub const WIRE_MD: &str = "doc/design/spec/wire.md";
@@ -83,57 +85,55 @@ pub const SPEC: CheckSpec = CheckSpec {
     ],
     keywords: &["exceed", "within", "declared", "stand"],
     known_differences: &[],
+    denials: denials::DENIALS,
+    toml: TomlReader::Line004_15,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
-fn read_all(docs: &Docs) -> R<(String, String, String)> {
-    let read = |path: &str, label: &str| {
-        docs.read(path)
-            .map(|t| t.to_string())
-            .ok_or_else(|| Stop::Exit("setup", format!("cannot read {label} at {path}")))
+fn read_all(docs: &Docs) -> Flow<(String, String, String)> {
+    let read = |path: &str, label: &str| match docs.read(path) {
+        Some(t) => Ok(universal_newlines(&t)),
+        None => exit(
+            "setup",
+            format!("cannot read {label} at {path}"),
+            Earlier::Kept,
+        ),
     };
-    Ok((read(WIRE_MD, "wire.md")?, read(WIRE_TOML, "wire.toml")?, read(CONSTANTS, "02-constants.md")?))
+    Ok((
+        read(WIRE_MD, "wire.md")?,
+        read(WIRE_TOML, "wire.toml")?,
+        read(CONSTANTS, "02-constants.md")?,
+    ))
 }
 
-fn body(docs: &Docs) -> R<Fails> {
+fn body(docs: &Docs, f: &mut Report) -> Flow<()> {
     let (wire, toml_src, const_src) = read_all(docs)?;
-    let mut f = Fails::default();
-    let k = setup::calc(&const_src, &toml_src, &mut f)?;
+    let k = setup::calc(&const_src, &toml_src, f)?;
     let Some(sub) = units::read(&wire) else {
-        f.add("AC1", "no heading naming the wire size or the capacity recompute, inside 'Size budget' or directly after it");
-        return Ok(f);
+        f.fail("AC1", "no heading naming the wire size or the capacity recompute, inside 'Size budget' or directly after it");
+        return Ok(());
     };
-    let eqs = units::all_equations(&sub, &mut f)?;
-    dod::dod(&sub, &mut f)?;
-    ac1::wire_size(&sub, &eqs, &k, &mut f)?;
-    ac1::ethernet(&sub, &k, &mut f)?;
-    ac1::rates(&sub, &k, &mut f)?;
-    ac2::differences(&sub, &k, &mut f)?;
-    ac2::against_c22(&sub, &k, &mut f)?;
-    ac2::share_against_c21(&sub, &k, &mut f);
-    ac2::per_channel(&sub, &k, &mut f);
-    ac1::size_table(&sub, &k, &mut f)?;
+    let eqs = units::all_equations(&sub, f)?;
+    dod::dod(&sub, f)?;
+    ac1::wire_size(&sub, &eqs, &k, f)?;
+    ac1::ethernet(&sub, &k, f)?;
+    ac1::rates(&sub, &k, f)?;
+    ac2::differences(&sub, &k, f)?;
+    ac2::against_c22(&sub, &k, f)?;
+    ac2::share_against_c21(&sub, &k, f);
+    ac2::per_channel(&sub, &k, f);
+    ac1::size_table(&sub, &k, f)?;
     let sents = ac3::all_sentences(&sub);
-    ac3::rule(&sub, &sents, &k, &mut f);
-    ac3::declared_rate(&sents, &k, &mut f)?;
-    ac4::controller_cost(&sub, &eqs, &k, &mut f)?;
-    ac5::toml_keys(&k, &mut f);
-    Ok(f)
+    ac3::rule(&sub, &sents, &k, f);
+    ac3::declared_rate(&sents, &k, f)?;
+    ac4::controller_cost(&sub, &eqs, &k, f)?;
+    ac5::toml_keys(&k, f);
+    Ok(())
 }
 
 /// The check.
 pub fn run(docs: &Docs) -> Report {
-    let mut report = Report::default();
-    match body(docs) {
-        Ok(f) => {
-            for (ac, msg) in f.0 {
-                report.fail(ac, msg);
-            }
-            if report.passed() {
-                report.check("OK", true, "004-15 wire size, rates, differences and the C-219 formula");
-            }
-        }
-        Err(Stop::Exit(ac, msg)) => report.fail(ac, msg),
-        Err(Stop::Crash(why)) => report.fail("CRASH", format!("the script raises: {why}")),
-    }
-    report
+    let mut r = Report::default();
+    let flow = body(docs, &mut r);
+    r.finish(flow)
 }
