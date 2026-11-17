@@ -20,9 +20,18 @@ pub enum FencePolicy {
     Backticks,
     /// `` ``` `` or `~~~` toggles, any length, no matching (003-02).
     BackticksOrTildes,
-    /// An opener of 3 or more backticks or tildes closes only on the same
-    /// character with at least its length (006-01, CommonMark).
+    /// 006-01's `scan_fences_and_headings`: a line `^[ \t]*(`{3,}|~{3,})`
+    /// opens a fence; inside, only a marker of the same character, at least
+    /// as long, with nothing after it closes it (```` ``` js ```` does not).
+    /// Proven on `data/markdown_corpus.txt` (`fence_006_01`).
     Matching,
+    /// 006-02's `visible_lines`: a line `^\s*(`{3,}|~{3,})` opens a fence;
+    /// inside, a marker of the same character closes it, whatever its
+    /// length or what follows (`fence_006_02`).
+    SameChar,
+    /// No fence is recognised: every line is text (006-02's `find_section`,
+    /// which looks for its heading over all lines, code included).
+    NoFences,
 }
 
 /// How a heading is found by a pattern (inventory 4d).
@@ -65,6 +74,12 @@ pub enum RowSplit {
     Escaped,
     /// Plain `split("|")`: an escaped pipe breaks the cell (004-22).
     Plain,
+    /// The 006 family's character walk (006-01, 006-02 `split_row`): the
+    /// final `|` is dropped unless escaped, `\|` is a pipe in the cell
+    /// (also at the end: `| a \|` is one cell `a |`), cells stripped. A line
+    /// that does not start with `|` is no row
+    /// ([`super::tables::split_row_char_walk`] gives `None`).
+    CharWalk,
 }
 
 /// How a document's text becomes lines (inventory 4f; review finding 1c).
@@ -102,8 +117,13 @@ pub enum SeparatorRule {
     #[default]
     CellWise,
     /// The line matches `^\s*\|?[\s:|-]+\|?\s*$` and holds a `-` (the 004
-    /// family's `parse_tables`, 23 scripts).
+    /// family's `parse_tables`, 23 scripts; 004-14's `section_tables`;
+    /// 006-01's `is_separator`, proven equal on the corpus).
     LineRegex,
+    /// 006-02's `is_separator(cells)`: the second line has cells and each,
+    /// spaces removed, is `:?-{2,}:?` (an empty cell fails); and the table
+    /// needs a data row after it (`len(block) >= 3`).
+    DashCells,
 }
 
 /// What a run of `|` lines without a separator row is (review finding 2).
@@ -131,10 +151,27 @@ impl TableRules {
         separator: SeparatorRule::CellWise,
         headerless: HeaderlessRuns::Keep,
     };
-    /// The 004 family's `parse_tables` (004-01, 03-06, 08-13, 16-21, 24-29).
+    /// The 004 family's `parse_tables` (004-01, 03-06, 08-13, 16-21, 24-29;
+    /// the two textual variants of the family compute the same tables, and
+    /// 004-14's `section_tables` the same with captions,
+    /// [`super::tables::caption_above`]).
     pub const FAMILY_004: TableRules = TableRules {
         split: RowSplit::Escaped,
         separator: SeparatorRule::LineRegex,
+        headerless: HeaderlessRuns::Drop,
+    };
+    /// 006-01's `parse_tables` (with [`FencePolicy::Matching`]). The script
+    /// keeps the header and separator lines in its block: they are
+    /// `Table::line` and the line after it.
+    pub const T006_01: TableRules = TableRules {
+        split: RowSplit::CharWalk,
+        separator: SeparatorRule::LineRegex,
+        headerless: HeaderlessRuns::Drop,
+    };
+    /// 006-02's `parse_tables` (with [`FencePolicy::SameChar`]).
+    pub const T006_02: TableRules = TableRules {
+        split: RowSplit::CharWalk,
+        separator: SeparatorRule::DashCells,
         headerless: HeaderlessRuns::Drop,
     };
 }

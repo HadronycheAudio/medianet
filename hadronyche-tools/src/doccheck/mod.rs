@@ -55,7 +55,10 @@ pub mod family004;
 pub mod items;
 pub mod links;
 pub mod markdown;
+#[cfg(test)]
+mod mdproof;
 pub mod mutate;
+pub mod numwin;
 pub mod policy;
 pub mod pycompat;
 pub mod pynum;

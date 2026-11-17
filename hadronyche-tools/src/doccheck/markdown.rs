@@ -69,16 +69,25 @@ pub fn unnumbered(text: &str) -> String {
     rx(r"^\d+(\.\d+)*\.?\s+").replace(text, "")
 }
 
-fn fence_mask(lines: &[String], policy: FencePolicy) -> Vec<bool> {
+/// The fence mask of `lines` under `policy`: true on a fence line and on
+/// every line inside a fence (the scripts' `fence_mask`, `visible_lines`
+/// negated, ...). Proven on `data/markdown_corpus.txt`.
+pub fn code_mask<S: AsRef<str>>(lines: &[S], policy: FencePolicy) -> Vec<bool> {
     let mut open: Option<(char, usize)> = None;
     lines
         .iter()
         .map(|line| {
-            let t = line.py_lstrip();
-            let run = |c: char| t.chars().take_while(|&x| x == c).count();
+            let line = line.as_ref();
+            let lead = match policy {
+                // `^[ \t]*`
+                FencePolicy::Matching => line.trim_start_matches([' ', '\t']),
+                _ => line.py_lstrip(),
+            };
+            let run = |c: char| lead.chars().take_while(|&x| x == c).count();
             let fence = match policy {
+                FencePolicy::NoFences => None,
                 FencePolicy::Backticks => (run('`') >= 3).then_some(('`', 3)),
-                FencePolicy::BackticksOrTildes | FencePolicy::Matching => {
+                _ => {
                     let (b, w) = (run('`'), run('~'));
                     if b >= 3 {
                         Some(('`', b))
@@ -90,14 +99,70 @@ fn fence_mask(lines: &[String], policy: FencePolicy) -> Vec<bool> {
             let Some((c, n)) = fence else {
                 return open.is_some();
             };
+            let tail_empty = lead[n..].py_strip().is_empty();
             open = match (open, policy) {
                 (None, _) => Some((c, n)),
-                (Some((oc, on)), FencePolicy::Matching) if oc != c || n < on => Some((oc, on)),
+                (Some((oc, on)), FencePolicy::Matching) if oc != c || n < on || !tail_empty => {
+                    Some((oc, on))
+                }
+                (Some((oc, on)), FencePolicy::SameChar) if oc != c => Some((oc, on)),
                 (Some(_), _) => None,
             };
             true
         })
         .collect()
+}
+
+/// 006-01's `heading_tokens` over a title already normalised with the
+/// script's `norm_text` (NFKC, typographic dashes and quotes): the
+/// `[a-z0-9]+` words of its lower case, without `stopwords`, each stemmed
+/// once (`-ies` → `-y` past 4 letters, `-ing` dropped past 5, `-ed` past 4,
+/// a final `s` past 3 unless `ss`).
+pub fn stem_tokens(normalised: &str, stopwords: &[&str]) -> std::collections::BTreeSet<String> {
+    let lower = normalised.to_lowercase();
+    let mut out = std::collections::BTreeSet::new();
+    for m in rx("[a-z0-9]+").find_iter(&lower) {
+        let w = m.as_str();
+        if stopwords.contains(&w) {
+            continue;
+        }
+        let n = w.chars().count();
+        let stem = if n > 4 && w.ends_with("ies") {
+            format!("{}y", &w[..w.len() - 3])
+        } else if n > 5 && w.ends_with("ing") {
+            w[..w.len() - 3].to_string()
+        } else if n > 4 && w.ends_with("ed") {
+            w[..w.len() - 2].to_string()
+        } else if n > 3 && w.ends_with('s') && !w.ends_with("ss") {
+            w[..w.len() - 1].to_string()
+        } else {
+            w.to_string()
+        };
+        out.insert(stem);
+    }
+    out
+}
+
+/// 006-01's `STOPWORDS`.
+pub const STOPWORDS_006_01: &[&str] = &[
+    "a", "an", "and", "the", "of", "in", "on", "or", "to", "for", "with", "as", "at", "by", "from",
+    "is", "are", "be", "into", "than", "this", "that", "these", "those", "its", "it",
+];
+
+/// 006-01's `matching_heading(headings, groups)`: the first heading of
+/// level 2 or deeper whose [`stem_tokens`] (after `norm`, the script's
+/// `norm_text`) hold, for every group, one of its alternatives.
+pub fn stem_match<'a>(
+    heads: &'a [Heading],
+    groups: &[&[&str]],
+    norm: impl Fn(&str) -> String,
+) -> Option<&'a Heading> {
+    heads.iter().filter(|h| h.level >= 2).find(|h| {
+        let toks = stem_tokens(&norm(&h.text), STOPWORDS_006_01);
+        groups
+            .iter()
+            .all(|g| g.iter().any(|alt| toks.contains(*alt)))
+    })
 }
 
 fn find_heads(lines: &[String], in_code: &[bool]) -> Vec<Heading> {
@@ -139,7 +204,7 @@ impl Markdown {
     /// Parses `text`, recognising code fences by `fences`.
     pub fn parse_with(text: &str, fences: FencePolicy) -> Markdown {
         let lines: Vec<String> = split_nl(text).into_iter().map(String::from).collect();
-        let in_code = fence_mask(&lines, fences);
+        let in_code = code_mask(&lines, fences);
         let heads = find_heads(&lines, &in_code);
         Markdown {
             lines,
