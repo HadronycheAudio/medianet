@@ -278,6 +278,7 @@ def cases(full):
     edit("markup-code", "| 0 | TooShort |", "| 0 | `TooShort` |")
     edit("leading-zeros", "| 7 | BadLength |", "| 007 | BadLength |")
     edit("value-beyond-i128", "| 7 | BadLength |", "| " + "9" * 45 + " | BadLength |")
+    edit("value-beyond-i64-on-the-zero-member", "| 0 | TooShort |", "| 99999999999999999999 | TooShort |")
     edit("three-cells", r("BadPacketIndex"), "| 9 | BadPacketIndex | the packet index |\n")
     edit("lowercase-name", "| 8 | BadChecksum |", "| 8 | badChecksum |")
     edit("hyphen-name", "| 8 | BadChecksum |", "| 8 | Bad-Checksum |")

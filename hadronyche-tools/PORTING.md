@@ -149,8 +149,33 @@ parallel without editing the same files.
      (`doccheck::tomllib`). Its differences from `tomllib` on the corpus
      are listed in `tomllib::KNOWN_DIFFERENCES`: two, both ints beyond 64
      bits.
-   - The 004-14/15 line reader is not in the library yet. It lands with the
-     library PR that follows this one (M1-lib), proven the same way.
+   - `Line004_14` / `Line004_15`: the line readers of 004-14 and 004-15
+     (`doccheck::tomlline`, `Variant::V004_14` / `V004_15`), ported from
+     the scripts. They return `Doc { messages, others }`: each
+     `[[message]]` dict starts as `{"name": None, "fields": []}`, and the
+     other tables are by name, a dict for `[x]` or a list of dicts for
+     `[[x]]`. A scalar is `true`/`false`, else `int(t, 0)`, else
+     `int(t, 10)` (`040` is 40), else the text as written. An array is
+     every string or integer token on the line (`[1.5]` is `[1, 5]`). The
+     two copies differ: 004-15 keeps strings as written, raises
+     `IndexError` for a field before any message, and crashes
+     (`AttributeError`) on `[[x]]` after `[x]`. `Error::caught_by(variant)`
+     says whether the script printed `FAIL setup` or crashed.
+   - The corpus generator `tools/gen_toml_corpus.py` runs EVERY script's
+     copy of a reader (20 copies of `Subset004_18`; both line readers) on
+     Python 3.10 and 3.13, taking `python3.10` and `python3.13` from `PATH`
+     or `--py310`/`--py313`. It fails unless the interpreters agree and all
+     copies of one variant agree. A script whose copy differs gets a new
+     named variant. Never port a reader from another port's private copy:
+     the four packages' copies all disagreed with Python on the corpus
+     (`MIGRATING-PACKAGES.md`).
+   - Python's `int()` refuses a decimal string of more than 4 300 digits.
+     The readers reproduce it: the subset and line readers keep such a
+     scalar as a string, and the line readers' array token raises
+     `ValueError`.
+   - Not ported (no package needs them yet): 004-21's `json.loads` line
+     reader and 004-04's `toml_blocks`. Each is a distinct reader and gets
+     its own variant when its script is ported.
 
    When the script's reader, or its use of the values, raised an exception
    the script did not catch (KeyError, TypeError, `tomllib` errors), the
@@ -158,6 +183,17 @@ parallel without editing the same files.
    harness matches to the script's traceback. When the script caught the
    exception (the subset reader's errors in 004-27), the port reports the
    script's criteria.
+
+   **One `Stop` type.** A check body that may stop early returns
+   `Flow<T>` (`Result<T, Stop>`) and propagates with `?`;
+   `Report::finish(flow)` applies it. `Stop::Crash(why)` is an uncaught
+   exception (it becomes `Report::crash`); `Stop::Exit { criterion,
+   message, earlier }` is `print("FAIL …")` then `sys.exit(1)`, keeping the
+   failures already printed (`Earlier::Kept`) or dropping the ones the
+   script collected for a final print it never reached
+   (`Earlier::Dropped`, 004-14). Never model a crash as a failure with
+   criterion `"CRASH"` or as a FAIL under another criterion: the harness
+   matches only `Report::crash` to the script's traceback.
 5. **Not ported.** These stay scripts, and the suite keeps running them:
    - 003-01, 003-03, 003-04, 003-06, 003-07, 003-09: they freeze-check,
      build or run the proof of concept;
@@ -191,6 +227,14 @@ parallel without editing the same files.
        `from_str(`, `unwrap_or(0)` (`unwrap_or( 0 )`), `.evaluate(`; and the
        words `testing` (an aliased `use … testing as t` too) and `rx_raw`;
      - everywhere: `run)(`, `take_failures`, `restore_failures` (R19);
+     - in a check module (review round 4): `thread::`, a `static` item,
+       `OnceLock`, `LazyLock`, `OnceCell`, `thread_local!`, `Mutex`,
+       `RwLock` and atomics. A check runs on the evaluating thread and
+       keeps no state across evaluations; otherwise a regex failure on
+       another thread, or a result cached from an earlier evaluation,
+       would escape `REGEX_LIMIT`. Clippy also bans thread spawning, and
+       `Docs::overrides`, `export` and `source` (text handed out without
+       being logged) outside the harness;
      - a path to another port with any prefix (`checks::c<id>::`,
        `super::c<id>::`, `super::super::c<id>::`): NO PORT IMPORTS ANOTHER
        PORT.
@@ -339,8 +383,8 @@ the same words occur in an earlier section.
 | `family004` | the 004 family's helpers: `Field`, `width_of`, `fields_of`, `is_field_table`, `tables`, `first_field_table`, `subsections`, `find_sub`, `sentences`, `Ctx` (`span_of`, `body`) |
 | `rx` | `Rx`, `M`, `Caps`: one regex API over both engines, Python's empty-match rule; `BACKTRACK_LIMIT`; engine failures recorded for `evaluate` |
 | `policy` | `FencePolicy`, `HeadingMatch`, `SectionEnd`, `RowSplit`, `SeparatorRule`, `HeaderlessRuns`, `TableRules`, `LineSplit`, `PathNorm`, `TomlReader` |
-| `markdown` | headings with GitHub anchors, `section`, `section_with`, `find`, `find_by` (literal variants never compile a regex), `find_path`, `head_norms`, `tables_with(span, TableRules)` |
-| `tables` | `Table`, `Row`, `split_row_with`, `is_separator`, `is_separator_line` |
+| `markdown` | `code_mask` (a script's fence mask), `stem_tokens`/`stem_match` (006-01's stemmed heading match), headings with GitHub anchors, `section`, `section_with`, `find`, `find_by` (literal variants never compile a regex), `find_path`, `head_norms`, `tables_with(span, TableRules)` |
+| `tables` | `Table`, `Row`, `split_row_with`, `is_separator`, `is_separator_line`, `split_row_char_walk`, `is_dash_cells`, `caption_above` (004-14/15), `cell_label`, `cell_number_004_14`, `first_int_004_14` |
 | `units` | `units`, `prose_blocks`, `strip_fences`, `clean_start` |
 | `links` | `links`, `resolve`, `file_slugs` |
 | `evidence` | `TagSet`, `TagPolicy` constants, `untagged`, `subsections_untagged` |
@@ -350,7 +394,14 @@ the same words occur in an earlier section.
 | `wire_toml` | `WireToml`, `fields`, `text`, `int`, `display` |
 | `text` | `rx` (Python classes; a cache bounded at `RX_CACHE_LIMIT`, sharing compiled regexes; escape document text you embed in a pattern), `rx_raw`, `has`, `has_i`, `starts`, `full`, `first_int`, `ints`, `join_digit_groups`, `head` |
 | `mutate` | `anchored_replace`, `delete_row`, `delete_unit`, `delete_section`, `rename_heading`, `strip_tags`, `replace_in_line`, `negate`, `replace_all`, `within_section` |
-| `report` | `Report` (`check`, `fail`, `fail_at`, `crash`), `assert_criterion`, `assert_clean`, `assert_fails` |
+| `report` | `Report` (`check`, `fail`, `fail_at`, `crash`, `stop`, `finish`), `Stop` (`Crash`, `Exit { earlier: Earlier::{Kept, Dropped} }`), `Flow<T>`, `crash()`, `exit()`, `assert_criterion`, `assert_clean`, `assert_fails` |
+| `rejection_members` | `Enumeration::parse(wire, EnumPolicy)` (`REJECTION_004_16`, `_004_24`, `_004_25`, `_004_26`, `REFUSAL_004_26`), `has_exactly`, `matches_fixed(&REJ_FIXED)`, `has_control_reasons(13, &CONTROL_REASONS_004_29)`, `control_members`, `DEFAULT_13`, `tolerant_members(wire, TOLERANT_004_06)`, `value_name_table`, `refusal_set`, `numbered_rows`; `reasons::{named_reasons, negated_at, negated_tokens, unnegated_non_members}`, `LOOKBACK_004_16` (24 characters), `LOOKBACK_004_19` (25), `CAMEL_*`, `NON_REJECTION_004_*` |
+| `tomlline` | the 004-14/15 line readers (`parse(src, Variant)`) |
+| `family004` (M1-lib) | `heading_index`, `section_span` (`SpanRule`), `norm_name` (`NameNorm`), `width_to_bits` (`WidthRule`), `parse_int_token`, `bit_positions`, `to_int` (`IntRule`), `const_cell`, `const_line`, `const_int` (`ConstInt`), `md_name`, `key_of`, `tname` |
+| `blocks` | `blank_blocks`, `section_blocks`, `block_role`, `form_rows` (`FormRows`), `is_placeholder` |
+| `sentences` | `split` (`SentenceSplit`: `PERIOD_SEMI`, `LINES_004_12`, `NEWLINES_004_20`, `PARAGRAPHS_004_29`, `BLOCKS_004_25`, `COLON_004_24`, `TERMINAL_004_04`), `split_raw` with the `RAW_*` cuts, `first_sentence_004_29` |
+| `negation` | `negated` (`Lookback`: `WINDOW_24_004_16`, `WINDOW_25_004_19`, `ANYWHERE_004_16`; character windows, as Python slices) |
+| `numwin` | `window(text, start, end, before, after)`: `text[max(0, s-b):e+a]` in characters |
 | `denial` | `Denial`, `DenialEdit`, `CRASH` |
 | `testing` | `repo`, `report_of`, `red_phase`, `check_denial`, `denial_tests!` |
 
@@ -359,25 +410,48 @@ the same words occur in an earlier section.
 | Policy | Variants now |
 |---|---|
 | `LineSplit` | `Nl` (004-22), `PySplitlines` (004 family) |
-| `TableRules` (`RowSplit` × `SeparatorRule` × `HeaderlessRuns`) | `T004_22` (plain split, cell-wise separator, headerless runs kept); `FAMILY_004` (escaped split, line-regex separator, headerless runs dropped; 004-01, 03-06, 08-13, 16-21, 24-29) |
-| `FencePolicy` | `Backticks` (004 family), `BackticksOrTildes` (003-02), `Matching` (006-01) |
+| `TableRules` (`RowSplit` × `SeparatorRule` × `HeaderlessRuns`) | `T004_22` (plain split, cell-wise separator, headerless runs kept); `FAMILY_004` (escaped split, line-regex separator, headerless runs dropped; 004-01, 03-06, 08-13, 14-21, 24-29); `T006_01`, `T006_02` |
+| `RowSplit` | `Escaped` (004 family, 004-14/15), `Plain` (004-22), `CharWalk` (006-01/02) |
+| `SeparatorRule` | `CellWise`; `LineRegex` (also 004-14 and 006-01); `DashCells` (006-02, needs a data row) |
+| `FencePolicy` | `Backticks` (004 family, 004-14 `fence_mask`, 004-21), `BackticksOrTildes` (003-02), `Matching` (006-01: opener `^[ \t]*`, closed only by a bare marker of the same character at least as long), `SameChar` (006-02 tables), `NoFences` (006-02 `find_section`) |
 | `HeadingMatch` | `Regex`, `RegexAtLevel(n)` (`span_of`), `FullMatch` (004-09/10/11), `Substring` (003-02/05), `Exact` (006-02), `NormEq` (004-21), `Slug` |
 | `SectionEnd` | `SameOrHigher`, `AnyHeading` (003-08), `NextLevel2` (002-10 to 002-14) |
 | `PathNorm` | `PyNormpath` |
-| `TomlReader` | `Tomllib` (004-22), `Subset004_18` (004 family; the 004-14/15 line reader lands with M1-lib) |
-| `TagPolicy` | `UNITS_004_22`, `PROSE_004_27`, `PROSE_004_29` (004-25/28/29), `PROSE_004_26`, `ALPHA_004_16`, `ALNUM_004_14`, `EVERY_BLOCK_004_09`, `EVERY_BLOCK_004_13`. Each sets the tag set and case, the unit, the word count, the minimum and table inheritance. |
-| `OpenItemPolicy` | `Mention` (004-22), `LeadingWithTicket` (004-27), `Leading` (004-29) |
+| `TomlReader` | `Tomllib` (004-22), `Subset004_18` (004-03, 05, 06, 08-13, 16-20, 24-29), `Line004_14` (004-14), `Line004_15` (004-15) |
+| `TagPolicy` | `UNITS_004_22`, `PROSE_004_27`, `PROSE_004_29` (004-25/28/29), `PROSE_004_26`, `ALPHA_004_16`, `ALNUM_004_14`, `EVERY_BLOCK_004_03` (004-03, 05, 06, 08, 09, 10, 11, 13; replaces `EVERY_BLOCK_004_09`/`_004_13`, which were wrong and unused), `BLOCKS_004_19` (004-19/20). Each sets the tag set and case, the unit, the word count, the minimum and table inheritance. |
+| `TableTagRule` | `SectionTagged004_16` (004-16/17/18), `AfterProse004_19` (004-19/20) |
+| `LinePolicy` | `LINES_004_24` (`evidence::untagged_lines`) |
+| `OpenItemPolicy` | `Mention` (004-22), `LeadingWithTicket` (004-27), `Leading` (004-29), `MentionBlocks` (004-24/25/28), `LeadingClean` (004-16/17/18), `Head40` (004-26), `Window3` (004-19), `WordLeading` (004-20) |
+| `EnumPolicy` | `REJECTION_004_16` (004-16 to 20), `REJECTION_004_24`, `REJECTION_004_25` (004-25/28/29), `REJECTION_004_26`, `REFUSAL_004_26` |
+| `SpanRule`, `NameNorm`, `WidthRule`, `IntRule`, `ConstInt`, `FormRows`, `SentenceSplit`, `Lookback` | see `family004`, `blocks`, `sentences`, `negation` in the library table; each variant names the first script holding it |
 
 The word class is not a parameter: `rx` is always Python's, `\b` included.
 
+**Every helper is proven against the scripts' own Python** by a committed
+corpus, each generated by a tool that extracts the functions from
+`checks/*.sh` (with `ast`, never from a porter's copy) and runs them with
+Python 3.10 and 3.13, which must agree:
+
+| Corpus | Generator | Proves |
+|---|---|---|
+| `data/repertoire.tsv` | `gen_repertoire.py` | classes, boundaries, case, NFKC per character |
+| `data/toml_corpus.txt` | `gen_toml_corpus.py` | every TOML reader variant |
+| `data/pycompat_corpus.txt` | `gen_pycompat_corpus.py` | look-around, `$`, empty matches, numbers, floats, slicing, truthiness, eval, fractions, NFKC |
+| `data/markdown_corpus.txt`, `data/lookaround_corpus.txt` | `gen_markdown_corpus.py` | fences, rows, tables, headings, stems, 004-14 cells; every look-around pattern of the scripts |
+| `data/family004_corpus.txt` | `gen_family004_corpus.py` | the 004 family's helpers, sentence splits, DoD and open-item rules |
+| `data/rejection_corpus.txt` | `gen_rejection_corpus.py` | every rejection-enumeration variant and reason helper |
+
+A port whose script carries a helper or rule not yet in a corpus adds it
+there (the helper, the script holding the variant), maps it to the
+library, regenerates, and never proves a helper by reading another port's
+copy.
+
 **Not in the library yet.** The first port that needs one of these adds it
 as above:
-- the epic 002 pointer-line and figure-paragraph tag windows;
+- the epic 002 pointer-line and figure-paragraph tag windows (WP1/WP2 add
+  `family002`);
 - 003-08's three-tag rule and 004-04's list inheritance;
-- the reason-token regexes, the negation look-backs and the `NON_REJECTION`
-  sets;
-- the `to_int` variants;
-- the 13-name pin.
+- 004-21's and 004-04's TOML readers.
 
 ## Procedure
 
@@ -474,6 +548,16 @@ about 30 minutes per check on a quiet machine.
   Python minutes (242 s for one review row), which must not stall a
   corpus. It is never "same".
 - FAIL labels may be written `AC1`, `AC 1` or `AC-1`; they are normalised.
+  The reader also takes `FAIL AC2 (note):`, `FAIL [AC1] …`, extra spaces,
+  an indented `FAIL`, and grouped results under a header such as `  AC1`,
+  `  DoD` or `  WIRE`. Any other `FAIL <text>` line is the pseudo-criterion
+  `UNREADABLE`: reported, never "same", never a crash. A traceback is the
+  header `Traceback (most recent call last):` at column 0 followed by a
+  `  File` frame; a quoted header is not one.
+- A summary (`--out`) is refused from a tree with uncommitted changes to
+  tracked files other than `hadronyche-tools/equivalence/` (the summaries
+  themselves); `--allow-dirty` names them in the header instead. The tree
+  is recorded when the run starts.
 - A script that prints FAIL and exits 0 counts as red and is reported as an
   anomaly; in (a) or (b) it fails the run.
 - A port red on `REPERTOIRE` is classified "outside repertoire" by the

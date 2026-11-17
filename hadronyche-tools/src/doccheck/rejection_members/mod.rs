@@ -443,28 +443,10 @@ fn section(lines: &[&str], rule: SectionRule) -> Option<String> {
 }
 
 /// One heading: (line index, level, title).
-pub type Heading = (usize, usize, String);
+pub type Heading = super::family004::Head;
 
-/// The 004 family's `heading_index`: `^(#{1,6})\s+(.*?)\s*#*\s*$` on every
-/// line outside fences (a fence is a line matching `^\s*```` and toggles).
-pub fn heading_index(lines: &[&str]) -> Vec<Heading> {
-    let head = rx(r"^(#{1,6})\s+(.*?)\s*#*\s*$");
-    let mut out = Vec::new();
-    let mut in_fence = false;
-    for (idx, line) in lines.iter().enumerate() {
-        if line.py_lstrip().starts_with("```") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if in_fence {
-            continue;
-        }
-        if let Some(c) = head.captures(line) {
-            out.push((idx, c[1].chars().count(), c[2].py_strip().to_string()));
-        }
-    }
-    out
-}
+/// The 004 family's `heading_index` (one implementation, in `family004`).
+pub use super::family004::heading_index;
 
 /// One table of the 004 family's `parse_tables`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -513,29 +495,8 @@ pub fn parse_tables(text: &str) -> Vec<Table> {
     out
 }
 
-/// The 004 family's `split_row`: strip, drop one leading and one trailing
-/// `|`, split on `|` not preceded by a backslash (`(?<!\\)\|`), strip each
-/// cell and unescape `\|`.
-pub fn split_row(line: &str) -> Vec<String> {
-    let mut s = line.py_strip();
-    s = s.strip_prefix('|').unwrap_or(s);
-    s = s.strip_suffix('|').unwrap_or(s);
-    let mut cells = Vec::new();
-    let (mut cur, mut prev) = (String::new(), None);
-    for c in s.chars() {
-        if c == '|' && prev != Some('\\') {
-            cells.push(std::mem::take(&mut cur));
-        } else {
-            cur.push(c);
-        }
-        prev = Some(c);
-    }
-    cells.push(cur);
-    cells
-        .into_iter()
-        .map(|c| c.py_strip().replace("\\|", "|"))
-        .collect()
-}
+/// The 004 family's `split_row` (one implementation, in `tables`).
+pub use super::tables::split_row;
 
 #[cfg(test)]
 mod tests;

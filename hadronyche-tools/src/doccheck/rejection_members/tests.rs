@@ -145,6 +145,10 @@ fn cases() -> Vec<(&'static str, String)> {
             ),
         ),
         (
+            "value-beyond-i64-on-the-zero-member",
+            e("| 0 | TooShort |", "| 99999999999999999999 | TooShort |"),
+        ),
+        (
             "three-cells",
             e(
                 &r("BadPacketIndex"),
