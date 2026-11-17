@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn a_multi_file_denial_edits_every_document_in_order() {
-        let docs = Docs::dir("/nonexistent-doccheck-tree")
+        let docs = crate::doccheck::testing::repo()
             .with("doc/a.md", "one")
             .with("doc/b.md", "two");
         let edits = BOTH.edits(&docs).expect("both exist");
