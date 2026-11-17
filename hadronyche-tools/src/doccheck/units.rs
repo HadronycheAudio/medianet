@@ -15,6 +15,7 @@
 //!
 //! Fenced code is excluded from both.
 
+use super::pycompat::PyStr;
 use super::text::{rx, split_nl, splitlines};
 
 /// What a unit is.
@@ -60,7 +61,7 @@ impl Acc {
         };
         let text = cur
             .iter()
-            .map(|(_, l)| l.trim())
+            .map(|(_, l)| l.py_strip())
             .collect::<Vec<_>>()
             .join(" ");
         self.out.push(Unit {
@@ -76,7 +77,7 @@ impl Acc {
             kind,
             lo: i,
             hi: i,
-            text: line.trim().to_string(),
+            text: line.py_strip().to_string(),
         });
     }
 }
@@ -90,7 +91,7 @@ pub fn units(text: &str) -> Vec<Unit> {
     };
     let mut in_code = false;
     for (i, line) in split_nl(text).into_iter().enumerate() {
-        let s = line.trim();
+        let s = line.py_strip();
         if s.starts_with("```") {
             in_code = !in_code;
             continue;
@@ -169,12 +170,12 @@ pub fn prose_blocks(text: &str) -> Vec<Block> {
         cur.clear();
     };
     for (i, line) in splitlines(&stripped).into_iter().enumerate() {
-        if rx(r"^#{1,6}\s").is_match(line) || line.trim().is_empty() {
+        if rx(r"^#{1,6}\s").is_match(line) || line.py_strip().is_empty() {
             push(&mut out, kind, start, &mut cur);
             kind = None;
             continue;
         }
-        let k = if line.trim_start().starts_with('|') {
+        let k = if line.py_lstrip().starts_with('|') {
             BlockKind::Table
         } else {
             BlockKind::Prose
@@ -195,7 +196,7 @@ pub fn prose_blocks(text: &str) -> Vec<Block> {
 /// A unit's text with leading markup (`*`, `_`, `` ` ``, `>`, `-`, spaces)
 /// removed, as the scripts' `clean_start`.
 pub fn clean_start(text: &str) -> String {
-    rx(r"^[\s*_`>-]+").replace(text, "").into_owned()
+    rx(r"^[\s*_`>-]+").replace(text, "")
 }
 
 #[cfg(test)]

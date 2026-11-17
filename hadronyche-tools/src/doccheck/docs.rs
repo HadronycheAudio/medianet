@@ -8,12 +8,32 @@
 //! lives in `/tmp` and no override variable exists.
 //!
 //! Paths are repository-relative with `/` separators (`doc/design/spec/wire.md`).
+//!
+//! The repertoire guard is a property of `Docs` (lead ruling R20): a check
+//! runs only through [`CheckSpec::evaluate`], which hands it a logged view;
+//! every text the check obtains from [`Docs::read`] (whatever the path:
+//! a ticket, a separate review record, a link target outside `doc/`) is
+//! logged and guarded, and one character outside the repertoire makes the
+//! verdict `REPERTOIRE`. No list of inputs is kept by any check. The same
+//! entry point turns a regex engine failure into `REGEX_LIMIT` (R19).
+
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the document sources themselves
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+
+use super::checks::CheckSpec;
+use super::pycompat::{PyStr, normpath};
+use super::pynum::{INT_LIMIT, restore_int_limits, take_int_limits};
+use super::repertoire::guard_text;
+use super::report::Report;
+use super::rx::{RxFailure, restore_failures, take_failures};
+
+/// The criterion of a regex engine failure (R19).
+pub const REGEX_LIMIT: &str = "REGEX_LIMIT";
 
 /// Where the unmodified documents come from.
 #[derive(Debug, Clone)]
@@ -31,7 +51,12 @@ pub struct Docs {
     overrides: BTreeMap<String, Option<Arc<str>>>,
     cache: Arc<Mutex<HashMap<String, Option<Arc<str>>>>>,
     tree: Arc<Mutex<Option<Arc<BTreeSet<String>>>>>,
+    /// Set inside [`CheckSpec::evaluate`]: every text read, in order.
+    log: Option<Arc<Mutex<ReadLog>>>,
 }
+
+/// The texts a check read, by normalised path, first read first.
+type ReadLog = Vec<(String, Arc<str>)>;
 
 impl Docs {
     /// The working tree of this repository (the crate's parent directory).
@@ -45,11 +70,25 @@ impl Docs {
     }
 
     /// The documents of `commit` in the git repository at `repo`.
-    pub fn at_commit(repo: impl Into<PathBuf>, commit: &str) -> Docs {
-        Docs::from_source(Source::Git {
-            repo: repo.into(),
+    ///
+    /// Fails loudly: `Err` when the commit is not in the repository or its
+    /// tree cannot be listed (never an empty tree, on which a red-phase test
+    /// would fail every criterion vacuously).
+    pub fn at_commit(repo: impl Into<PathBuf>, commit: &str) -> Result<Docs, String> {
+        let repo = repo.into();
+        if !commit_exists(&repo, commit) {
+            return Err(format!(
+                "commit {commit} is not in the repository at {}",
+                repo.display()
+            ));
+        }
+        let tree = git_tree(&repo, commit)?;
+        let docs = Docs::from_source(Source::Git {
+            repo,
             commit: commit.to_string(),
-        })
+        });
+        *docs.tree.lock().expect("docs tree poisoned") = Some(Arc::new(tree));
+        Ok(docs)
     }
 
     fn from_source(source: Source) -> Docs {
@@ -58,6 +97,7 @@ impl Docs {
             overrides: BTreeMap::new(),
             cache: Arc::new(Mutex::new(HashMap::new())),
             tree: Arc::new(Mutex::new(None)),
+            log: None,
         }
     }
 
@@ -99,7 +139,22 @@ impl Docs {
 
     /// The text of `path`, or `None` when it does not exist or is not UTF-8.
     pub fn read(&self, path: &str) -> Option<Arc<str>> {
+        let text = self.read_unlogged(path);
+        if let (Some(log), Some(t)) = (&self.log, &text) {
+            let key = norm(path);
+            let mut log = log.lock().expect("docs log poisoned");
+            if !log.iter().any(|(k, _)| *k == key) {
+                log.push((key, t.clone()));
+            }
+        }
+        text
+    }
+
+    fn read_unlogged(&self, path: &str) -> Option<Arc<str>> {
         let key = norm(path);
+        if outside(&key) {
+            return None;
+        }
         if let Some(over) = self.overrides.get(&key) {
             return over.clone();
         }
@@ -127,6 +182,9 @@ impl Docs {
     /// True when `path` is a file of this set.
     pub fn is_file(&self, path: &str) -> bool {
         let key = norm(path);
+        if outside(&key) {
+            return false;
+        }
         if let Some(over) = self.overrides.get(&key) {
             return over.is_some();
         }
@@ -179,7 +237,10 @@ impl Docs {
             return tree.clone();
         }
         let tree = match &self.source {
-            Source::Git { repo, commit } => Arc::new(git_tree(repo, commit)),
+            Source::Git { repo, commit } => Arc::new(
+                git_tree(repo, commit)
+                    .unwrap_or_else(|e| panic!("the tree of {commit} vanished: {e}")),
+            ),
             Source::Dir(_) => Arc::new(BTreeSet::new()),
         };
         *slot = Some(tree.clone());
@@ -213,6 +274,119 @@ impl Docs {
         }
         Ok(())
     }
+}
+
+impl CheckSpec {
+    /// The only way to run a check (its `run` is called nowhere else; a
+    /// source test holds this). The check gets a logged view of `docs`;
+    /// afterwards:
+    ///
+    /// * a text it read that holds a character outside the repertoire makes
+    ///   the verdict red under `REPERTOIRE` alone, one failure per such file
+    ///   (R13, R20): inside the repertoire the port equals its script, and
+    ///   outside it nothing else it found is meaningful;
+    /// * otherwise, after the regex rule below, an integer beyond `i128`
+    ///   met during the run (`pycompat::parse_int`, `PyValue::py_int`,
+    ///   `pynum::eval_arith`, `pynum::Fraction`) makes the verdict
+    ///   `INT_LIMIT` alone, located where the number is written;
+    /// * otherwise a regex engine failure during the run (backtracking
+    ///   limit, a pattern that does not compile) makes the verdict red
+    ///   under `REGEX_LIMIT` alone, with the pattern and the file:line of
+    ///   the text it was matching (R19): an engine failure is never "no
+    ///   match", and the rest of the verdict cannot be trusted.
+    pub fn evaluate(&self, docs: &Docs) -> Report {
+        let outer = take_failures();
+        let outer_ints = take_int_limits();
+        let log = Arc::new(Mutex::new(ReadLog::new()));
+        let mut view = docs.clone();
+        view.log = Some(log.clone());
+        let report = (self.run)(&view);
+        let failures = take_failures();
+        let ints = take_int_limits();
+        restore_failures(outer);
+        restore_int_limits(outer_ints);
+        let read = std::mem::take(&mut *log.lock().expect("docs log poisoned"));
+        let mut guarded = Report::default();
+        for (path, text) in &read {
+            guard_text(path, text, &mut guarded);
+        }
+        if !guarded.failures.is_empty() {
+            return guarded;
+        }
+        if failures.is_empty() {
+            return if ints.is_empty() {
+                report
+            } else {
+                int_limited(&read, ints)
+            };
+        }
+        let mut limited = Report::default();
+        for f in dedup(failures) {
+            let (file, line) = locate(&read, &f.hay);
+            let pattern: String = f.pattern.chars().take(160).collect();
+            let what = format!(
+                "the regex engine failed on pattern {pattern:?} ({}); the check cannot \
+                 tell match from no match, so it is red by rule (R19)",
+                f.what
+            );
+            match file {
+                Some(file) => limited.fail_at(REGEX_LIMIT, &file, line, what),
+                None => limited.fail(
+                    REGEX_LIMIT,
+                    format!("{what}; the text begins {:?}", head(&f.hay)),
+                ),
+            }
+        }
+        limited
+    }
+}
+
+/// The verdict when an integer beyond `i128` appeared: `INT_LIMIT` alone,
+/// located where the number's text is found in a document read.
+fn int_limited(read: &ReadLog, ints: Vec<String>) -> Report {
+    let mut out = Report::default();
+    let mut seen = BTreeSet::new();
+    for n in ints.into_iter().filter(|n| seen.insert(n.clone())) {
+        let what = format!(
+            "the integer {} is beyond i128: Python would carry on with it, the check cannot \
+             compare it, so it is red by rule (INT_LIMIT)",
+            head(&n)
+        );
+        match locate(read, &n) {
+            (Some(file), line) => out.fail_at(INT_LIMIT, &file, line, what),
+            (None, _) => out.fail(INT_LIMIT, what),
+        }
+    }
+    out
+}
+
+fn dedup(failures: Vec<RxFailure>) -> Vec<RxFailure> {
+    let mut out: Vec<RxFailure> = Vec::new();
+    for f in failures {
+        if !out.iter().any(|o| o.pattern == f.pattern && o.hay == f.hay) {
+            out.push(f);
+        }
+    }
+    out
+}
+
+fn head(text: &str) -> String {
+    text.chars().take(60).collect()
+}
+
+/// The first document read whose text contains the start of `hay`, and
+/// the 1-based line where it starts (the unit being matched).
+fn locate(read: &ReadLog, hay: &str) -> (Option<String>, usize) {
+    let probe: String = hay.trim_start().chars().take(60).collect();
+    if probe.is_empty() {
+        return (None, 0);
+    }
+    for (path, text) in read {
+        if let Some(at) = text.find(probe.as_str()) {
+            return (Some(path.clone()), text[..at].matches('\n').count() + 1);
+        }
+    }
+    (None, 0)
 }
 
 fn git_archive(repo: &Path, commit: &str, prefixes: &[&str], dest: &Path) -> std::io::Result<()> {
@@ -286,19 +460,12 @@ pub fn commit_exists(repo: &Path, commit: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// Normalises a repository-relative path: `/` separators, no `.` or `..`.
+/// Normalises a repository-relative path as Python's `os.path.normpath`
+/// (`\\` read as `/`), except that the repository root is `""`, not `"."`.
+/// A leading `..` is kept: [`outside`] tells such a path apart.
 pub fn norm(path: &str) -> String {
-    let mut parts: Vec<&str> = Vec::new();
-    for part in path.split(['/', '\\']) {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            p => parts.push(p),
-        }
-    }
-    parts.join("/")
+    let p = normpath(&path.replace('\\', "/"));
+    if p == "." { String::new() } else { p }
 }
 
 /// The directory part of a repository-relative path (`""` at the root).
@@ -308,12 +475,21 @@ pub fn dirname(path: &str) -> &str {
 
 /// `rel` resolved against the directory `base` (Python
 /// `os.path.normpath(os.path.join(base, rel))`).
+///
+/// [`PathNorm::PyNormpath`](super::policy::PathNorm::PyNormpath): a leading
+/// `..` is kept, so a link that climbs above the repository yields a path
+/// outside the documents, which no [`Docs`] holds.
 pub fn join(base: &str, rel: &str) -> String {
     if base.is_empty() {
-        norm(rel)
+        normpath(rel)
     } else {
-        norm(&format!("{base}/{rel}"))
+        normpath(&format!("{base}/{rel}"))
     }
+}
+
+/// True when a normalised path lies outside the repository (`..`, `/`, `.`).
+pub fn outside(key: &str) -> bool {
+    key.starts_with('/') || key == ".." || key.starts_with("../")
 }
 
 fn under(path: &str, prefix: &str) -> bool {
@@ -342,7 +518,7 @@ fn walk(root: &Path, prefix: &str) -> BTreeSet<String> {
     out
 }
 
-fn git_tree(repo: &Path, commit: &str) -> BTreeSet<String> {
+fn git_tree(repo: &Path, commit: &str) -> Result<BTreeSet<String>, String> {
     let out = Command::new("git")
         .args([
             "--no-optional-locks",
@@ -353,11 +529,17 @@ fn git_tree(repo: &Path, commit: &str) -> BTreeSet<String> {
         ])
         .current_dir(repo)
         .output()
-        .expect("git ls-tree runs");
-    String::from_utf8_lossy(&out.stdout)
+        .map_err(|e| format!("git ls-tree {commit}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git ls-tree {commit} failed: {}",
+            String::from_utf8_lossy(&out.stderr).py_strip()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
         .map(str::to_string)
-        .collect()
+        .collect())
 }
 
 fn git_bytes(repo: &Path, commit: &str, path: &str) -> Option<Vec<u8>> {
@@ -376,6 +558,122 @@ fn git_show(repo: &Path, commit: &str, path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::doccheck::policy::TomlReader;
+
+    fn spec(run: fn(&Docs) -> Report) -> CheckSpec {
+        CheckSpec {
+            id: "000-00",
+            run,
+            script_env: &[],
+            targets: &[],
+            keywords: &[],
+            known_differences: &[],
+            denials: &[],
+            toml: TomlReader::Tomllib,
+            fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
+        }
+    }
+
+    /// Reads wire.md, then the file its first link names (wherever it
+    /// lies), and fails AC1 when the link target lacks "ok".
+    fn follows_a_link(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let target = docs.read("doc/design/spec/wire.md").and_then(|t| {
+            let link = t.split_once("](")?.1.split_once(')')?.0;
+            let rel = link.split('#').next()?.to_string();
+            docs.read(&join("doc/design/spec", &rel))
+        });
+        r.check("AC1", target.is_some_and(|t| t.contains("ok")), "target");
+        r
+    }
+
+    #[test]
+    fn every_text_a_check_reads_is_guarded() {
+        let base = Docs::dir("/nonexistent-doccheck-tree")
+            .with("doc/design/spec/wire.md", "see [r](../../../README.md#x)\n")
+            .with("README.md", "ok\n")
+            .with("doc/other.md", "caf\u{e9} never read\n");
+        let s = spec(follows_a_link);
+        assert!(
+            s.evaluate(&base).passed(),
+            "a file the check does not read is not its input"
+        );
+        let bad = base.with("README.md", "ok\nna\u{ef}ve\n");
+        let r = s.evaluate(&bad);
+        assert_eq!(r.failed_criteria(), ["REPERTOIRE".to_string()].into());
+        assert!(
+            r.render().contains("README.md:2:3: U+00EF"),
+            "{}",
+            r.render()
+        );
+        // with the character, the check's own verdict is not reported
+        let both = bad.with("README.md", "na\u{ef}ve\n");
+        assert_eq!(
+            s.evaluate(&both).failed_criteria(),
+            ["REPERTOIRE".to_string()].into()
+        );
+    }
+
+    fn reads_an_int(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let text = docs.read("doc/x.md").unwrap_or_default();
+        let n = crate::doccheck::text::first_int(&text);
+        r.check("AC1", n.is_ok_and(|n| n == Some(7)), "seven");
+        r
+    }
+
+    #[test]
+    fn an_integer_beyond_i128_is_red_with_its_place() {
+        let s = spec(reads_an_int);
+        let ok = Docs::dir("/nonexistent-doccheck-tree").with("doc/x.md", "intro\n7\n");
+        assert!(s.evaluate(&ok).passed());
+        let big = "9".repeat(45);
+        let r = s.evaluate(&ok.with("doc/x.md", format!("intro\nsize {big} bytes\n")));
+        assert_eq!(
+            r.failed_criteria(),
+            [INT_LIMIT.to_string()].into(),
+            "{}",
+            r.render()
+        );
+        assert_eq!(r.failures[0].location.as_ref().map(|l| l.line), Some(2));
+    }
+
+    fn backtracks(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let text = docs.read("doc/x.md").unwrap_or_default();
+        let line = text.lines().nth(1).unwrap_or_default();
+        let found = crate::doccheck::text::has(r"\b[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+\b", line);
+        r.check("AC3", !found, "no CamelCase word");
+        r
+    }
+
+    #[test]
+    fn a_regex_engine_failure_is_red_with_pattern_and_place() {
+        let s = spec(backtracks);
+        let ok = Docs::dir("/nonexistent-doccheck-tree").with("doc/x.md", "intro\nplain words\n");
+        assert!(s.evaluate(&ok).passed());
+        let hay = format!("intro\nAa{}_ x\n", "B".repeat(26));
+        let r = s.evaluate(&ok.with("doc/x.md", hay));
+        assert_eq!(
+            r.failed_criteria(),
+            [REGEX_LIMIT.to_string()].into(),
+            "{}",
+            r.render()
+        );
+        let f = &r.failures[0];
+        assert_eq!(
+            f.location,
+            Some(crate::doccheck::report::Loc {
+                file: "doc/x.md".into(),
+                line: 2
+            })
+        );
+        assert!(f.message.contains("[A-Z][a-z0-9]+"), "{}", f.message);
+        assert!(
+            crate::doccheck::rx::take_failures().is_empty(),
+            "evaluate leaves no record behind"
+        );
+    }
 
     #[test]
     fn paths_normalise_like_os_path() {
@@ -388,6 +686,18 @@ mod tests {
             "doc/design/spec/wire.md"
         );
         assert_eq!(join("", "./a/b"), "a/b");
+        let up = join("doc/design/spec", "../../../../doc/design/spec/wire.md");
+        assert_eq!(up, "../doc/design/spec/wire.md", "a leading .. is kept");
+        assert!(outside(&up));
+        assert!(
+            !Docs::repo().is_file(&up),
+            "nothing outside the tree is a document"
+        );
+        assert!(
+            Docs::repo()
+                .read("../hadronyche-tools/Cargo.toml")
+                .is_none()
+        );
         assert_eq!(dirname("doc/design/spec/wire.md"), "doc/design/spec");
         assert_eq!(dirname("README.md"), "");
     }
@@ -426,11 +736,16 @@ mod tests {
 
     #[test]
     fn a_commit_reads_through_git() {
-        let docs = Docs::at_commit(repo_root(), "HEAD");
+        let docs = Docs::at_commit(repo_root(), "HEAD").expect("HEAD is a commit");
         assert!(docs.is_file("Cargo.toml"));
         assert!(docs.read("Cargo.toml").unwrap().contains("[workspace]"));
         assert!(docs.read("no/such/file").is_none());
         assert!(commit_exists(&repo_root(), "HEAD"));
+        let missing = "0000000000000000000000000000000000000000";
+        assert!(
+            Docs::at_commit(repo_root(), missing).is_err(),
+            "never an empty tree"
+        );
         assert!(!commit_exists(
             &repo_root(),
             "0000000000000000000000000000000000000000"

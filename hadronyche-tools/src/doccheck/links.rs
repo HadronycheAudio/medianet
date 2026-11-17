@@ -52,8 +52,11 @@ pub enum Dangling {
 }
 
 /// The anchors of the Markdown file `path` of `docs`, if it exists.
+/// The file is read as `open()` does (universal newlines), as every script
+/// read it.
 pub fn file_slugs(docs: &Docs, path: &str) -> Option<BTreeSet<String>> {
-    docs.read(path).map(|t| Markdown::parse(&t).slugs())
+    docs.read(path)
+        .map(|t| Markdown::parse(&super::pycompat::universal_newlines(&t)).slugs())
 }
 
 /// Resolves `link` written in a file of directory `base_dir`, whose own
@@ -102,7 +105,7 @@ mod tests {
 
     #[test]
     fn resolution_across_files() {
-        let docs = Docs::repo();
+        let docs = crate::doccheck::testing::repo().clone();
         let wire = Markdown::parse(&docs.read("doc/design/spec/wire.md").unwrap());
         let slugs = wire.slugs();
         let base = "doc/design/spec";

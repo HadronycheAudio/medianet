@@ -9,7 +9,8 @@
 //! Line numbers in this module are 0-based indices into [`Markdown::lines`];
 //! [`Markdown::line_no`] gives the 1-based number a report prints.
 
-use super::policy::{FencePolicy, HeadingMatch, RowSplit, SectionEnd};
+use super::policy::{FencePolicy, HeadingMatch, SectionEnd, TableRules};
+use super::pycompat::PyStr;
 use super::tables::{Table, parse_tables};
 use super::text::{rx, split_nl};
 
@@ -50,7 +51,7 @@ pub struct Span {
 pub fn slugify(text: &str) -> String {
     let t = rx(r"\[([^\]]*)\]\([^)]*\)").replace_all(text, "$1");
     let t: String = t.chars().filter(|c| !"`*~".contains(*c)).collect();
-    let t = t.trim().to_lowercase();
+    let t = t.py_strip().to_lowercase();
     let t = rx(r"[^\w\- ]").replace_all(&t, "");
     t.replace(' ', "-")
 }
@@ -59,25 +60,34 @@ pub fn slugify(text: &str) -> String {
 /// whitespace squashed, lower case, a trailing `.` dropped.
 pub fn norm_title(text: &str) -> String {
     let t = rx(r"[`*_]").replace_all(text, "");
-    let t = rx(r"\s+").replace_all(&t, " ").trim().to_lowercase();
+    let t = rx(r"\s+").replace_all(&t, " ").py_strip().to_lowercase();
     t.trim_end_matches('.').to_string()
 }
 
 /// A heading text without its section number (`3.7 Copies` -> `Copies`).
 pub fn unnumbered(text: &str) -> String {
-    rx(r"^\d+(\.\d+)*\.?\s+").replace(text, "").into_owned()
+    rx(r"^\d+(\.\d+)*\.?\s+").replace(text, "")
 }
 
-fn fence_mask(lines: &[String], policy: FencePolicy) -> Vec<bool> {
+/// The fence mask of `lines` under `policy`: true on a fence line and on
+/// every line inside a fence (the scripts' `fence_mask`, `visible_lines`
+/// negated, ...). Proven on `data/markdown_corpus.txt`.
+pub fn code_mask<S: AsRef<str>>(lines: &[S], policy: FencePolicy) -> Vec<bool> {
     let mut open: Option<(char, usize)> = None;
     lines
         .iter()
         .map(|line| {
-            let t = line.trim_start();
-            let run = |c: char| t.chars().take_while(|&x| x == c).count();
+            let line = line.as_ref();
+            let lead = match policy {
+                // `^[ \t]*`
+                FencePolicy::Matching => line.trim_start_matches([' ', '\t']),
+                _ => line.py_lstrip(),
+            };
+            let run = |c: char| lead.chars().take_while(|&x| x == c).count();
             let fence = match policy {
+                FencePolicy::NoFences => None,
                 FencePolicy::Backticks => (run('`') >= 3).then_some(('`', 3)),
-                FencePolicy::BackticksOrTildes | FencePolicy::Matching => {
+                _ => {
                     let (b, w) = (run('`'), run('~'));
                     if b >= 3 {
                         Some(('`', b))
@@ -89,14 +99,70 @@ fn fence_mask(lines: &[String], policy: FencePolicy) -> Vec<bool> {
             let Some((c, n)) = fence else {
                 return open.is_some();
             };
+            let tail_empty = lead[n..].py_strip().is_empty();
             open = match (open, policy) {
                 (None, _) => Some((c, n)),
-                (Some((oc, on)), FencePolicy::Matching) if oc != c || n < on => Some((oc, on)),
+                (Some((oc, on)), FencePolicy::Matching) if oc != c || n < on || !tail_empty => {
+                    Some((oc, on))
+                }
+                (Some((oc, on)), FencePolicy::SameChar) if oc != c => Some((oc, on)),
                 (Some(_), _) => None,
             };
             true
         })
         .collect()
+}
+
+/// 006-01's `heading_tokens` over a title already normalised with the
+/// script's `norm_text` (NFKC, typographic dashes and quotes): the
+/// `[a-z0-9]+` words of its lower case, without `stopwords`, each stemmed
+/// once (`-ies` → `-y` past 4 letters, `-ing` dropped past 5, `-ed` past 4,
+/// a final `s` past 3 unless `ss`).
+pub fn stem_tokens(normalised: &str, stopwords: &[&str]) -> std::collections::BTreeSet<String> {
+    let lower = normalised.to_lowercase();
+    let mut out = std::collections::BTreeSet::new();
+    for m in rx("[a-z0-9]+").find_iter(&lower) {
+        let w = m.as_str();
+        if stopwords.contains(&w) {
+            continue;
+        }
+        let n = w.chars().count();
+        let stem = if n > 4 && w.ends_with("ies") {
+            format!("{}y", &w[..w.len() - 3])
+        } else if n > 5 && w.ends_with("ing") {
+            w[..w.len() - 3].to_string()
+        } else if n > 4 && w.ends_with("ed") {
+            w[..w.len() - 2].to_string()
+        } else if n > 3 && w.ends_with('s') && !w.ends_with("ss") {
+            w[..w.len() - 1].to_string()
+        } else {
+            w.to_string()
+        };
+        out.insert(stem);
+    }
+    out
+}
+
+/// 006-01's `STOPWORDS`.
+pub const STOPWORDS_006_01: &[&str] = &[
+    "a", "an", "and", "the", "of", "in", "on", "or", "to", "for", "with", "as", "at", "by", "from",
+    "is", "are", "be", "into", "than", "this", "that", "these", "those", "its", "it",
+];
+
+/// 006-01's `matching_heading(headings, groups)`: the first heading of
+/// level 2 or deeper whose [`stem_tokens`] (after `norm`, the script's
+/// `norm_text`) hold, for every group, one of its alternatives.
+pub fn stem_match<'a>(
+    heads: &'a [Heading],
+    groups: &[&[&str]],
+    norm: impl Fn(&str) -> String,
+) -> Option<&'a Heading> {
+    heads.iter().filter(|h| h.level >= 2).find(|h| {
+        let toks = stem_tokens(&norm(&h.text), STOPWORDS_006_01);
+        groups
+            .iter()
+            .all(|g| g.iter().any(|alt| toks.contains(*alt)))
+    })
 }
 
 fn find_heads(lines: &[String], in_code: &[bool]) -> Vec<Heading> {
@@ -108,7 +174,7 @@ fn find_heads(lines: &[String], in_code: &[bool]) -> Vec<Heading> {
             continue;
         }
         let Some(m) = re.captures(line) else { continue };
-        let text = m[2].trim().to_string();
+        let text = m[2].py_strip().to_string();
         let mut slug = slugify(&text);
         match seen.get_mut(&slug) {
             Some(n) => {
@@ -138,7 +204,7 @@ impl Markdown {
     /// Parses `text`, recognising code fences by `fences`.
     pub fn parse_with(text: &str, fences: FencePolicy) -> Markdown {
         let lines: Vec<String> = split_nl(text).into_iter().map(String::from).collect();
-        let in_code = fence_mask(&lines, fences);
+        let in_code = code_mask(&lines, fences);
         let heads = find_heads(&lines, &in_code);
         Markdown {
             lines,
@@ -182,23 +248,36 @@ impl Markdown {
     }
 
     /// The headings that `pattern` finds under the matching rule `how`.
+    ///
+    /// Only the regex variants compile `pattern`; `Substring`, `Exact`,
+    /// `NormEq` and `Slug` compare it literally, so a title such as
+    /// `Foo (x` is safe to pass.
     pub fn find_by(&self, how: HeadingMatch, pattern: &str) -> Vec<&Heading> {
-        let lower = pattern.to_lowercase();
-        let norm = norm_title(pattern);
-        let full = rx(&format!("(?i)^(?:{pattern})$"));
-        let re = rx(pattern);
-        self.heads
-            .iter()
-            .filter(|h| match how {
-                HeadingMatch::Regex => re.is_match(&h.text),
-                HeadingMatch::RegexAtLevel(l) => h.level == l && re.is_match(&h.text),
-                HeadingMatch::FullMatch => full.is_match(&h.text),
-                HeadingMatch::Substring => h.text.to_lowercase().contains(&lower),
-                HeadingMatch::Exact => h.text == pattern,
-                HeadingMatch::NormEq => norm_title(&h.text) == norm,
-                HeadingMatch::Slug => h.slug == pattern,
-            })
-            .collect()
+        let pred: Box<dyn Fn(&Heading) -> bool> = match how {
+            HeadingMatch::Regex => {
+                let re = rx(pattern);
+                Box::new(move |h| re.is_match(&h.text))
+            }
+            HeadingMatch::RegexAtLevel(l) => {
+                let re = rx(pattern);
+                Box::new(move |h| h.level == l && re.is_match(&h.text))
+            }
+            HeadingMatch::FullMatch => {
+                let re = rx(&format!("(?i)^(?:{pattern})$"));
+                Box::new(move |h| re.is_match(&h.text))
+            }
+            HeadingMatch::Substring => {
+                let lower = pattern.to_lowercase();
+                Box::new(move |h| h.text.to_lowercase().contains(&lower))
+            }
+            HeadingMatch::Exact => Box::new(move |h| h.text == pattern),
+            HeadingMatch::NormEq => {
+                let norm = norm_title(pattern);
+                Box::new(move |h| norm_title(&h.text) == norm)
+            }
+            HeadingMatch::Slug => Box::new(move |h| h.slug == pattern),
+        };
+        self.heads.iter().filter(|h| pred(h)).collect()
     }
 
     /// Headings whose text matches `pattern` (a regex; add `(?i)` for case).
@@ -248,12 +327,13 @@ impl Markdown {
 
     /// The tables of `span` outside code (see [`Table`]).
     pub fn tables(&self, span: Span) -> Vec<Table> {
-        self.tables_with(span, RowSplit::Escaped)
+        self.tables_with(span, TableRules::default())
     }
 
-    /// The tables of `span`, cells split by `split`.
-    pub fn tables_with(&self, span: Span, split: RowSplit) -> Vec<Table> {
-        parse_tables(&self.lines, &self.in_code, span.lo, span.hi, split)
+    /// The tables of `span` read under `rules` (row split, separator rule,
+    /// headerless runs; [`TableRules::T004_22`], [`TableRules::FAMILY_004`]).
+    pub fn tables_with(&self, span: Span, rules: TableRules) -> Vec<Table> {
+        parse_tables(&self.lines, &self.in_code, span.lo, span.hi, rules)
     }
 
     /// Every anchor of the document.
@@ -351,6 +431,11 @@ mod tests {
             1
         );
         assert_eq!(md.find_by(HeadingMatch::Slug, "hello-1").len(), 1);
+        assert!(
+            md.find_by(HeadingMatch::Substring, "Foo (x").is_empty(),
+            "no regex, no panic"
+        );
+        assert!(md.find_by(HeadingMatch::Exact, "a[").is_empty());
         let title = md.find("^Title$")[0];
         assert_eq!(md.section_with(title, SectionEnd::AnyHeading).hi, 2);
         assert_eq!(md.section_with(title, SectionEnd::NextLevel2).hi, 2);

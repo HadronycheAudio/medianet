@@ -6,3 +6,15 @@ exclude = ["probes/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+
+# The document checks' regex engines run thousands of patterns over whole
+# documents in `cargo test` (the corpus proofs of hadronyche-tools); built
+# unoptimised they dominate the test time.
+[profile.dev.package.regex]
+opt-level = 3
+[profile.dev.package.regex-automata]
+opt-level = 3
+[profile.dev.package.regex-syntax]
+opt-level = 3
+[profile.dev.package.fancy-regex]
+opt-level = 3

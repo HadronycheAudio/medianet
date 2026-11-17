@@ -4,11 +4,11 @@ use std::collections::BTreeSet;
 
 use super::landed::Landed;
 use super::messages::Probe;
-use super::sentences;
+use crate::doccheck::family004::sentences;
 use crate::doccheck::Report;
 use crate::doccheck::text::{has, has_i, rx};
 use crate::doccheck::units::{BlockKind, prose_blocks};
-use crate::doccheck::wire_toml::text;
+use crate::doccheck::pyvalue::{Dict, PyValue};
 
 fn matching(probe: &Probe, report: &mut Report) {
     let ok = probe.subs.iter().filter(|(t, _)| has_i("match|binding|identif", t)).any(|(_, x)| {
@@ -39,15 +39,20 @@ fn rules(probe: &Probe, report: &mut Report) {
     report.check("AC1", has_i(silence, t), "the outcome when no reply arrives is stated");
 }
 
+/// The script's `(FALLBACK_MTU or 0)`: Python's `or`, not a parse default.
+fn or_zero(n: Option<i128>) -> i128 {
+    n.unwrap_or_default()
+}
+
 fn fallback(probe: &Probe, landed: &Landed, report: &mut Report) {
     let t = &probe.text;
     let at = |re: &str| rx(re).find(t).map(|m| m.start());
     let p_int = at("(?i)intended");
-    let p_fb = at(&format!(r"\b{}\b", landed.fallback.unwrap_or(0)));
+    let p_fb = at(&format!(r"\b{}\b", or_zero(landed.fallback)));
     let p_ref = at("PathMtuTooSmall");
     let ordered = matches!((p_int, p_fb, p_ref), (Some(a), Some(b), Some(c)) if a < b && b < c);
     report.check("AC1", ordered, format!("the fallback sequence is stated in order: the intended size, then the {:?}-byte fallback, then the refusal PathMtuTooSmall (C-173)", landed.fallback));
-    let cites = has(&format!(r"\b{}\b", landed.bound.unwrap_or(0)), t) && t.contains("C-06") && t.contains("C-173");
+    let cites = has(&format!(r"\b{}\b", or_zero(landed.bound)), t) && t.contains("C-06") && t.contains("C-173");
     report.check("AC1", cites, format!("the section cites C-06 and C-173 and states the {:?}-byte UDP payload of the fallback", landed.bound));
 }
 
@@ -61,18 +66,31 @@ pub(crate) fn ac1_prose(probe: &Probe, landed: &Landed, report: &mut Report) {
 /// AC2: the exemption cites C-116 and is carried by exactly the probe
 /// request; every sentence that says "exempt" cites C-116 only.
 pub(crate) fn ac2(probe: &Probe, landed: &Landed, report: &mut Report) {
-    let name = |m: &toml::Table| text(m, "name").to_string();
-    let probes: Vec<&toml::Table> = landed
+    // str(m.get("name", "")) for the filters; the raw value for EXEMPT_ALL
+    let name = |m: &Dict| m.get("name").map(PyValue::py_str).unwrap_or_default();
+    let probes: Vec<&Dict> = landed
         .tmsgs
         .iter()
         .filter(|m| name(m).to_lowercase().contains("probe") && !has_i(r"one[\s_-]*way", &name(m)))
         .collect();
-    let exempt: Vec<String> = landed.tmsgs.iter().filter(|m| m.contains_key("exempt_from_control_bound")).map(name).collect();
-    let req: Vec<&&toml::Table> = probes.iter().filter(|m| name(m).to_lowercase().contains("request")).collect();
-    let rep: Vec<&&toml::Table> = probes.iter().filter(|m| name(m).to_lowercase().contains("reply")).collect();
-    report.check("AC2", req.len() == 1 && exempt == [name(req[0])], format!("exactly one message of wire.toml carries the exemption from C-17, the probe request (exempt messages {exempt:?})"));
+    let exempt: Vec<Option<&PyValue>> = landed
+        .tmsgs
+        .iter()
+        .filter(|m| m.contains_key("exempt_from_control_bound"))
+        .map(|m| m.get("name"))
+        .collect();
+    let req: Vec<&&Dict> = probes.iter().filter(|m| name(m).to_lowercase().contains("request")).collect();
+    let rep: Vec<&&Dict> = probes.iter().filter(|m| name(m).to_lowercase().contains("reply")).collect();
+    let same = |a: Option<&PyValue>, b: Option<&PyValue>| match (a, b) {
+        (Some(x), Some(y)) => x.py_eq(y),
+        (None, None) => true,
+        _ => false,
+    };
+    let only_request = req.len() == 1 && exempt.len() == 1 && same(exempt[0], req[0].get("name"));
+    let shown: Vec<String> = exempt.iter().map(|n| n.map_or("None".into(), PyValue::py_repr)).collect();
+    report.check("AC2", only_request, format!("exactly one message of wire.toml carries the exemption from C-17, the probe request (exempt messages {shown:?})"));
     let cites = req.len() == 1
-        && req[0].get("exempt_from_control_bound").and_then(toml::Value::as_str) == Some("C-116")
+        && req[0].get("exempt_from_control_bound").is_some_and(|v| v.eq_str("C-116"))
         && rep.len() == 1
         && !rep[0].contains_key("exempt_from_control_bound");
     report.check("AC2", cites, "the probe request's exemption cites C-116, and the probe reply carries no exemption");

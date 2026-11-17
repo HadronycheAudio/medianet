@@ -20,10 +20,21 @@
 //! | [`TagPolicy::PROSE_004_27`] | 004-27 | six, any | [`prose_blocks`] `p` | `split()` after `` `*_\|># `` blanked, >= 5 | exempt |
 //! | [`TagPolicy::PROSE_004_29`] | 004-25, 004-28, 004-29 | six, any | as 004-27 | as 004-27, `-` also blanked | exempt |
 //! | [`TagPolicy::PROSE_004_26`] | 004-26 | six, any | as 004-27 | `\S+`, >= 5 | exempt |
-//! | [`TagPolicy::ALPHA_004_16`] | 004-16, 004-17 (004-18 to 004-21 differ on tables) | six, any | as 004-27 | `[A-Za-z]{2,}` outside code spans, >= 5 | exempt |
+//! | [`TagPolicy::ALPHA_004_16`] | 004-16, 004-17, 004-18 | six, any | as 004-27 | `[A-Za-z]{2,}` outside code spans, >= 5 | a table fails when its section text has no tag at all ([`TableTagRule::SectionTagged004_16`]) |
+//! | [`TagPolicy::BLOCKS_004_19`] | 004-19, 004-20 | six, any | [`section_blocks`](super::blocks::section_blocks) of role prose | `[A-Za-z]{2,}` outside code spans, >= 5 | a table fails when untagged after an untagged prose block of 5 or more words ([`TableTagRule::AfterProse004_19`]) |
 //! | [`TagPolicy::ALNUM_004_14`] | 004-14 (004-15 on its own units) | six, any | units, `+` also a list marker | `[A-Za-z0-9]+`, >= 5 | exempt |
-//! | [`TagPolicy::EVERY_BLOCK_004_09`] | 004-03, 05, 06, 08, 09, 10, 11 | six, any | every blank-separated block | none | inherit from the block before |
-//! | [`TagPolicy::EVERY_BLOCK_004_13`] | 004-13 | six, any | every blank-separated block | none | need their own |
+//! | [`TagPolicy::EVERY_BLOCK_004_03`] | 004-03, 05, 06, 08, 09, 10, 11, 13 | six, any | every [`blank_blocks`](super::blocks::blank_blocks) block, heading lines removed | none | a table or code block inherits from the block before |
+//! | [`LinePolicy::LINES_004_24`] | 004-24 | six, any | every LINE outside fences, not blank, not starting `#` or `\|` (after strip) | `split()` after `` `*_\|>#- `` blanked, >= 5 | skipped |
+//!
+//! The every-block rule was first written here from 004-09 alone, splitting
+//! on `"\n\n"` and with a variant for 004-13 that let no table inherit; the
+//! scripts (004-03 to 004-13, one text) split with `blocks()` (a line of
+//! spaces is blank too) and 004-13 inherits like the others. M1-lib corrected
+//! both against the corpus (`doccheck::proofs004`); no port used them.
+//!
+//! The subsection rules: 004-24 and 004-27 require a tag in every `###`
+//! subsection ([`subsections_untagged`]); 004-26 only in a subsection that
+//! holds a table ([`subsections_with_table_untagged`]).
 //!
 //! Not implemented yet (each port adds its own constant, never edits one):
 //! the five-tag case-sensitive set of epic 002 with its pointer-line and
@@ -33,8 +44,11 @@
 //! single-tag rules of 003-02, 003-05, 004-01, 006-01 and 006-02. 004-27 also
 //! requires a tag in every `###` subsection: [`subsections_untagged`].
 
+use super::blocks::{BlockRole, blank_blocks_at, block_role, section_blocks_at};
+use super::family004::subsections;
+use super::pycompat::{PyStr, splitlines};
 use super::text::{rx, strip_links};
-use super::units::{BlockKind, UnitKind, prose_blocks, units};
+use super::units::{BlockKind, UnitKind, prose_blocks, strip_fences, units};
 
 /// A set of evidence tags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,9 +117,11 @@ pub enum Segmentation {
     UnitsPlus,
     /// [`prose_blocks`] of kind prose.
     ProseBlocks,
-    /// Every blank-separated block; with `inherit`, a table or code block
-    /// right after a tagged block inherits its tag.
-    EveryBlock { inherit: bool },
+    /// [`section_blocks`](super::blocks::section_blocks) of role prose (004-19, 004-20).
+    SectionBlocks,
+    /// Every [`blank_blocks`](super::blocks::blank_blocks) block, heading lines removed; a table or code
+    /// block right after a tagged block inherits its tag.
+    EveryBlock,
 }
 
 /// How words are counted.
@@ -185,17 +201,17 @@ impl TagPolicy {
         exact_case: false,
         set: TagSet::Six,
     };
-    pub const EVERY_BLOCK_004_09: TagPolicy = TagPolicy {
-        name: "every-block-004-09",
-        segmentation: Segmentation::EveryBlock { inherit: true },
-        words: WordCount::NonSpace,
-        min_words: 0,
+    pub const BLOCKS_004_19: TagPolicy = TagPolicy {
+        name: "blocks-004-19",
+        segmentation: Segmentation::SectionBlocks,
+        words: WordCount::AlphaNoCode,
+        min_words: 5,
         exact_case: false,
         set: TagSet::Six,
     };
-    pub const EVERY_BLOCK_004_13: TagPolicy = TagPolicy {
-        name: "every-block-004-13",
-        segmentation: Segmentation::EveryBlock { inherit: false },
+    pub const EVERY_BLOCK_004_03: TagPolicy = TagPolicy {
+        name: "every-block-004-03",
+        segmentation: Segmentation::EveryBlock,
         words: WordCount::NonSpace,
         min_words: 0,
         exact_case: false,
@@ -216,9 +232,7 @@ pub fn count_words(text: &str, count: WordCount) -> usize {
     match count {
         WordCount::NonSpaceNoLinks => rx(r"\S+").find_iter(&strip_links(text)).count(),
         WordCount::NonSpace => rx(r"\S+").find_iter(text).count(),
-        WordCount::SplitBlanking(chars) => super::text::blank_chars(text, chars)
-            .split_whitespace()
-            .count(),
+        WordCount::SplitBlanking(chars) => super::text::blank_chars(text, chars).py_split().count(),
         WordCount::AlphaNoCode => {
             let no_code = rx(r"`[^`]*`").replace_all(text, "");
             rx(r"[A-Za-z]{2,}").find_iter(&no_code).count()
@@ -244,8 +258,13 @@ pub fn untagged(text: &str, policy: &TagPolicy) -> Vec<Untagged> {
             .filter(|b| b.kind == BlockKind::Prose)
             .map(|b| (b.line, b.text))
             .collect(),
-        Segmentation::EveryBlock { inherit } => {
-            return every_block_untagged(text, policy, inherit);
+        Segmentation::SectionBlocks => section_blocks_at(&splitlines(text))
+            .into_iter()
+            .filter(|(_, b)| block_role(b) == BlockRole::Prose)
+            .map(|(line, b)| (line, b.join("\n")))
+            .collect(),
+        Segmentation::EveryBlock => {
+            return every_block_untagged(text, policy);
         }
     };
     candidates
@@ -255,35 +274,37 @@ pub fn untagged(text: &str, policy: &TagPolicy) -> Vec<Untagged> {
         .collect()
 }
 
-/// 004-09's rule: every blank-separated block (heading lines removed)
-/// carries a tag, except a table or code block right after a tagged block.
-fn every_block_untagged(text: &str, policy: &TagPolicy, inherit: bool) -> Vec<Untagged> {
+/// The every-block rule of 004-03 to 004-13 (checks/004-06.sh:1243): each
+/// [`blank_blocks`](super::blocks::blank_blocks) block loses its heading lines (`#` after `lstrip`); a
+/// block of headings only resets the inheritance; a block with a tag passes;
+/// a table (every non-blank line starts with `|`) or code block (its first
+/// line starts with three backticks) passes when the block before passed.
+/// `line` is the index of the block's first line, `text` the block's body
+/// (stripped, headings removed).
+fn every_block_untagged(text: &str, policy: &TagPolicy) -> Vec<Untagged> {
     let mut out = Vec::new();
     let mut prev_tagged = true;
-    let mut line = 0;
-    for block in text.split("\n\n") {
-        let start = line;
-        line += block.matches('\n').count() + 2;
-        let content: Vec<&str> = block
-            .trim()
-            .lines()
-            .filter(|l| !l.trim_start().starts_with('#'))
-            .collect();
-        if block.trim().is_empty() {
+    for (start, block) in blank_blocks_at(text) {
+        let stripped = block.py_strip();
+        if stripped.is_empty() {
             continue;
         }
+        let content: Vec<&str> = splitlines(stripped)
+            .into_iter()
+            .filter(|l| !l.py_lstrip().starts_with('#'))
+            .collect();
         if content.is_empty() {
             prev_tagged = true;
             continue;
         }
         let body = content.join("\n");
-        let body = body.trim();
+        let body = body.py_strip();
         let is_table = content
             .iter()
-            .filter(|l| !l.trim().is_empty())
-            .all(|l| l.trim().starts_with('|'));
-        let is_code = content[0].trim_start().starts_with("```");
-        if tagged(body, policy) || (inherit && (is_table || is_code) && prev_tagged) {
+            .filter(|l| !l.py_strip().is_empty())
+            .all(|l| l.py_strip().starts_with('|'));
+        let is_code = content[0].py_lstrip().starts_with("```");
+        if tagged(body, policy) || ((is_table || is_code) && prev_tagged) {
             prev_tagged = true;
             continue;
         }
@@ -294,6 +315,112 @@ fn every_block_untagged(text: &str, policy: &TagPolicy, inherit: bool) -> Vec<Un
         prev_tagged = false;
     }
     out
+}
+
+/// How a table must be tagged, in the rules that do not exempt tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableTagRule {
+    /// 004-16 to 004-18: every table block ([`prose_blocks`] kind table)
+    /// fails when the section text has no tag anywhere.
+    SectionTagged004_16,
+    /// 004-19, 004-20: a table block ([`section_blocks`](super::blocks::section_blocks) role table) fails
+    /// when it has no tag and the last prose block before it was untagged
+    /// with 5 or more words (`[A-Za-z]{2,}` outside code spans); headings and
+    /// code blocks change nothing.
+    AfterProse004_19,
+}
+
+/// The table blocks of `text` that break `rule` (`line` is the block's
+/// first line, `text` the table as written).
+pub fn untagged_tables(text: &str, rule: TableTagRule) -> Vec<Untagged> {
+    match rule {
+        TableTagRule::SectionTagged004_16 => {
+            if has_tag(text) {
+                return Vec::new();
+            }
+            prose_blocks(text)
+                .into_iter()
+                .filter(|b| b.kind == BlockKind::Table)
+                .map(|b| Untagged {
+                    line: b.line,
+                    text: b.text,
+                })
+                .collect()
+        }
+        TableTagRule::AfterProse004_19 => {
+            let mut out = Vec::new();
+            let mut last_prose_tagged = true;
+            for (start, b) in section_blocks_at(&splitlines(text)) {
+                let body = b.join("\n");
+                match block_role(&b) {
+                    BlockRole::Heading | BlockRole::Code => {}
+                    BlockRole::Table => {
+                        if !(has_tag(&body) || last_prose_tagged) {
+                            out.push(Untagged {
+                                line: start,
+                                text: body,
+                            });
+                        }
+                    }
+                    BlockRole::Prose => {
+                        let t = has_tag(&body);
+                        last_prose_tagged = t || count_words(&body, WordCount::AlphaNoCode) < 5;
+                    }
+                }
+            }
+            out
+        }
+    }
+}
+
+/// The untagged-claim rule applied per line (004-24's regime stamp).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinePolicy {
+    pub name: &'static str,
+    pub words: WordCount,
+    pub min_words: usize,
+    pub set: TagSet,
+    pub exact_case: bool,
+}
+
+impl LinePolicy {
+    /// checks/004-24.sh:1103: every line of [`strip_fences`], stripped, not
+    /// blank and not starting with `#` or `|`, of 5 or more words after
+    /// `` `*_|>#- `` are blanked, carries a tag (six, any case).
+    pub const LINES_004_24: LinePolicy = LinePolicy {
+        name: "lines-004-24",
+        words: WordCount::SplitBlanking("`*_|>#-"),
+        min_words: 5,
+        set: TagSet::Six,
+        exact_case: false,
+    };
+}
+
+/// The lines of `text` that break `policy`, stripped.
+pub fn untagged_lines(text: &str, policy: &LinePolicy) -> Vec<String> {
+    splitlines(&strip_fences(text))
+        .into_iter()
+        .map(PyStr::py_strip)
+        .filter(|t| !t.is_empty() && !t.starts_with(['#', '|']))
+        .filter(|t| count_words(t, policy.words) >= policy.min_words)
+        .filter(|t| !policy.set.found_in(t, policy.exact_case))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The titles of the `###` subsections of `text` that hold a table
+/// ([`prose_blocks`] kind table) and carry no tag (checks/004-26.sh:1011).
+pub fn subsections_with_table_untagged(text: &str) -> Vec<String> {
+    subsections(text)
+        .into_iter()
+        .filter(|(_, body)| {
+            prose_blocks(body)
+                .iter()
+                .any(|b| b.kind == BlockKind::Table)
+                && !has_tag(body)
+        })
+        .map(|(title, _)| title)
+        .collect()
 }
 
 /// The titles of the `###` subsections of `text` that carry no tag at all
@@ -362,8 +489,10 @@ mod tests {
         assert!(TagSet::Five.found_in("[MEMORY]", false));
         assert!(!TagSet::Five.found_in("[MEMORY]", true));
         let t = "Intro [decision]\n\n| a |\n|---|\n";
-        assert!(untagged(t, &TagPolicy::EVERY_BLOCK_004_09).is_empty());
-        assert_eq!(untagged(t, &TagPolicy::EVERY_BLOCK_004_13).len(), 1);
+        assert!(untagged(t, &TagPolicy::EVERY_BLOCK_004_03).is_empty());
+        // a line of spaces is blank for blocks() (it was not for "\n\n")
+        let ws = "Intro [decision]\n   \nuntagged words here\n";
+        assert_eq!(untagged(ws, &TagPolicy::EVERY_BLOCK_004_03).len(), 1);
     }
 
     #[test]
@@ -376,9 +505,28 @@ mod tests {
     #[test]
     fn every_block_policy_lets_tables_inherit() {
         let ok = "Intro [decision]\n\n| a |\n|---|\n\n```\ncode\n```\n";
-        assert!(untagged(ok, &TagPolicy::EVERY_BLOCK_004_09).is_empty());
+        assert!(untagged(ok, &TagPolicy::EVERY_BLOCK_004_03).is_empty());
         let bad = "Intro\n\n| a |\n|---|\n";
-        assert_eq!(untagged(bad, &TagPolicy::EVERY_BLOCK_004_09).len(), 2);
+        assert_eq!(untagged(bad, &TagPolicy::EVERY_BLOCK_004_03).len(), 2);
+        assert_eq!(
+            untagged_lines(
+                "one two three four five\n# h h h h h\n| a b c d e\nsix [code] x y z w\n",
+                &LinePolicy::LINES_004_24
+            ),
+            vec!["one two three four five"]
+        );
+        let tables = "Five untagged words in prose.\n\n| t |\n|---|\n";
+        assert_eq!(
+            untagged_tables(tables, TableTagRule::SectionTagged004_16).len(),
+            1
+        );
+        assert_eq!(
+            untagged_tables(tables, TableTagRule::AfterProse004_19).len(),
+            1
+        );
+        let short = "Two words.\n\n| t |\n|---|\n[code] elsewhere";
+        assert!(untagged_tables(short, TableTagRule::SectionTagged004_16).is_empty());
+        assert!(untagged_tables(short, TableTagRule::AfterProse004_19).is_empty());
         let subs = vec![
             ("A".to_string(), "x [code]".to_string()),
             ("B".to_string(), "y".to_string()),

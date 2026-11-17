@@ -1,5 +1,6 @@
 //! 004-22's reference rules: heading references, links, rule numbers.
 
+use crate::doccheck::pycompat::PyStr;
 use std::collections::BTreeSet;
 
 use crate::doccheck::Docs;
@@ -12,8 +13,9 @@ use crate::doccheck::text::{rx, strip_links};
 /// digits.
 pub fn rule_number(cell: &str) -> Option<u32> {
     rx(r"(?i)^\**\s*(?:rule\s*)?(\d{1,2})\s*\**$")
-        .captures(cell.trim())
-        .and_then(|c| c[1].parse().ok())
+        .captures(cell.py_strip())
+        .and_then(|c| crate::doccheck::pycompat::parse_int(&c[1]).ok())
+        .and_then(|n| u32::try_from(n).ok())
 }
 
 /// `reference_resolves`: a plain heading name, "Section, Subsection" or a
@@ -29,7 +31,7 @@ pub fn reference_resolves(cell: &str, norms: &BTreeSet<String>) -> bool {
     segs.extend(rx(r"`([^`]+)`").captures_iter(&text).map(|c| c[1].to_string()));
     segs.extend(text.split(';').map(String::from));
     segs.iter().any(|seg| {
-        let s = seg.trim().trim_matches(['.', ',']);
+        let s = seg.py_strip().trim_matches(['.', ',']);
         if s.is_empty() {
             return false;
         }
@@ -66,11 +68,11 @@ pub fn base_of(path: &str) -> &str {
     dirname(path)
 }
 
-/// Python's `repr` of a list of optional integers: `[16, None]`.
-pub fn py_list(values: &[Option<i64>]) -> String {
+/// Python's `repr` of a list of optional values: `[16, None]`.
+pub fn py_list(values: &[Option<crate::doccheck::pyvalue::PyValue>]) -> String {
     let items: Vec<String> = values
         .iter()
-        .map(|v| v.map_or("None".to_string(), |n| n.to_string()))
+        .map(|v| v.as_ref().map_or("None".to_string(), |v| v.py_repr()))
         .collect();
     format!("[{}]", items.join(", "))
 }
@@ -90,6 +92,6 @@ mod tests {
         assert!(reference_resolves("see `Copies`", &n));
         assert!(reference_resolves("x; Field table.", &n));
         assert!(!reference_resolves("Media packet, Field table", &n));
-        assert_eq!(py_list(&[Some(16), None]), "[16, None]");
+        assert_eq!(py_list(&[Some(crate::doccheck::pyvalue::PyValue::Int(16)), None]), "[16, None]");
     }
 }

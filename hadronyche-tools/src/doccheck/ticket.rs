@@ -5,10 +5,12 @@
 //! done checklist. The constants table is the `| C-NN | name | value |` table
 //! of `doc/design/02-constants.md`.
 
+use super::pycompat::PyStr;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::docs::Docs;
 use super::markdown::Markdown;
+use super::pycompat::parse_int;
 use super::text::rx;
 
 /// Where the constants table lives.
@@ -50,7 +52,7 @@ impl Ticket {
         let Some(line) = self.text.lines().find(|l| l.contains("Depends on:")) else {
             return Vec::new();
         };
-        let after = &line[line.find("Depends on:").unwrap_or(0)..];
+        let after = line.find("Depends on:").map_or(line, |k| &line[k..]);
         let after = after.split('·').next().unwrap_or("");
         rx(r"\b\d{3}[a-z]?-\d{2}\b")
             .find_iter(after)
@@ -68,10 +70,13 @@ impl Ticket {
         let mut out = Vec::new();
         for line in &md.lines[span.lo + 1..span.hi] {
             if let Some(c) = re.captures(line) {
-                let n = c
-                    .get(1)
-                    .map_or(out.len() + 1, |m| m.as_str().parse().unwrap_or(0));
-                out.push((n, c[2].trim().to_string()));
+                let n = c.get(1).map_or(Some(out.len() + 1), |m| {
+                    parse_int(m.as_str())
+                        .ok()
+                        .and_then(|n| usize::try_from(n).ok())
+                });
+                let Some(n) = n else { continue };
+                out.push((n, c[2].py_strip().to_string()));
             }
         }
         out
@@ -93,8 +98,20 @@ impl Ticket {
 pub fn expand_constant_ids(text: &str) -> BTreeSet<u32> {
     let mut ids = BTreeSet::new();
     for c in rx(r"C-(\d{1,3})(?:\s*(?:to|–)\s*C-(\d{1,3}))?").captures_iter(text) {
-        let a: u32 = c[1].parse().unwrap_or(0);
-        let b: u32 = c.get(2).map_or(a, |m| m.as_str().parse().unwrap_or(0));
+        // \d{1,3}: always an int (Python's int() of the capture)
+        let Some(a) = parse_int(&c[1]).ok().and_then(|n| u32::try_from(n).ok()) else {
+            continue;
+        };
+        let b = match c.get(2) {
+            Some(m) => match parse_int(m.as_str())
+                .ok()
+                .and_then(|n| u32::try_from(n).ok())
+            {
+                Some(b) => b,
+                None => continue,
+            },
+            None => a,
+        };
         if b >= a {
             ids.extend(a..=b);
         }
@@ -135,7 +152,7 @@ impl Constants {
                 continue;
             };
             let cells: Vec<&str> = line.split('|').collect();
-            let cell = |k: usize| cells.get(k).map_or("", |c| c.trim()).to_string();
+            let cell = |k: usize| cells.get(k).map_or("", |c| c.py_strip()).to_string();
             rows.entry(c[1].to_string()).or_insert(Constant {
                 line: i + 1,
                 name: cell(2),
@@ -174,7 +191,8 @@ mod tests {
 
     #[test]
     fn the_real_ticket_reads() {
-        let t = Ticket::load(&Docs::repo(), "004-22").expect("ticket 004-22");
+        let t = Ticket::load(&crate::doccheck::testing::repo().clone(), "004-22")
+            .expect("ticket 004-22");
         assert_eq!(t.depends_on(), vec!["004-07", "004-14", "004-15", "004-21"]);
         let acs = t.acceptance_criteria();
         assert_eq!(acs.len(), 4);
@@ -186,7 +204,7 @@ mod tests {
 
     #[test]
     fn constants_by_id() {
-        let c = Constants::load(&Docs::repo());
+        let c = Constants::load(&crate::doccheck::testing::repo().clone());
         assert!(c.value("C-132").contains("[standard]"));
         assert!(c.rows["C-132"].line > 1);
         assert_eq!(c.value("C-999"), "");

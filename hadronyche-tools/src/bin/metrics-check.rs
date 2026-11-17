@@ -17,6 +17,8 @@
 //! unreadable path exits 1. The captured output for the POC's `experiments/`
 //! is recorded in section (c) of `doc/design/reports/archaeology/REPORT-0b.md`.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: a command-line tool
+
 use std::path::PathBuf;
 
 use hadronyche_tools::metrics_check::{check_bytes, render_line, run};

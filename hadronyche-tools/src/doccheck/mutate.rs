@@ -185,7 +185,7 @@ pub fn strip_tags(text: &str, pattern: &str) -> String {
     let tag = rx(r"`?\[(?:code|measured|kernel-doc|standard|memory|decision)\]`?");
     let mut lines: Vec<String> = split_nl(text).into_iter().map(String::from).collect();
     for l in &mut lines[u.lo..=u.hi] {
-        *l = tag.replace_all(l, "").into_owned();
+        *l = tag.replace_all(l, "");
     }
     lines.join("\n")
 }
@@ -200,7 +200,7 @@ pub fn replace_in_line(text: &str, line_pattern: &str, pattern: &str, to: &str) 
         re.is_match(lines[i]),
         "replace_in_line: {pattern:?} not on line {i}"
     );
-    let new = re.replace(lines[i], regex::NoExpand(to)).into_owned();
+    let new = re.replace_literal(lines[i], to);
     lines[i] = &new;
     lines.join("\n")
 }
@@ -216,11 +216,29 @@ pub fn negate(text: &str, line_pattern: &str, keyword: &str) -> String {
     )
 }
 
+/// The review's denial edit: find `anchor`, then the first `old` at or
+/// after it, and replace that one occurrence by `new`; with `old` equal to
+/// `"ALL\n"`, replace every newline by `new`. Panics when the anchor or
+/// `old` is missing (a stale denial must fail, not pass vacuously).
+pub fn anchored_replace(text: &str, anchor: &str, old: &str, new: &str) -> String {
+    if old == "ALL\n" {
+        return text.replace('\n', new);
+    }
+    let a = text
+        .find(anchor)
+        .unwrap_or_else(|| panic!("anchored_replace: no anchor {anchor:?}"));
+    let k = text[a..]
+        .find(old)
+        .unwrap_or_else(|| panic!("anchored_replace: no {old:?} after {anchor:?}"))
+        + a;
+    format!("{}{}{}", &text[..k], new, &text[k + old.len()..])
+}
+
 /// Replaces every match of `pattern` in the whole text.
 pub fn replace_all(text: &str, pattern: &str, to: &str) -> String {
     let re = rx(pattern);
     assert!(re.is_match(text), "replace_all: {pattern:?} not found");
-    re.replace_all(text, regex::NoExpand(to)).into_owned()
+    re.replace_all_literal(text, to)
 }
 
 #[cfg(test)]
@@ -241,6 +259,11 @@ mod tests {
         assert!(replace_in_line(T, r"\| r2", "8", "9").contains("| r2 | 9 |"));
         assert!(negate(T, "^is", "it").contains("is not it"));
         assert_eq!(replace_all("a1a1", "1", "2"), "a2a2");
+        assert_eq!(anchored_replace("x a b a b", "b", "a", "Z"), "x a b Z b");
+        assert_eq!(
+            anchored_replace("a\nb\n", "", "ALL\n", "\r\n"),
+            "a\r\nb\r\n"
+        );
         let w = within_section(T, "^B$", |s| s.replace("is", "was"));
         assert!(w.contains("was it") && w.starts_with("## A"));
     }

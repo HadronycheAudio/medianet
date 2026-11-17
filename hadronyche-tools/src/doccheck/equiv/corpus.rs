@@ -187,7 +187,9 @@ fn line_mutations(
             }
         }
         for m in number.find_iter(line) {
-            let n: u64 = m.as_str().parse().unwrap_or(0);
+            let Ok(n) = crate::doccheck::pycompat::parse_int(m.as_str()) else {
+                continue;
+            };
             let to = (n + 1).to_string();
             let what = format!("{name}:{at} number {} -> {to}", m.as_str());
             let edit = Edit::ReplaceSpan {
@@ -259,7 +261,7 @@ mod tests {
     const TEXT: &str = "# Top\n\n## Sec\n\nThe field is 12 bits [decision].\n\n- no item here\n\n| a | b |\n|---|---|\n| x | 3 |\n\n### Sub\n\nText.\n\n## Other\n\nOut 9.\n";
 
     fn docs() -> Docs {
-        Docs::repo().with("t.md", TEXT)
+        crate::doccheck::testing::repo().clone().with("t.md", TEXT)
     }
 
     const T: Target = Target {
