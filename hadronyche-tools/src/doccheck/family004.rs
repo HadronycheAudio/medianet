@@ -42,12 +42,11 @@ pub struct Field {
 }
 
 impl Field {
-    /// Bits at the maximum count (`bits * (maxc or 1)`), saturating: Python
-    /// integers do not overflow, and a saturated size equals no size a
-    /// document states.
+    /// Bits at the maximum count (`bits * (maxc or 1)`), checked: beyond
+    /// `i128` it records `INT_LIMIT` (R21; Python's integers do not
+    /// overflow, and no saturated value may stand in for one).
     pub fn size_bits(&self) -> i128 {
-        self.bits
-            .saturating_mul(self.maxc.filter(|&m| m != 0).unwrap_or(1))
+        super::checked::mul(self.bits, self.maxc.filter(|&m| m != 0).unwrap_or(1))
     }
 }
 
@@ -78,7 +77,7 @@ pub fn width_of(cell: &str) -> Result<Option<Width>, IntError> {
         Ok(if unit.starts_with("bit") {
             n
         } else {
-            n.saturating_mul(8)
+            super::checked::mul(n, 8)
         })
     };
     if let Some(c) = rx(r"(?i)^(\d+)\s*(bytes?|bits?)?\s*(?:x|×)\s*max\s*(\d+)$").captures(&s) {
@@ -329,7 +328,7 @@ pub fn width_to_bits(cell: &str, rule: WidthRule) -> Result<Option<i128>, IntErr
                 return int(&c[1]).map(Some);
             }
             match rx(r"(\d[\d _]*)").captures(&s) {
-                Some(c) => Ok(Some(int(&c[1])?.saturating_mul(8))),
+                Some(c) => Ok(Some(super::checked::mul(int(&c[1])?, 8))),
                 None => Ok(None),
             }
         }
@@ -339,7 +338,7 @@ pub fn width_to_bits(cell: &str, rule: WidthRule) -> Result<Option<i128>, IntErr
             };
             let n = parse_int(&c[1])?;
             let bits = rx(r"\bbits?\b").is_match(&s) && !rx(r"\bbytes?\b").is_match(&s);
-            Ok(Some(if bits { n } else { n.saturating_mul(8) }))
+            Ok(Some(if bits { n } else { super::checked::mul(n, 8) }))
         }
     }
 }

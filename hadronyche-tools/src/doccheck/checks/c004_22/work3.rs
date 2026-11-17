@@ -131,12 +131,14 @@ fn tokens(text: &str) -> Vec<String> {
 }
 
 fn window(tk: &[String], i: usize, back: usize, fwd: usize) -> &[String] {
-    &tk[i.saturating_sub(back)..(i + fwd).min(tk.len())]
+    // Python: tk[max(0, i - back):i + fwd]
+    &tk[i.max(back) - back..(i + fwd).min(tk.len())]
 }
 
 fn scope_claims(label: &str, text: &str, report: &mut Report) {
     let tk = tokens(text);
-    for i in 0..tk.len().saturating_sub(1) {
+    for i in 1..tk.len() {
+        let i = i - 1;
         if tk[i] == "every"
             && tk[i + 1] == "known"
             && window(&tk, i, 12, 14).iter().any(|t| ["difference", "discrepanc", "item"].iter().any(|p| t.starts_with(p)))

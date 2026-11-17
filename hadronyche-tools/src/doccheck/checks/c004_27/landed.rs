@@ -4,6 +4,7 @@
 //! enumerations, and wire.toml (read as the script's subset reader and
 //! Python saw it: [`TomlReader::Subset004_18`](crate::doccheck::policy::TomlReader)).
 
+use crate::doccheck::checked;
 use std::collections::BTreeMap;
 
 use crate::doccheck::family004::{Ctx, Field, fields_of, find_sub, first_field_table, subsections, tables};
@@ -65,7 +66,7 @@ fn constants(ctx: &Ctx, report: &mut Report) -> (Option<i128>, Option<i128>, Opt
 fn header(hsubs: &[(String, String)], report: &mut Report) -> HeaderSig {
     let hdr_table = find_sub(hsubs, r"common\s+control\s+header").first().and_then(|(_, x)| first_field_table(x));
     let hdr = fields_of(hdr_table.as_ref(), "AC1", "the hello's common control header", report);
-    let sum = |fs: &[Field]| fs.iter().fold(0i128, |a, f| a.saturating_add(f.size_bits()));
+    let sum = |fs: &[Field]| checked::sum(fs.iter().map(Field::size_bits));
     let bytes = sum(&hdr) / 8;
     let tiles = hdr.iter().enumerate().all(|(i, f)| f.off == sum(&hdr[..i]) / 8);
     report.check("AC1", hdr.len() == 7 && bytes == 32 && tiles, format!("the hello's common control header is seven rows tiling 32 bytes (found {} rows, {bytes} bytes)", hdr.len()));
