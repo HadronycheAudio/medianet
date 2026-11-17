@@ -67,6 +67,7 @@ mod proofs004;
 pub mod pycompat;
 pub mod pynum;
 pub mod pyvalue;
+pub mod rejection_members;
 pub mod repertoire;
 pub mod report;
 pub mod rx;
@@ -82,4 +83,4 @@ pub mod units;
 pub mod wire_toml;
 
 pub use docs::Docs;
-pub use report::{Report, assert_clean, assert_criterion, assert_fails};
+pub use report::{Earlier, Flow, Report, Stop, assert_clean, assert_criterion, assert_fails};
