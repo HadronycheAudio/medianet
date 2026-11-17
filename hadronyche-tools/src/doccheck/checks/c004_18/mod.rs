@@ -34,7 +34,6 @@ use crate::doccheck::family004::{self, ConstInt, Field, Head, IntRule, NUM_004_1
 use crate::doccheck::items::{OpenItemPolicy, unowned_items};
 use crate::doccheck::policy::TomlReader;
 use crate::doccheck::pycompat::{IntError, parse_int, splitlines, universal_newlines};
-use crate::doccheck::pynum::record_int_limit;
 use crate::doccheck::rejection_members::{Enumeration, REJECTION_004_16, RowRule, numbered_rows, refusal_set};
 use crate::doccheck::report::{Flow, crash};
 use crate::doccheck::text::{has, has_i, head, rx, starts};
@@ -65,22 +64,9 @@ fn const_int(text: &str, cid: &str, pattern: &str) -> Flow<Option<i128>> {
     }
 }
 
-/// Python's `a + b` on ints. Beyond `i128` the value is recorded
-/// (`INT_LIMIT`: the verdict is red by rule) and 0 stands in for it.
-pub(crate) fn int_add(a: i128, b: i128) -> i128 {
-    a.checked_add(b).unwrap_or_else(|| {
-        record_int_limit(&format!("{a} + {b}"));
-        0
-    })
-}
-
-/// Python's `a * b` on ints; beyond `i128` as [`int_add`].
-pub(crate) fn int_mul(a: i128, b: i128) -> i128 {
-    a.checked_mul(b).unwrap_or_else(|| {
-        record_int_limit(&format!("{a} * {b}"));
-        0
-    })
-}
+/// Python's `a + b` and `a * b` on ints: [`crate::doccheck::checked`] (R21;
+/// `INT_LIMIT` on overflow).
+pub(crate) use crate::doccheck::checked::{add as int_add, mul as int_mul};
 
 /// `size_bits(f)`: `f["bits"] * (f["maxc"] if f["maxc"] else 1)`.
 pub(crate) fn size_bits(f: &Field) -> i128 {

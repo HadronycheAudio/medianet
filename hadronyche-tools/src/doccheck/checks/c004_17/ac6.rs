@@ -58,12 +58,11 @@ fn op(a: PyNum, b: PyNum, int: fn(i128, i128) -> i128, float: fn(f64, f64) -> f6
     }
 }
 
-/// `n == m` exactly, as Python compares an int with a float.
+/// `n == m` (an int exactly; a float through `PyNum::eq_int`).
 fn num_eq_int(n: PyNum, m: i128) -> bool {
     match n {
         PyNum::Int(i) => i == m,
-        #[allow(clippy::cast_possible_truncation)]
-        PyNum::Float(f) => f.is_finite() && f.fract() == 0.0 && f.abs() < 1.0e38 && f as i128 == m,
+        PyNum::Float(_) => n.eq_int(m),
     }
 }
 

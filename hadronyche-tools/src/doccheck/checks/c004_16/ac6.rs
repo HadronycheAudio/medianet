@@ -57,8 +57,7 @@ impl Sum {
 
     fn f(self) -> f64 {
         match self {
-            #[allow(clippy::cast_precision_loss)]
-            Sum::Int(i) => i as f64,
+            Sum::Int(i) => crate::doccheck::pynum::PyNum::Int(i).as_f64(),
             Sum::Float(f) => f,
         }
     }
@@ -74,9 +73,7 @@ impl Sum {
     fn ne_int(self, n: i128) -> bool {
         match self {
             Sum::Int(i) => i != n,
-            // exact, as Python compares a float with an int
-            #[allow(clippy::cast_possible_truncation)]
-            Sum::Float(f) => !(f.is_finite() && f.fract() == 0.0 && f.abs() < 1.0e38 && f as i128 == n),
+            Sum::Float(f) => !crate::doccheck::pynum::PyNum::Float(f).eq_int(n),
         }
     }
 }

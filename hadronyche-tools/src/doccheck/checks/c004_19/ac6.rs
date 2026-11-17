@@ -42,11 +42,7 @@ fn number(v: &PyValue) -> Option<f64> {
             let _ = v.py_int();
             Some(if s.starts_with('-') { f64::NEG_INFINITY } else { f64::INFINITY })
         }
-        v if v.is_int() => v.py_int().ok().map(|i| {
-            #[allow(clippy::cast_precision_loss)]
-            let f = i as f64;
-            f
-        }),
+        v if v.is_int() => v.py_int().ok().map(|i| crate::doccheck::pynum::PyNum::Int(i).as_f64()),
         _ => None,
     }
 }
