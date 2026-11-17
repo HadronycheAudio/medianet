@@ -110,7 +110,8 @@ mod tests {
 
     #[test]
     fn the_real_file_reads() {
-        let w = WireToml::load(&Docs::repo()).expect("wire.toml parses");
+        let w =
+            WireToml::load(&crate::doccheck::testing::repo().clone()).expect("wire.toml parses");
         let media = w.message("media packet").expect("media packet");
         assert!(!fields(media).is_empty());
         let info = w.field_info();

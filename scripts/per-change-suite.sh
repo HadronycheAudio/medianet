@@ -77,6 +77,15 @@ if [ -d checks ]; then
   done
 fi
 
+# the ported checks' slow denials (backtracking inputs that make the port
+# red under REGEX_LIMIT): #[ignore]d in the default cargo test above, run
+# here in release (hadronyche-tools/PORTING.md, "The denial list")
+echo "== slow denials of the ported checks =="
+if ! cargo test --release --quiet -p hadronyche-tools --test 'doc_*' -- --ignored; then
+  echo "FAIL: slow denials of the ported checks"
+  fail=1
+fi
+
 # repository-state assertions of the ported checks: the tool runs and
 # repository facts that checks/*.sh scripts asserted and that cannot live in
 # `cargo test` (their document assertions are hadronyche-tools/tests/doc_*.rs,

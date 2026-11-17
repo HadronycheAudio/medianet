@@ -10,6 +10,8 @@
 //! RED-phase stub (tester's contract): the coder implements
 //! `metrics_check::duration_from_args` and `metrics_check::fuzz_run`.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: a command-line tool
+
 use hadronyche_tools::metrics_check;
 
 fn main() {

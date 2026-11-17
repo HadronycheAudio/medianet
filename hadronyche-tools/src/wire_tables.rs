@@ -26,6 +26,8 @@
 //! `max_size`. A file that uses the deprecated spelling therefore reparses to
 //! a different model, and the checker reports [`FailureKind::RoundTrip`].
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: a tool of its own, not a document check
+
 use std::fmt::Write as _;
 use std::path::Path;
 

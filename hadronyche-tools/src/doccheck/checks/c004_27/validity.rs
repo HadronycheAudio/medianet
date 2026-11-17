@@ -1,9 +1,10 @@
 //! AC3: the invalid forms of the probe's validity rules and their
 //! outcomes.
 
+use crate::doccheck::pycompat::PyStr;
 use super::landed::Landed;
 use super::messages::Probe;
-use super::{sentences, tables};
+use crate::doccheck::family004::{sentences, tables};
 use crate::doccheck::Report;
 use crate::doccheck::text::{has, has_i, rx};
 
@@ -17,8 +18,8 @@ fn rows(probe: &Probe) -> Vec<Form> {
         for t in tables(x) {
             if t.head().len() >= 2 && has_i("form|invalid", &t.head()[0]) {
                 for r in &t.rows {
-                    if r.cells.len() >= 2 && !r.cell(0).trim().is_empty() {
-                        out.push((r.cell(0).trim().to_string(), r.cell(1).trim().to_string()));
+                    if r.cells.len() >= 2 && !r.cell(0).py_strip().is_empty() {
+                        out.push((r.cell(0).py_strip().to_string(), r.cell(1).py_strip().to_string()));
                     }
                 }
             }

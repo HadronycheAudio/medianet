@@ -1,10 +1,11 @@
 //! AC3: the per-receiver field audit.
 
+use crate::doccheck::pycompat::PyStr;
 use std::collections::BTreeSet;
 
 use super::{Inputs, WIRE_MD};
 use crate::doccheck::Report;
-use crate::doccheck::policy::RowSplit;
+use crate::doccheck::policy::TableRules;
 use crate::doccheck::text::rx;
 
 /// What AC3 hands to the record and DoD checks.
@@ -22,7 +23,7 @@ fn cell_plain(c: &str) -> String {
     c.chars()
         .filter(|ch| *ch != '`' && *ch != '*')
         .collect::<String>()
-        .trim()
+        .py_strip()
         .to_lowercase()
 }
 
@@ -49,8 +50,9 @@ fn audit_rows(inp: &Inputs) -> (bool, String, Vec<AuditRow>) {
     let text = spans.iter().map(|s| inp.wire.text(*s)).collect::<Vec<_>>().join("\n");
     let mut rows = Vec::new();
     for span in &spans {
-        for t in inp.wire.tables_with(*span, RowSplit::Plain) {
-            let k = t.head_norm().iter().position(|h| rx(r"\bfield\b").is_match(h)).unwrap_or(0);
+        for t in inp.wire.tables_with(*span, TableRules::T004_22) {
+            let k = t.head_norm().iter().position(|h| rx(r"\bfield\b").is_match(h))
+                .unwrap_or_default(); // field_col: the first column when no header says "field"
             for r in &t.rows {
                 if r.cells.len() > k {
                     rows.push((names_in_field_cell(&r.cells[k]), r.cells.clone(), r.line + 1));
