@@ -6,13 +6,14 @@
 use std::fmt::Write as _;
 
 use super::markdown::{Markdown, STOPWORDS_006_01, code_mask, stem_tokens};
-use super::numwin::{lookaround, window};
+use super::numwin::window;
 use super::policy::{FencePolicy, LineSplit, TableRules};
 use super::pycompat::{IntError, splitlines};
 use super::tables::{
     caption_above, cell_label, cell_number_004_14, first_int_004_14, parse_tables, split_row,
     split_row_char_walk, split_row_with,
 };
+use super::text::rx as lookaround;
 
 const MARKDOWN: &str = include_str!("../../data/markdown_corpus.txt");
 const LOOKAROUND: &str = include_str!("../../data/lookaround_corpus.txt");

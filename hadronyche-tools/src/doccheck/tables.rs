@@ -7,7 +7,6 @@
 //! Cells are split on `|` not preceded by `\`, trimmed, `\|` unescaped.
 
 use super::markdown::norm_title;
-use super::numwin::lookaround;
 use super::policy::{HeaderlessRuns, RowSplit, SeparatorRule, TableRules};
 use super::pycompat::{IntError, PyStr, parse_int};
 use super::text::{full, rx};
@@ -210,7 +209,8 @@ pub fn cell_number_004_14(cell: &str) -> Result<Option<i128>, IntError> {
         return Ok(None);
     };
     let value = int_004_14(m.as_str())?;
-    let negative = lookaround(r"(?i)[\u{2212}]\s*\d|(?<![\w])-\s*\d|deficit").is_match(&s);
+    let negative =
+        crate::doccheck::text::rx(r"(?i)[\u{2212}]\s*\d|(?<![\w])-\s*\d|deficit").is_match(&s);
     Ok(Some(if negative { -value } else { value }))
 }
 
