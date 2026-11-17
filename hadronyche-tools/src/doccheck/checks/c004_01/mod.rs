@@ -24,9 +24,12 @@
 
 mod ac_a;
 mod ac_b;
+mod denials;
 mod doc;
 
 use super::{CheckSpec, Target};
+use crate::doccheck::policy::TomlReader;
+use crate::doccheck::pycompat::universal_newlines;
 use crate::doccheck::{Docs, Report};
 
 /// The documents.
@@ -39,16 +42,40 @@ pub const SPEC: CheckSpec = CheckSpec {
     run,
     script_env: &[("WIRE_MD", WIRE_MD), ("CONSTANTS_MD", CONSTANTS_MD)],
     targets: &[
-        Target { file: WIRE_MD, heading: Some("^Byte order") },
-        Target { file: WIRE_MD, heading: Some("(?i)alignment") },
-        Target { file: WIRE_MD, heading: Some("(?i)bit-level encoding") },
-        Target { file: WIRE_MD, heading: Some("(?i)field table") },
-        Target { file: WIRE_MD, heading: Some("^Layer overview") },
-        Target { file: WIRE_MD, heading: Some("^Constants used") },
-        Target { file: CONSTANTS_MD, heading: None },
+        Target {
+            file: WIRE_MD,
+            heading: Some("^Byte order"),
+        },
+        Target {
+            file: WIRE_MD,
+            heading: Some("(?i)alignment"),
+        },
+        Target {
+            file: WIRE_MD,
+            heading: Some("(?i)bit-level encoding"),
+        },
+        Target {
+            file: WIRE_MD,
+            heading: Some("(?i)field table"),
+        },
+        Target {
+            file: WIRE_MD,
+            heading: Some("^Layer overview"),
+        },
+        Target {
+            file: WIRE_MD,
+            heading: Some("^Constants used"),
+        },
+        Target {
+            file: CONSTANTS_MD,
+            heading: None,
+        },
     ],
     keywords: &["endian", "guaranteed", "multicast"],
     known_differences: &[],
+    denials: denials::DENIALS,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The check.
@@ -57,10 +84,14 @@ pub fn run(docs: &Docs) -> Report {
     let Some(wire) = docs.read(WIRE_MD) else {
         r.fail("AC1", format!("{WIRE_MD} does not exist"));
         for ac in 2..8 {
-            r.fail(&format!("AC{ac}"), format!("cannot check \u{2014} {WIRE_MD} does not exist"));
+            r.fail(
+                &format!("AC{ac}"),
+                format!("cannot check \u{2014} {WIRE_MD} does not exist"),
+            );
         }
         return r;
     };
+    let wire = universal_newlines(&wire);
     let d = doc::Doc::new(&wire);
     ac_a::ac1(&d, &mut r);
     ac_a::ac2(&d, &mut r);
@@ -69,6 +100,7 @@ pub fn run(docs: &Docs) -> Report {
     ac_b::ac5(&d, &mut r);
     ac_b::ac6(&wire, &d, &mut r);
     let consts = docs.read(CONSTANTS_MD);
+    let consts = consts.map(|c| universal_newlines(&c));
     ac_b::ac7(&d, consts.as_deref(), CONSTANTS_MD, &mut r);
     r
 }
