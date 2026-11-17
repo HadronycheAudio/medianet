@@ -27,10 +27,14 @@
 //! still passes) are in `scripts/repo-state.d/004-07.sh`.
 
 mod analysis;
+mod denials;
 mod rates;
 
 use super::{CheckSpec, Target};
-use crate::doccheck::text::{has_i, rx, splitlines};
+use crate::doccheck::policy::TomlReader;
+use crate::doccheck::pycompat::splitlines;
+use crate::doccheck::pycompat::universal_newlines;
+use crate::doccheck::text::{has_i, rx};
 use crate::doccheck::{Docs, Report};
 
 /// The documents.
@@ -49,11 +53,20 @@ pub const SPEC: CheckSpec = CheckSpec {
         ("OPEN_MD", "./doc/design/05-risks-and-open.md"),
     ],
     targets: &[
-        Target { file: WIRE_MD, heading: Some("(?i)epoch.*(wrap|bump|rate|width|falsif)") },
-        Target { file: OPEN_MD, heading: None },
+        Target {
+            file: WIRE_MD,
+            heading: Some("(?i)epoch.*(wrap|bump|rate|width|falsif)"),
+        },
+        Target {
+            file: OPEN_MD,
+            heading: None,
+        },
     ],
     keywords: &["falsified", "holds", "stale", "wrap", "pathological"],
     known_differences: &[],
+    denials: denials::DENIALS,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// `norm`.
@@ -66,7 +79,7 @@ pub(crate) fn norm(text: &str) -> String {
             c => c,
         })
         .collect();
-    rx(r"[ \t]+").replace_all(&t, " ").into_owned()
+    rx(r"[ \t]+").replace_all(&t, " ")
 }
 
 /// `find_heading`: (line index, level) of the first heading whose lower-cased
@@ -89,13 +102,21 @@ pub fn run(docs: &Docs) -> Report {
         }
         return r;
     };
-    let wire_text = norm(&raw);
+    let wire_text = norm(&universal_newlines(&raw));
     let lines = splitlines(&wire_text);
-    let bounds = find_heading(&lines, |h| h.contains("epoch") && rx(r"wrap|bump|rate|width|falsif").is_match(h))
-        .or_else(|| find_heading(&lines, |h| h.contains("media packet header")));
+    let bounds = find_heading(&lines, |h| {
+        h.contains("epoch") && rx(r"wrap|bump|rate|width|falsif").is_match(h)
+    })
+    .or_else(|| find_heading(&lines, |h| h.contains("media packet header")));
     let Some((start, level)) = bounds else {
-        r.fail("AC1", "wire.md has neither an epoch wrap/bump section nor the Media packet header section");
-        r.fail("AC2", "no analysis section to read the comparison rule from");
+        r.fail(
+            "AC1",
+            "wire.md has neither an epoch wrap/bump section nor the Media packet header section",
+        );
+        r.fail(
+            "AC2",
+            "no analysis section to read the comparison rule from",
+        );
         r.fail("AC3", "no analysis section; the falsifier is unanswered");
         r.fail("DoD", "no analysis section; no evidence tags to check");
         return r;
@@ -111,7 +132,10 @@ pub fn run(docs: &Docs) -> Report {
         }
         return r;
     }
-    let open_text = docs.read(OPEN_MD).map(|t| norm(&t)).unwrap_or_default();
+    let open_text = docs
+        .read(OPEN_MD)
+        .map(|t| norm(&universal_newlines(&t)))
+        .unwrap_or_default();
     analysis::run(&section, &wire_text, &open_text, &mut r);
     r
 }

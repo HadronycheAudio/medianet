@@ -1,7 +1,8 @@
 //! Durations and bump rates read from the analysis text: the script's tiered
 //! patterns, in floating point as the script's Python floats.
 
-use crate::doccheck::checks::c004_15::num::{guarded, is_word, window};
+use crate::doccheck::numwin::window;
+use crate::doccheck::pynum::py_float;
 use crate::doccheck::text::rx;
 
 pub(crate) const MODULUS: f64 = 65_536.0;
@@ -27,16 +28,23 @@ fn unit_seconds(u: &str) -> Option<f64> {
     })
 }
 
+/// `float(re.sub(r"[,\u00a0\u202f ]", "", s))`.
 fn parse_number(s: &str) -> Option<f64> {
-    s.chars().filter(|c| !matches!(c, ',' | '\u{a0}' | '\u{202f}' | ' ')).collect::<String>().parse().ok()
+    py_float(&rx(r"[,\u00a0\u202f ]").replace_all(s, ""))
 }
 
 fn interval_tiers() -> Vec<Vec<String>> {
     vec![
-        vec![format!(r"(?i){BUMP}[\w\s]{{0,30}}?(?:every|per)\s+(?:(?:one|a|1)\s+)?{NUM}\s*({UNIT_ALT})")],
-        vec![format!(r"(?i)(?:every|per)\s+(?:(?:one|a|1)\s+)?{NUM}\s*({UNIT_ALT})")],
+        vec![format!(
+            r"(?i){BUMP}[\w\s]{{0,30}}?(?:every|per)\s+(?:(?:one|a|1)\s+)?{NUM}\s*({UNIT_ALT})"
+        )],
+        vec![format!(
+            r"(?i)(?:every|per)\s+(?:(?:one|a|1)\s+)?{NUM}\s*({UNIT_ALT})"
+        )],
         vec![
-            format!(r"(?i){NUM}\s*({UNIT_ALT})\s*(?:of\s+(?:network\s+)?time\s+)?per\s+(?:timeline\s+)?epoch\s+(?:bump|change|switch)"),
+            format!(
+                r"(?i){NUM}\s*({UNIT_ALT})\s*(?:of\s+(?:network\s+)?time\s+)?per\s+(?:timeline\s+)?epoch\s+(?:bump|change|switch)"
+            ),
             format!(r"(?i){NUM}\s*({UNIT_ALT})\s*per\s+(?:epoch\s+)?bump"),
             format!(r"(?i)65[\d,\u{{a0}}\u{{202f}} ]*536\s*[\u{{d7}}x*]\s*{NUM}\s*({UNIT_ALT})"),
         ],
@@ -55,8 +63,12 @@ fn rate_tiers() -> Vec<Vec<String>> {
 fn first_match(tiers: &[Vec<String>], text: &str) -> Option<(f64, String)> {
     for pats in tiers {
         for pat in pats {
-            let Some(m) = rx(pat).captures(text) else { continue };
-            let (Some(v), Some(scale)) = (parse_number(&m[1]), unit_seconds(&m[2])) else { continue };
+            let Some(m) = rx(pat).captures(text) else {
+                continue;
+            };
+            let (Some(v), Some(scale)) = (parse_number(&m[1]), unit_seconds(&m[2])) else {
+                continue;
+            };
             if v <= 0.0 {
                 continue;
             }
@@ -66,11 +78,11 @@ fn first_match(tiers: &[Vec<String>], text: &str) -> Option<(f64, String)> {
     None
 }
 
-/// `stated_durations`: (seconds, character position).
+/// `stated_durations`: (seconds, character position), the script's
+/// `DUR_RE` as written.
 pub(crate) fn durations(text: &str) -> Vec<(f64, usize)> {
-    let re = rx(&format!(r"(?i){NUM}\s*({UNIT_ALT})"));
-    guarded(re, text, |c| is_word(c) || c == '.')
-        .iter()
+    let re = rx(&format!(r"(?i)(?<![\w.]){NUM}\s*({UNIT_ALT})"));
+    re.captures_iter(text)
         .filter_map(|m| {
             let (v, s) = (parse_number(&m[1])?, unit_seconds(&m[2])?);
             Some((v * s, char_pos(text, m.get(0).map_or(0, |w| w.start()))))
@@ -104,7 +116,11 @@ pub(crate) fn candidates(marker: &str, text: &str) -> Vec<Cand> {
                 None => continue,
             },
         };
-        out.push(Cand { interval, matched, pos: char_pos(text, m.start()) });
+        out.push(Cand {
+            interval,
+            matched,
+            pos: char_pos(text, m.start()),
+        });
     }
     out
 }
@@ -122,6 +138,6 @@ pub(crate) fn pairs(c: &Cand, durs: &[(f64, usize)]) -> Option<f64> {
 }
 
 /// A window of the text in characters.
-pub(crate) fn around(text: &str, m: regex::Match, n: usize) -> String {
-    window(text, m.start(), m.end(), n, n)
+pub(crate) fn around(text: &str, m: crate::doccheck::rx::M, n: usize) -> String {
+    window(text, m.start(), m.end(), n, n).to_string()
 }
