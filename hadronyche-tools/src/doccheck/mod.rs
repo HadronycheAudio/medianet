@@ -81,8 +81,6 @@ pub mod tomlline;
 pub mod tomlsubset;
 pub mod units;
 pub mod wire_toml;
-// Transitional: removed port by port as each moves onto the library.
-pub mod wp7;
 
 pub use docs::Docs;
 pub use report::{Earlier, Flow, Report, Stop, assert_clean, assert_criterion, assert_fails};
