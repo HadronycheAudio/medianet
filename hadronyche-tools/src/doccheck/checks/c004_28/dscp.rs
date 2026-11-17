@@ -2,12 +2,13 @@
 
 use super::Consts;
 use super::analyse::Analysis;
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::Field;
 use crate::doccheck::pycompat::parse_int;
 use crate::doccheck::text::{has, has_i, rx};
 
-fn not_observed_codes(valid: &str) -> Vec<i128> {
+pub(super) fn not_observed_codes(valid: &str) -> Vec<i128> {
     let v = rx(r"C-\d+").replace_all(valid, "");
     v.split(';').filter(|cl| has_i("not observed", cl)).flat_map(|cl| rx(r"\b\d+\b").find_iter(cl).filter_map(|m| parse_int(m.as_str()).ok()).collect::<Vec<i128>>()).collect()
 }
@@ -26,7 +27,7 @@ fn encoding(ent: &[&Field], report: &mut Report) -> bool {
             .captures_iter(&f.valid)
             .filter_map(|c| Some((parse_int(&c[1]).ok()?, parse_int(&c[2]).ok()?)))
             .filter(|(a, _)| *a >= 1)
-            .map(|(a, b)| b.saturating_sub(a).saturating_add(1))
+            .map(|(a, b)| checked::add(checked::sub(b, a), 1))
             .collect();
         report.check("AC2", counts == [4], format!("the C-129 state field enumerates four states (C-129), found {counts:?}"));
     }

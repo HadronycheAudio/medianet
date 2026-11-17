@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use super::Stamp;
 use super::analyse::{Analysis, analyse, exact_product_results, has_num2, stated_sizes};
 use super::tree::{bad_arithmetic_lenient, cdiv};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::evidence::has_tag;
 use crate::doccheck::family004::find_sub;
@@ -58,7 +59,7 @@ pub(crate) fn merged(st: &Stamp, report: &mut Report) -> Flow<MergedTypes> {
         }
     }
     report.check("DoD", m.len() == 7, format!("the seven merged section types of 004-25 are found once each (found {})", m.len()));
-    let s_other: i128 = m.iter().filter(|(k, _)| **k != "health").filter_map(|(_, v)| v.nt).filter(|&n| n != 0).fold(0, i128::saturating_add);
+    let s_other: i128 = m.iter().filter(|(k, _)| **k != "health").filter_map(|(_, v)| v.nt).filter(|&n| n != 0).fold(0, checked::add);
     report.check("AC1", s_other == 7, format!("the six other merged section types need 7 sections at their maxima (computed {s_other})"));
     let health = m.get("health");
     let f_h = match health.filter(|h| h.root.is_some()) {
@@ -151,7 +152,7 @@ fn cap_condition(t: &Types, paras: &[&str], section_max: i128, report: &mut Repo
     let Some(f_h) = t.f_h else { return crash("TypeError: unsupported operand type(s) for //: 'int' and 'NoneType'") };
     // `NEW["dscp"]["Nt"]`: set whenever the type is ok
     let Some(ds_nt) = ds.nt else { return crash("TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'") };
-    let budget = section_max.saturating_sub(t.s_other).saturating_sub(ds_nt);
+    let budget = checked::sub(checked::sub(section_max, t.s_other), ds_nt);
     let l_own = limit(f_h, own_f, budget)?;
     let alt: Vec<(i128, i128)> = rx(r"⌊\s*1193\s*/\s*(\d+)\s*⌋\s*=\s*(\d+)")
         .captures_iter(&union)
@@ -206,10 +207,10 @@ fn overflow(t: &Types, paras: &[&str], totals: (i128, i128, i128), section_max: 
 
 /// The budget (AC1); `Err` where the script crashes.
 pub(crate) fn budget(st: &Stamp, t: &Types, section_max: Option<i128>, report: &mut Report) -> Flow<()> {
-    let s_new: i128 = t.new.values().filter(|a| a.ok).filter_map(|a| a.nt).filter(|&n| n != 0).fold(0, i128::saturating_add);
-    let s_total = t.s_other.saturating_add(s_new);
+    let s_new: i128 = t.new.values().filter(|a| a.ok).filter_map(|a| a.nt).filter(|&n| n != 0).fold(0, checked::add);
+    let s_total = checked::add(t.s_other, s_new);
     let sm = section_max.filter(|&m| m != 0).unwrap_or(64);
-    let thresh = sm.saturating_sub(t.s_other).saturating_sub(s_new).saturating_mul(t.f_h.unwrap_or_default());
+    let thresh = checked::mul(checked::sub(checked::sub(sm, t.s_other), s_new), t.f_h.unwrap_or_default());
     let paras: Vec<&str> = st.prose.iter().filter(|b| b.kind == BlockKind::Prose).map(|b| b.text.as_str()).collect();
     if t.new.len() != 2 {
         let keys: Vec<&&str> = t.new.keys().collect();

@@ -5,6 +5,7 @@
 //! library ([`parse_int`]: a value beyond `i128` is `INT_LIMIT`).
 
 use super::tree::{Node, build_tree, cdiv, entry_nodes, lo_of, maxc, size_node, tile_node};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::{Field, fields_of, is_field_table, tables};
 use crate::doccheck::pycompat::{PyStr, parse_int};
@@ -83,9 +84,9 @@ pub(crate) fn analyse(title: &str, text: &str, label: &str, report: &mut Report)
     if first.off != 0 && first.off != 58 {
         report.fail(label, format!("the {title} table starts at offset {}: a body starts at 0 and a section at 58", first.off));
     }
-    tile_node(&mut root, first.off.saturating_mul(8).saturating_add(lo_of(&first).unwrap_or_default()), title, label, report);
+    tile_node(&mut root, checked::add(checked::mul(first.off, 8), lo_of(&first).unwrap_or_default()), title, label, report);
     let rbits = size_node(&mut root, title, report);
-    out.sec_max = Some(cdiv(rbits, 8).saturating_add(58));
+    out.sec_max = Some(checked::add(cdiv(rbits, 8), 58));
     out.stmts = statements(text);
     let mut nt = 1;
     for f in root.rows.iter().filter_map(|r| maxc(&r.f)) {
@@ -117,7 +118,7 @@ pub(crate) fn exact_product_results(text: &str) -> Vec<i128> {
     for c in rx(r"((?:\d+\s*(?:×|\bx\b|\*)\s*)+\d+)\s*=\s*(\d+)").captures_iter(text) {
         let mut prod: Option<i128> = Some(1);
         for fac in rx(r"\s*(?:×|\bx\b|\*)\s*").split(c[1].py_strip()) {
-            prod = prod.zip(parse_int(fac).ok()).and_then(|(a, b)| a.checked_mul(b));
+            prod = prod.zip(parse_int(fac).ok()).map(|(a, b)| checked::mul(a, b));
         }
         let r: Option<i128> = parse_int(&c[2]).ok();
         if prod.is_some() && prod == r {

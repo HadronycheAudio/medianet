@@ -6,6 +6,7 @@
 //! `eval` ([`eval_arith`]); 004-28's `eval` is in a `try`, so a sum it
 //! cannot evaluate is "not exact", never a stop.
 
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::Field;
 use crate::doccheck::pycompat::{PyStr, parse_int};
@@ -77,15 +78,15 @@ pub(crate) fn tile_node(node: &mut Node, start_bits: i128, title: &str, label: &
     for r in &mut node.rows {
         let f = &r.f;
         let s = match lo_of(f) {
-            Some(lo) => f.off.saturating_mul(8).saturating_add(lo),
+            Some(lo) => checked::add(checked::mul(f.off, 8), lo),
             None if f.bits.rem_euclid(8) != 0 => pos,
-            None => f.off.saturating_mul(8),
+            None => checked::mul(f.off, 8),
         };
         if s != pos {
             report.fail(label, format!("the {title} table does not tile: a row at bit {s} follows bit {pos}"));
         }
         r.start = s;
-        pos = s.saturating_add(f.bits.saturating_mul(maxc(f).unwrap_or(1)));
+        pos = checked::add(s, checked::mul(f.bits, maxc(f).unwrap_or(1)));
         if let Some(child) = &mut r.child {
             tile_node(child, 0, &format!("{title} (entry)"), label, report);
         }
@@ -107,9 +108,9 @@ pub(crate) fn size_node(node: &mut Node, title: &str, report: &mut Report) -> i1
                         report.fail("AC1", format!("the {title} entry table sums to {e} bits, but its list row declares {} bits per entry", r.f.bits));
                     }
                 }
-                total = total.saturating_add(r.f.bits.saturating_mul(m));
+                total = checked::add(total, checked::mul(r.f.bits, m));
             }
-            None => total = total.saturating_add(r.f.bits),
+            None => total = checked::add(total, r.f.bits),
         }
     }
     node.size = total;
@@ -135,7 +136,7 @@ pub(crate) fn bad_arithmetic_lenient(text: &str) -> Vec<String> {
         let expr = c[1].py_strip();
         let mut prod: Option<i128> = Some(1);
         for fac in rx(r"\s*(?:×|\bx\b|\*)\s*").split(expr) {
-            prod = prod.zip(parse_int(fac).ok()).and_then(|(a, b)| a.checked_mul(b));
+            prod = prod.zip(parse_int(fac).ok()).map(|(a, b)| checked::mul(a, b));
         }
         if parse_int(&c[2]).is_ok_and(|n| prod != Some(n)) {
             bad.push(format!("{expr} = {}", &c[2]));
