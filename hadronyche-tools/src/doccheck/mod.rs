@@ -67,6 +67,7 @@ pub mod testing;
 pub mod text;
 pub mod ticket;
 pub mod tomllib;
+pub mod tomlline;
 pub mod tomlsubset;
 pub mod units;
 pub mod wire_toml;

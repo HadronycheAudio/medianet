@@ -7,6 +7,9 @@
 //! `hadronyche-tools/data/toml_corpus.txt` ([`KNOWN_DIFFERENCES`]), each
 //! with what it means for a port. The test fails on any difference not in
 //! the list, and on any listed one that has gone.
+//!
+//! The `toml` crate holds integers in 64 bits; `tomllib` does not. Every
+//! listed difference is an int beyond 64 bits.
 
 use super::pyvalue::{Dict, PyValue};
 
@@ -20,6 +23,11 @@ pub const KNOWN_DIFFERENCES: &[(&str, &str)] = &[
          script would carry on with the big int: port stricter on a value no wire.toml field can hold.",
     ),
     ("int64 overflow", "the same, at 2^63."),
+    ("line: big integer", "the same, in a table and an array."),
+    (
+        "line: 4300 digits",
+        "the same, at the longest decimal int Python converts.",
+    ),
 ];
 
 /// A TOML value as `tomllib` returns it to Python.
@@ -49,40 +57,48 @@ pub fn parse(src: &str) -> Result<Dict, String> {
     }
 }
 
+/// The committed corpus (`hadronyche-tools/data/toml_corpus.txt`), read by
+/// the reader tests of `tomllib`, `tomlsubset` and `tomlline`.
 #[cfg(test)]
-mod tests {
-    use super::super::pyvalue::canonical;
-    use super::super::tomlsubset;
-    use super::*;
+pub(crate) mod corpus {
+    use std::collections::BTreeMap;
 
     const CORPUS: &str = include_str!("../../data/toml_corpus.txt");
 
-    /// The corpus records: (name, source, subset result, tomllib result).
-    fn records() -> Vec<(String, String, String, String)> {
-        let mut out = Vec::new();
-        let mut lines = CORPUS.lines().filter(|l| !l.starts_with('#'));
-        while let Some(head) = lines.next() {
-            let name = head
-                .strip_prefix("=== ")
-                .expect("a record starts with ===")
-                .to_string();
-            let src = decode(
-                lines
-                    .next()
-                    .and_then(|l| l.strip_prefix("src "))
-                    .expect("src"),
-            );
-            let sub = lines
-                .next()
-                .and_then(|l| l.strip_prefix("subset "))
-                .expect("subset")
-                .to_string();
-            let tl = lines
-                .next()
-                .and_then(|l| l.strip_prefix("tomllib "))
-                .expect("tomllib")
-                .to_string();
-            out.push((name, src, sub, tl));
+    /// One snippet: its name, its source, and each reader's result by
+    /// reader name (`subset`, `line14`, `line15`, `tomllib`).
+    pub(crate) struct Record {
+        pub name: String,
+        pub src: String,
+        pub results: BTreeMap<String, String>,
+    }
+
+    impl Record {
+        pub(crate) fn want(&self, reader: &str) -> &str {
+            self.results
+                .get(reader)
+                .unwrap_or_else(|| panic!("{}: no {reader} result", self.name))
+        }
+    }
+
+    pub(crate) fn records() -> Vec<Record> {
+        let mut out: Vec<Record> = Vec::new();
+        for line in CORPUS.lines().filter(|l| !l.starts_with('#')) {
+            if let Some(name) = line.strip_prefix("=== ") {
+                out.push(Record {
+                    name: name.to_string(),
+                    src: String::new(),
+                    results: BTreeMap::new(),
+                });
+                continue;
+            }
+            let rec = out.last_mut().expect("a record starts with ===");
+            let (key, value) = line.split_once(' ').expect("key value");
+            if key == "src" {
+                rec.src = decode(value);
+            } else {
+                rec.results.insert(key.to_string(), value.to_string());
+            }
         }
         out
     }
@@ -105,6 +121,14 @@ mod tests {
         out.push_str(rest);
         out
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::pyvalue::canonical;
+    use super::super::tomlsubset;
+    use super::corpus::records;
+    use super::*;
 
     fn result(r: Result<Dict, String>, sorted: bool) -> String {
         match r {
@@ -116,12 +140,13 @@ mod tests {
     #[test]
     fn the_subset_reader_port_equals_the_python_reader_on_the_corpus() {
         let recs = records();
-        assert!(recs.len() >= 90, "the corpus has {} records", recs.len());
+        assert!(recs.len() >= 130, "the corpus has {} records", recs.len());
         let bad: Vec<String> = recs
             .iter()
-            .filter_map(|(name, src, want, _)| {
-                let got = result(tomlsubset::parse(src), false);
-                (&got != want).then(|| format!("{name}: Python {want}, port {got}"))
+            .filter_map(|r| {
+                let want = r.want("subset");
+                let got = result(tomlsubset::parse(&r.src), false);
+                (got != want).then(|| format!("{}: Python {want}, port {got}", r.name))
             })
             .collect();
         assert!(
@@ -134,21 +159,22 @@ mod tests {
     #[test]
     fn the_crate_equals_tomllib_on_the_corpus_but_for_the_listed_differences() {
         let mut found = Vec::new();
-        for (name, src, _, want) in records() {
-            let got = result(parse(&src), true);
+        for r in records() {
+            let want = r.want("tomllib");
+            let got = result(parse(&r.src), true);
             let same = if want.starts_with("ERR") {
                 got.starts_with("ERR")
             } else {
                 got == want
             };
             if !same {
-                found.push(format!("{name}: tomllib {want}, crate {got}"));
+                found.push(format!("{}: tomllib {want}, crate {got}", r.name));
             }
         }
         let listed: Vec<&str> = KNOWN_DIFFERENCES.iter().map(|(n, _)| *n).collect();
         let names: Vec<&str> = found
             .iter()
-            .map(|f| f.split(':').next().unwrap_or(""))
+            .map(|f| f.split(": tomllib ").next().unwrap_or(""))
             .collect();
         assert_eq!(
             names,
