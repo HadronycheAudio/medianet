@@ -22,12 +22,15 @@
 //!
 //! [`HeadingMatch::Exact`]: crate::doccheck::policy::HeadingMatch::Exact
 
+mod denials;
 mod prose;
 mod rows;
 
-use super::c006_01::text::norm_text;
 use super::{CheckSpec, Target};
-use crate::doccheck::text::{has_i, rx, splitlines};
+use crate::doccheck::markdown::Markdown;
+use crate::doccheck::policy::{FencePolicy, HeadingMatch, TomlReader};
+use crate::doccheck::pycompat::{PyStr, nfkc, parse_int, splitlines, universal_newlines};
+use crate::doccheck::text::{has_i, rx};
 use crate::doccheck::{Docs, Report};
 
 pub use prose::self_check;
@@ -41,31 +44,40 @@ pub const SPEC: CheckSpec = CheckSpec {
     id: "006-02",
     run,
     script_env: &[],
-    targets: &[Target { file: SPEC_MD, heading: Some("^Domain line and position map$") }],
+    targets: &[Target {
+        file: SPEC_MD,
+        heading: Some("^Domain line and position map$"),
+    }],
     keywords: &["floor", "ceil", "decision", "only"],
     known_differences: &[],
+    denials: denials::DENIALS,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
-/// `find_section`: (heading index, end index).
-fn find_section(lines: &[String]) -> Option<(usize, usize)> {
-    let head = rx(r"^(#{1,6})\s+(.*?)\s*$");
-    let (start, level) = lines.iter().enumerate().find_map(|(i, l)| {
-        let m = head.captures(l)?;
-        (m[2].trim().trim_end_matches('#').trim() == HEADING).then(|| (i, m[1].len()))
-    })?;
-    let any = rx(r"^(#{1,6})\s+");
-    let end = (start + 1..lines.len())
-        .find(|&j| any.captures(&lines[j]).is_some_and(|m| m[1].len() <= level))
-        .unwrap_or(lines.len());
-    Some((start, end))
+/// `norm_text`: NFKC, the figure and thin spaces as spaces, zero-width
+/// characters dropped, typographic dashes and quotes plain, blanks squashed
+/// (the script's copy of 006-01's).
+fn norm_text(s: &str) -> String {
+    let mut t = nfkc(s);
+    for ch in ['\u{a0}', '\u{2007}', '\u{202f}', '\u{2009}', '\u{200a}'] {
+        t = t.replace(ch, " ");
+    }
+    t = t.replace(['\u{200b}', '\u{feff}'], "");
+    let t = rx(r"[\u2010-\u2015\u2212]").replace_all(&t, "-");
+    let t = t
+        .replace(['\u{2018}', '\u{2019}'], "'")
+        .replace(['\u{201c}', '\u{201d}'], "\"");
+    rx(r"\s+").replace_all(&t, " ").py_strip().to_string()
 }
 
-/// `declared_origin`.
+/// `declared_origin`: `int(raw)` of the number after `origin =`; a failed
+/// `int` is the script's `(0, False)`.
 fn declared_origin(text: &str) -> i128 {
-    let re = rx(r"(?i)origin(?:_ns)?\s*(?:=|is|:)\s*([+\-]?\d[\d _,\u{a0}\u{202f}]*)");
+    let re = rx(r"(?i)origin(?:_ns)?\s*(?:=|is|:)\s*([+\-]?\d[\d _,\u00a0\u202f]*)");
     let Some(m) = re.captures(text) else { return 0 };
-    let raw: String = m[1].chars().filter(|c| !matches!(c, ' ' | '_' | ',' | '\u{a0}' | '\u{202f}')).collect();
-    raw.parse().unwrap_or(0)
+    let raw = rx(r"[ _,\u00a0\u202f]").replace_all(&m[1], "");
+    parse_int(&raw).unwrap_or_default()
 }
 
 /// The check.
@@ -75,8 +87,15 @@ pub fn run(docs: &Docs) -> Report {
         r.fail("AC1", format!("missing {SPEC_MD}"));
         return r;
     };
+    let raw = universal_newlines(&raw);
     let lines: Vec<String> = splitlines(&raw).into_iter().map(norm_text).collect();
-    let Some((start, end)) = find_section(&lines) else {
+    let md = Markdown::parse_with(&lines.join("\n"), FencePolicy::NoFences);
+    let found = md
+        .find_by(HeadingMatch::Exact, HEADING)
+        .into_iter()
+        .next()
+        .map(|h| md.section(h));
+    let Some((start, end)) = found.map(|s| (s.lo, s.hi)) else {
         r.fail("AC1", format!("timeline.md has no '## {HEADING}' heading"));
         for ac in ["AC2", "AC3", "AC4", "AC5", "AC6"] {
             r.fail(ac, "section missing, cannot check");
@@ -86,7 +105,10 @@ pub fn run(docs: &Docs) -> Report {
     let section_lines = &lines[start + 1..end];
     let text = norm_text(&section_lines.join("\n"));
     if text.is_empty() || has_i("to be written in 006-02", &text) {
-        r.fail("AC1", "section is still the 006-02 placeholder (no formulas, no table)");
+        r.fail(
+            "AC1",
+            "section is still the 006-02 placeholder (no formulas, no table)",
+        );
         for ac in ["AC2", "AC3", "AC4", "AC5", "AC6"] {
             r.fail(ac, "section is still the placeholder; cannot check");
         }

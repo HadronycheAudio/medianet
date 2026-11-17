@@ -1,16 +1,18 @@
 //! The worked-example table: numbers in cells (`NUM_RE`), the direction of
 //! a row, and the arithmetic of the section's own rule, in exact integers.
 
-use super::super::c004_15::num::is_word;
-use super::super::c006_01::text::split_row;
+use crate::doccheck::markdown::Markdown;
+use crate::doccheck::policy::{FencePolicy, TableRules};
+use crate::doccheck::pycompat::{PyStr, parse_int};
+use crate::doccheck::pynum::{Fraction, py_float, record_int_limit};
 use crate::doccheck::text::{has, rx};
 
-/// A number read from a cell: an integer, or a decimal that is not (the
-/// script's `Fraction`).
+/// A number read from a cell: an integer, or a decimal that is not whole
+/// (the script's `Fraction`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Num {
     Int(i128),
-    Frac(f64),
+    Frac(Fraction),
 }
 
 impl Num {
@@ -22,80 +24,63 @@ impl Num {
     }
 }
 
-/// `floor((t - origin) * 12 / 125 000)`.
+/// `a op b` in `i128`; beyond it the check is red by rule (`INT_LIMIT`,
+/// recorded) and the result is 0.
+fn limited(what: &str, v: Option<i128>) -> i128 {
+    v.unwrap_or_else(|| {
+        record_int_limit(what);
+        0
+    })
+}
+
+/// `floor((t - origin) * 12 / 125 000)` (`//`).
 pub(crate) fn floor_to_position(t: i128, origin: i128) -> i128 {
-    ((t - origin) * 12).div_euclid(125_000)
+    let p = t.checked_sub(origin).and_then(|d| d.checked_mul(12));
+    limited("floor_to_position", p).div_euclid(125_000)
 }
 
-/// `ceil(p * 31 250 / 3)`.
+/// `ceil(p * 31 250 / 3)`: `-((-a) // b)`.
 pub(crate) fn ceil_to_offset(p: i128) -> i128 {
-    -((-(p * 31_250)).div_euclid(3))
+    let a = limited("ceil_to_offset", p.checked_mul(31_250));
+    -((-a).div_euclid(3))
 }
 
-/// `NUM_RE` with its guards `(?<![\w.\-/])` and `(?![\w])`: the matches as
-/// (sign, body without separators, byte end).
-fn number_matches(cell: &str) -> Vec<(char, String)> {
-    let chars: Vec<char> = cell.chars().collect();
-    let prev_ok = |i: usize| i == 0 || !(is_word(chars[i - 1]) || matches!(chars[i - 1], '.' | '-' | '/'));
-    let digits = |from: usize| chars[from.min(chars.len())..].iter().take_while(|c| c.is_ascii_digit()).count();
-    let tail_ok = |e: usize| !chars.get(e).copied().is_some_and(is_word);
-    let (mut out, mut i) = (Vec::new(), 0);
-    while i < chars.len() {
-        let signed = matches!(chars[i], '+' | '-') && chars.get(i + 1).is_some_and(char::is_ascii_digit);
-        if !(signed || chars[i].is_ascii_digit()) || !prev_ok(i) {
-            i += 1;
-            continue;
-        }
-        let start = if signed { i + 1 } else { i };
-        let run_end = start + digits(start);
-        let mut ends = vec![run_end];
-        let mut e = run_end;
-        while chars.get(e) == Some(&' ') && digits(e + 1) >= 3 {
-            e += 4;
-            ends.push(e);
-        }
-        let mut found = None;
-        for &e in ends.iter().rev() {
-            if chars.get(e) == Some(&'.') && digits(e + 1) > 0 {
-                let f = e + 1 + digits(e + 1);
-                if tail_ok(f) {
-                    found = Some(f);
-                    break;
-                }
-            }
-            if tail_ok(e) {
-                found = Some(e);
-                break;
-            }
-        }
-        match found {
-            Some(end) => {
-                let body: String = chars[start..end].iter().filter(|c| **c != ' ').collect();
-                out.push((if signed { chars[i] } else { '+' }, body));
-                i = end;
-            }
-            None => i += 1,
-        }
-    }
-    out
+fn add(a: i128, b: i128) -> i128 {
+    limited("origin + n", a.checked_add(b))
 }
+
+fn sub(a: i128, b: i128) -> i128 {
+    limited("t - origin", a.checked_sub(b))
+}
+
+const NUM_RE: &str = r"(?<![\w.\-/])([+\-]?)(\d+(?:[   ]\d{3})*(?:\.\d+)?)(?![\w])";
 
 /// `cell_numbers`: every number of a cell with whether the cell says
 /// "origin".
 pub(crate) fn cell_numbers(cell: &str) -> Vec<(Num, bool)> {
     let rel = cell.to_lowercase().contains("origin");
     let mut out = Vec::new();
-    for (sign, body) in number_matches(cell) {
-        let neg = sign == '-';
+    for m in rx(NUM_RE).captures_iter(cell) {
+        let neg = &m[1] == "-";
+        let body = m[2].replace('_', " ").replace(',', "");
+        let body = rx(r"(?<=\d)[ ](?=\d{3}(?!\d))").replace_all(&body, "");
         let val = if body.contains('.') {
-            let f: f64 = body.parse().unwrap_or(0.0);
+            let Some(f) = py_float(&body) else { continue };
             if f.fract() == 0.0 {
+                if f.abs() >= 1.7e38 {
+                    record_int_limit(&body);
+                    continue;
+                }
                 Num::Int(f as i128)
             } else {
-                Num::Frac(if neg { -f } else { f })
+                match Fraction::from_f64(f) {
+                    Some(fr) => Num::Frac(fr.limit_denominator(1_000_000)),
+                    None => continue,
+                }
             }
         } else {
-            Num::Int(body.parse().unwrap_or(i128::MAX))
+            let Ok(n) = parse_int(&body) else { continue };
+            Num::Int(n)
         };
         out.push((if neg { negate(val) } else { val }, rel));
     }
@@ -108,12 +93,15 @@ pub(crate) fn cell_numbers(cell: &str) -> Vec<(Num, bool)> {
 fn negate(n: Num) -> Num {
     match n {
         Num::Int(v) => Num::Int(-v),
-        Num::Frac(f) => Num::Frac(-f),
+        Num::Frac(f) => Num::Frac(Fraction::new(-f.numerator(), f.denominator()).unwrap_or(f)),
     }
 }
 
 fn dir_cell(cells: &[String], pattern: &str) -> usize {
-    cells.iter().position(|c| has(pattern, &c.to_lowercase())).unwrap_or(0)
+    cells
+        .iter()
+        .position(|c| has(pattern, &c.to_lowercase()))
+        .unwrap_or_default()
 }
 
 /// A row's direction and the cell that names it.
@@ -126,11 +114,16 @@ pub(crate) fn row_direction(cells: &[String]) -> Option<(&'static str, usize)> {
     if text.contains("time_of") && !text.contains("position_at") {
         return find("time_of").map(|k| ("time", k));
     }
-    let to_pos = r"(ns|network time|time)\s*(?:\u{2192}|->|=>)\s*(p\b|pos|position|sample)";
-    let to_time = r"(p\b|pos|position|sample)\s*(?:\u{2192}|->|=>)\s*(ns|network time|time)";
+    let to_pos = r"(ns|network time|time)\s*(?:→|->|=>)\s*(p\b|pos|position|sample)";
+    let to_time = r"(p\b|pos|position|sample)\s*(?:→|->|=>)\s*(ns|network time|time)";
     let words_pos = r"ns\s+to\s+(p\b|position)|time\s+to\s+position";
     let words_time = r"position\s+to\s+(ns|time)|p\b\s+to\s+ns";
-    for (pat, dir) in [(to_pos, "position"), (to_time, "time"), (words_pos, "position"), (words_time, "time")] {
+    for (pat, dir) in [
+        (to_pos, "position"),
+        (to_time, "time"),
+        (words_pos, "position"),
+        (words_time, "time"),
+    ] {
         if has(pat, &text) {
             return Some((dir, dir_cell(cells, pat)));
         }
@@ -147,27 +140,48 @@ pub(crate) fn header_direction(header: &[String]) -> Option<&'static str> {
     if text.contains("time_of") && !text.contains("position_at") {
         return Some("time");
     }
-    let (time_re, pos_re) = (rx(r"network\s*time|time\s*\(ns\)|\bns\b"), rx(r"position|\bp\b|samples?"));
+    let (time_re, pos_re) = (
+        rx(r"network\s*time|time\s*\(ns\)|\bns\b"),
+        rx(r"position|\bp\b|samples?"),
+    );
     let (t, p) = (time_re.find(&text)?, pos_re.find(&text)?);
-    Some(if t.start() < p.start() { "position" } else { "time" })
+    Some(if t.start() < p.start() {
+        "position"
+    } else {
+        "time"
+    })
 }
 
 fn matches_position(inv: Num, in_rel: bool, out: Num, origin: i128) -> bool {
-    let (Some(i), Some(p)) = (inv.int(), out.int()) else { return false };
+    let (Some(i), Some(p)) = (inv.int(), out.int()) else {
+        return false;
+    };
     if p < 0 {
         return false;
     }
-    let choices: Vec<i128> = if in_rel { vec![origin + i] } else { vec![i, origin + i] };
-    choices.iter().any(|&t| t - origin >= 0 && floor_to_position(t, origin) == p)
+    let choices: Vec<i128> = if in_rel {
+        vec![add(origin, i)]
+    } else {
+        vec![i, add(origin, i)]
+    };
+    choices
+        .iter()
+        .any(|&t| sub(t, origin) >= 0 && floor_to_position(t, origin) == p)
 }
 
 fn matches_time(inv: Num, in_rel: bool, out: Num, origin: i128) -> bool {
-    let (Some(p), Some(o)) = (inv.int(), out.int()) else { return false };
+    let (Some(p), Some(o)) = (inv.int(), out.int()) else {
+        return false;
+    };
     if p < 0 {
         return false;
     }
     let off = ceil_to_offset(p);
-    let choices: Vec<i128> = if in_rel { vec![origin + off] } else { vec![off, origin + off] };
+    let choices: Vec<i128> = if in_rel {
+        vec![add(origin, off)]
+    } else {
+        vec![off, add(origin, off)]
+    };
     choices.contains(&o)
 }
 
@@ -185,47 +199,21 @@ type Item = (Num, bool);
 /// A table of the section: header cells and its rows (line, cells).
 pub(crate) type SecTable = (Vec<String>, Vec<(usize, Vec<String>)>);
 
-/// `is_separator`.
-fn is_separator(cells: &[String]) -> bool {
-    !cells.is_empty() && cells.iter().all(|c| has(r"^(?:\:?-{2,}\:?)$", &c.replace(' ', "")))
-}
-
-/// `visible_lines` and `parse_tables` over the section's lines.
+/// 006-02's `visible_lines` and `parse_tables`: [`FencePolicy::SameChar`]
+/// and [`TableRules::T006_02`] over the section's lines.
 pub(crate) fn tables(lines: &[String]) -> Vec<SecTable> {
-    let (mut vis, mut open) = (vec![true; lines.len()], None::<char>);
-    for (i, line) in lines.iter().enumerate() {
-        if let Some(m) = rx(r"^\s*(`{3,}|~{3,})").captures(line) {
-            let c = m[1].chars().next().unwrap_or('`');
-            match open {
-                None => open = Some(c),
-                Some(o) if o == c => open = None,
-                Some(_) => {}
-            }
-            vis[i] = false;
-        } else if open.is_some() {
-            vis[i] = false;
-        }
-    }
-    let (mut out, mut i) = (Vec::new(), 0);
-    while i < lines.len() {
-        if vis[i] && lines[i].trim_start().starts_with('|') {
-            let mut block = Vec::new();
-            let mut j = i;
-            while j < lines.len() && vis[j] && lines[j].trim_start().starts_with('|') {
-                if let Some(cells) = split_row(&lines[j]) {
-                    block.push((j + 1, cells));
-                }
-                j += 1;
-            }
-            if block.len() >= 3 && is_separator(&block[1].1) {
-                out.push((block[0].1.clone(), block[2..].to_vec()));
-            }
-            i = j;
-        } else {
-            i += 1;
-        }
-    }
-    out
+    let md = Markdown::parse_with(&lines.join("\n"), FencePolicy::SameChar);
+    md.tables_with(md.all(), TableRules::T006_02)
+        .into_iter()
+        .filter_map(|t| {
+            let rows = t
+                .rows
+                .iter()
+                .map(|r| (r.line + 1, r.cells.clone()))
+                .collect();
+            Some((t.header?, rows))
+        })
+        .collect()
 }
 
 fn first_match(nums: &[(Num, bool, String)], dir: &str, origin: i128) -> Option<(Item, Item)> {
@@ -249,7 +237,7 @@ fn first_match(nums: &[(Num, bool, String)], dir: &str, origin: i128) -> Option<
 fn show(n: Num) -> String {
     match n {
         Num::Int(v) => v.to_string(),
-        Num::Frac(f) => f.to_string(),
+        Num::Frac(f) => format!("{}/{}", f.numerator(), f.denominator()),
     }
 }
 
@@ -259,7 +247,7 @@ pub(crate) fn verify(tables: &[SecTable], origin: i128) -> (Vec<Verified>, Vec<S
     for (header, rows) in tables {
         let table_dir = header_direction(header);
         for (line, cells) in rows {
-            if cells.iter().all(|c| c.trim().is_empty()) {
+            if cells.iter().all(|c| c.py_strip().is_empty()) {
                 continue;
             }
             let (direction, dir_idx) = match row_direction(cells) {
@@ -267,13 +255,16 @@ pub(crate) fn verify(tables: &[SecTable], origin: i128) -> (Vec<Verified>, Vec<S
                 None => (table_dir, None),
             };
             let mut nums: Vec<(Num, bool, String)> = Vec::new();
-            for (k, c) in cells.iter().enumerate().filter(|(k, _)| Some(*k) != dir_idx) {
-                let _ = k;
+            for (_, c) in cells
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| Some(*k) != dir_idx)
+            {
                 for (v, rel) in cell_numbers(c) {
                     if let Num::Frac(f) = v {
-                        problems.push(format!("line {line}: value {f} is not an integer; the map produces whole nanoseconds and whole positions"));
+                        problems.push(format!("line {line}: value {}/{} is not an integer; the map produces whole nanoseconds and whole positions", f.numerator(), f.denominator()));
                     }
-                    nums.push((v, rel, c.trim().to_string()));
+                    nums.push((v, rel, c.py_strip().to_string()));
                 }
             }
             let Some(direction) = direction else { continue };
@@ -285,12 +276,17 @@ pub(crate) fn verify(tables: &[SecTable], origin: i128) -> (Vec<Verified>, Vec<S
                 problems.push(format!("line {line}: {direction} row fails the section's own formula: input {}, output {}  (row: | {} |)", show(nums[0].0), show(nums[1].0), cells.join(" | ")));
                 continue;
             };
-            let (Some(xi), Some(yi)) = (x.0.int(), y.0.int()) else { continue };
+            let (Some(xi), Some(yi)) = (x.0.int(), y.0.int()) else {
+                continue;
+            };
             let p = if direction == "position" { yi } else { xi };
-            let output = yi;
-            verified.push(Verified { direction, p, output, relative_out: y.1 });
+            verified.push(Verified {
+                direction,
+                p,
+                output: yi,
+                relative_out: y.1,
+            });
         }
     }
     (verified, problems)
 }
-
