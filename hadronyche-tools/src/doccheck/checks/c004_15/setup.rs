@@ -296,6 +296,26 @@ fn size(m: &Table) -> Flow<i128> {
         .map_or_else(|| crash("None in arithmetic"), Ok)
 }
 
+/// `HDR_ALLOWED`: the header figures of the 004-14 tables a worked example
+/// may use as its header term.
+fn header_figures(p: [i128; 6], cwv: i128, cksum: i128, max_hdr: i128, cap: i128) -> Vec<i128> {
+    let [pkt, slice, ann_count, ent, entry_max, ext] = p;
+    let mut hdr = vec![
+        pkt + slice + ann_count + cwv + cksum,
+        pkt + slice + ann_count + ent + ext + cksum,
+        pkt + slice + ann_count + ent + cksum,
+        max_hdr,
+        cap,
+    ];
+    for k in 0..=entry_max {
+        for e in [0, 1] {
+            hdr.push(pkt + slice + ann_count + ent * k + ext * e + cwv + cksum);
+        }
+        hdr.push(cwv + cksum + pkt + slice + ann_count + ent * k);
+    }
+    hdr
+}
+
 /// Reads everything; records the `[budget]` disagreement (AC 1).
 pub(crate) fn calc(
     const_src: &str,
@@ -354,19 +374,13 @@ pub(crate) fn calc(
     );
     let diff_r = rate_stream - c.c21;
     let pct_r = diff_r / c.c21 * 100.0;
-    let mut hdr = vec![
-        pkt + slice + ann_count + cwv + cksum,
-        pkt + slice + ann_count + ent + ext + cksum,
-        pkt + slice + ann_count + ent + cksum,
+    let hdr = header_figures(
+        [pkt, slice, ann_count, ent, entry_max, ext],
+        cwv,
+        cksum,
         ann_max_pay - c.audio,
         c.cap,
-    ];
-    for k in 0..=entry_max {
-        for e in [0, 1] {
-            hdr.push(pkt + slice + ann_count + ent * k + ext * e + cwv + cksum);
-        }
-        hdr.push(cwv + cksum + pkt + slice + ann_count + ent * k);
-    }
+    );
     if let Some(b) = budget_default(&doc)
         && b != def_pay
     {
