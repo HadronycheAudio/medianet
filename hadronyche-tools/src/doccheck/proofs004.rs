@@ -365,22 +365,6 @@ fn library(helper: &str, variant: &str, t: &str) -> J {
         ("norm", "004-24") => per_line(t, join_digit_groups),
         ("width_to_bits", "004-06") => widths(t, WidthRule::DigitGroups004_06),
         ("width_to_bits", "004-20") => widths(t, WidthRule::FirstNumber004_20),
-        ("parse_int_token", _) => J::L(
-            lines
-                .iter()
-                .map(|l| match parse_int_token(l) {
-                    Ok(Some(n)) => J::I(n),
-                    Ok(None) => J::N,
-                    Err(e) => s(&format!("OVERFLOW {e}")),
-                })
-                .collect(),
-        ),
-        ("bit_positions", _) => J::L(
-            lines
-                .iter()
-                .map(|l| bit_positions(l).map_or(J::N, |(a, b)| J::L(vec![J::I(a), J::I(b)])))
-                .collect(),
-        ),
         ("sentences", "004-20") => sentences(t, SentenceSplit::NEWLINES_004_20),
         ("sentences", "004-25") => sentences(t, SentenceSplit::BLOCKS_004_25),
         ("sentences_of", "004-29") => sentences(t, SentenceSplit::PARAGRAPHS_004_29),
@@ -418,6 +402,22 @@ fn library(helper: &str, variant: &str, t: &str) -> J {
 /// items, look-backs).
 fn rules(helper: &str, variant: &str, t: &str, lines: &[&str]) -> J {
     match (helper, variant) {
+        ("parse_int_token", _) => J::L(
+            lines
+                .iter()
+                .map(|l| match parse_int_token(l) {
+                    Ok(Some(n)) => J::I(n),
+                    Ok(None) => J::N,
+                    Err(e) => s(&format!("OVERFLOW {e}")),
+                })
+                .collect(),
+        ),
+        ("bit_positions", _) => J::L(
+            lines
+                .iter()
+                .map(|l| bit_positions(l).map_or(J::N, |(a, b)| J::L(vec![J::I(a), J::I(b)])))
+                .collect(),
+        ),
         ("form_rows", "004-17") => J::L(
             form_rows(t, FormRows::AnyCell004_17)
                 .iter()
