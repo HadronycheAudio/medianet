@@ -3,7 +3,7 @@
 //! ```text
 //! cargo run --release -p hadronyche-tools --bin doccheck-equiv -- <id>|--all
 //!     [--seeds 2026,7,31337,99] [--limit 2000] [--no-red] [--no-denials] [--denials-only] [--jobs 4] [--script-timeout 60]
-//!     [--out FILE] [--full]
+//!     [--out FILE] [--allow-dirty] [--full]
 //! ```
 //!
 //! The defaults are the committed run: (a), (b), four seeds of 2 000
@@ -26,7 +26,7 @@ use hadronyche_tools::doccheck::equiv::{Options, render, render_full, run};
 fn usage() -> ! {
     let ids: Vec<&str> = checks::registry().iter().map(|s| s.id).collect();
     eprintln!(
-        "usage: doccheck-equiv <id>|--all [--seeds A,B] [--limit N] [--no-red] [--no-denials] [--denials-only] [--jobs N] [--script-timeout S] [--out PATH] [--full]\nported checks: {}",
+        "usage: doccheck-equiv <id>|--all [--seeds A,B] [--limit N] [--no-red] [--no-denials] [--denials-only] [--jobs N] [--script-timeout S] [--out PATH] [--allow-dirty] [--full]\nported checks: {}",
         ids.join(", ")
     );
     exit(2)
@@ -36,6 +36,7 @@ struct Args {
     ids: Vec<&'static CheckSpec>,
     opts: Options,
     out: Option<String>,
+    allow_dirty: bool,
     full: bool,
 }
 
@@ -54,6 +55,7 @@ fn parse() -> Args {
         ids,
         opts: Options::default(),
         out: None,
+        allow_dirty: false,
         full: false,
     };
     while let Some(flag) = args.next() {
@@ -73,6 +75,7 @@ fn parse() -> Args {
                 a.opts.red_phase = false;
             }
             "--out" => a.out = Some(value()),
+            "--allow-dirty" => a.allow_dirty = true,
             "--full" => a.full = true,
             "--jobs" => a.opts.jobs = value().parse().unwrap_or_else(|_| usage()),
             "--script-timeout" => {
@@ -92,6 +95,16 @@ fn main() {
             eprintln!("cannot create {dir}: {e}");
             exit(2)
         });
+    }
+    // a committed summary is of a commit: refuse a dirty tree (R4 item 5)
+    let dirty = hadronyche_tools::doccheck::equiv::script::dirty_paths(&repo_root());
+    if a.out.is_some() && !dirty.is_empty() && !a.allow_dirty {
+        eprintln!(
+            "doccheck-equiv: refusing to write a summary from a tree with uncommitted changes: {}\n\
+             (commit them, or pass --allow-dirty to name them in the summary's header)",
+            dirty.join(", ")
+        );
+        exit(2)
     }
     let mut failed = false;
     for spec in &a.ids {

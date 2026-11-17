@@ -8,7 +8,7 @@
 
 use super::markdown::norm_title;
 use super::policy::{HeaderlessRuns, RowSplit, SeparatorRule, TableRules};
-use super::pycompat::PyStr;
+use super::pycompat::{IntError, PyStr, parse_int};
 use super::text::{full, rx};
 
 /// One data row of a table.
@@ -79,6 +79,7 @@ impl Table {
 pub fn split_row_with(line: &str, split: RowSplit) -> Vec<String> {
     match split {
         RowSplit::Escaped => split_row(line),
+        RowSplit::CharWalk => split_row_char_walk(line).unwrap_or_default(),
         RowSplit::Plain => {
             let s = line.py_strip();
             let s = s.strip_prefix('|').unwrap_or(s);
@@ -109,6 +110,108 @@ pub fn split_row(line: &str) -> Vec<String> {
         .into_iter()
         .map(|c| c.py_strip().replace("\\|", "|"))
         .collect()
+}
+
+/// 006-01/006-02's `split_row` ([`RowSplit::CharWalk`]): `None` when the
+/// stripped line does not start with `|`.
+pub fn split_row_char_walk(line: &str) -> Option<Vec<String>> {
+    let s = line.py_strip();
+    let body = s.strip_prefix('|')?;
+    let s = if s.ends_with('|') && !s.ends_with("\\|") && !body.is_empty() {
+        &body[..body.len() - 1]
+    } else {
+        body
+    };
+    let chars: Vec<char> = s.chars().collect();
+    let (mut cells, mut cur, mut i) = (Vec::new(), String::new(), 0);
+    while i < chars.len() {
+        match chars[i] {
+            '\\' if chars.get(i + 1) == Some(&'|') => {
+                cur.push('|');
+                i += 1;
+            }
+            '|' => cells.push(std::mem::take(&mut cur).py_strip().to_string()),
+            c => cur.push(c),
+        }
+        i += 1;
+    }
+    cells.push(cur.py_strip().to_string());
+    Some(cells)
+}
+
+/// 006-02's separator cells ([`SeparatorRule::DashCells`]): at least one
+/// cell, each `:?-{2,}:?` once spaces are removed.
+pub fn is_dash_cells(cells: &[String]) -> bool {
+    !cells.is_empty() && cells.iter().all(|c| full(":?-{2,}:?", &c.replace(' ', "")))
+}
+
+/// 004-14/004-15's `caption_above(ls, fm, i)`: up to two lines within the
+/// five above line `i` that are not blank, not a table line and not in
+/// code (`code` is the fence mask), each stripped of leading `#`, `*` and
+/// spaces, nearest last, joined with a space.
+pub fn caption_above(lines: &[&str], code: &[bool], i: usize) -> String {
+    let mut got: Vec<String> = Vec::new();
+    for k in (i.saturating_sub(5)..i).rev() {
+        let s = lines[k].py_strip();
+        if !s.is_empty() && !lines[k].py_lstrip().starts_with('|') && !code[k] {
+            got.push(s.trim_start_matches(['#', '*', ' ']).py_strip().to_string());
+            if got.len() == 2 {
+                break;
+            }
+        }
+    }
+    got.reverse();
+    got.join(" ")
+}
+
+/// 004-14's `label_of(cell)`: `*`, `_` and `` ` `` removed, stripped, lower
+/// case.
+pub fn cell_label(cell: &str) -> String {
+    rx(r"[*_`]").replace_all(cell, "").py_strip().to_lowercase()
+}
+
+/// 004-14's `NUM_RE`: a number with digit groups (space, no-break space or
+/// narrow no-break space) or plain digits.
+pub const NUM_004_14: &str = r"\d{1,3}(?:[ \x{a0}\x{202f}]\d{3})+|\d+";
+
+fn int_004_14(m: &str) -> Result<i128, IntError> {
+    parse_int(&rx(r"[ \x{a0}\x{202f},]").replace_all(m, ""))
+}
+
+/// 004-14's `first_int(text)`: the first [`NUM_004_14`] match as an `int`
+/// (separators and commas removed); `Ok(None)` when there is none. Python's
+/// `int` is unbounded: past `i128` the result is `IntError::Overflow`.
+pub fn first_int_004_14(text: &str) -> Result<Option<i128>, IntError> {
+    rx(NUM_004_14)
+        .find(text)
+        .map(|m| int_004_14(m.as_str()))
+        .transpose()
+}
+
+/// 004-14's dash cells (`DASHES`): a cell that reads 0.
+pub const DASHES_004_14: &[&str] = &[
+    "", "\u{2014}", "\u{2013}", "-", "none", "omitted", "absent", "n/a", "not sent",
+];
+
+/// 004-14's `parse_num(cell)`: a dash cell is 0; else the text after the
+/// last `=`, without `*` and parenthesised notes, its first number, negated
+/// when a minus sign, a `-` that no word character precedes, or `deficit`
+/// is there; `Ok(None)` when there is no number.
+pub fn cell_number_004_14(cell: &str) -> Result<Option<i128>, IntError> {
+    let raw = cell.py_strip();
+    if DASHES_004_14.contains(&cell_label(raw).as_str()) {
+        return Ok(Some(0));
+    }
+    let s = raw.replace('*', "");
+    let s = s.rsplit('=').next().unwrap_or_default();
+    let s = rx(r"\([^)]*\)").replace_all(s, "");
+    let Some(m) = rx(NUM_004_14).find(&s) else {
+        return Ok(None);
+    };
+    let value = int_004_14(m.as_str())?;
+    let negative =
+        crate::doccheck::text::rx(r"(?i)[\u{2212}]\s*\d|(?<![\w])-\s*\d|deficit").is_match(&s);
+    Ok(Some(if negative { -value } else { value }))
 }
 
 /// True when every non-empty cell is `:?-+:?` and at least one is not empty.
@@ -162,6 +265,9 @@ fn build(lines: &[String], start: usize, end: usize, rules: TableRules) -> Optio
         && match rules.separator {
             SeparatorRule::CellWise => is_separator(&split_row_with(&lines[start + 1], split)),
             SeparatorRule::LineRegex => is_separator_line(&lines[start + 1]),
+            SeparatorRule::DashCells => {
+                end - start > 2 && is_dash_cells(&split_row_with(&lines[start + 1], split))
+            }
         };
     if headed {
         return Some(Table {

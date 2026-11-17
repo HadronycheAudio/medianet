@@ -11,7 +11,7 @@
 //!   `(?m)`) also matches before a trailing newline.
 //!   [`crate::doccheck::text::rx`] translates every pattern, so all checks
 //!   get Python's semantics. Constructs with no faithful translation
-//!   ([`unsupported`]: `\Z`, `{,n}`, back-references, look-behind) are
+//!   ([`unsupported`]: `\Z`, `{,n}`, back-references) are
 //!   refused: the pattern does not build, which fails the port's pattern
 //!   test and, at check time, turns the check red (`REGEX_LIMIT`), never a
 //!   panic.
@@ -53,14 +53,14 @@ const PY_S: &str = r"\s\x1c-\x1f";
 /// it needs look-around (`fancy-regex`). Everything else passes through
 /// (`\d` is Unicode `Nd` in both).
 pub fn translate(pattern: &str) -> (String, bool) {
-    translate_with(pattern, PY_BOUNDARY, PY_NOT_BOUNDARY, PY_DOLLAR)
+    translate_with(pattern, PY_BOUNDARY, PY_NOT_BOUNDARY, PY_DOLLAR, false)
 }
 
 /// The pattern with `\b`/`\B` and Python's `$` removed: it matches
 /// wherever the translated pattern does (and more), so it is a sound
 /// prefilter for it.
 pub fn relaxed(pattern: &str) -> String {
-    translate_with(pattern, "", "", "").0
+    translate_with(pattern, "", "", "", true).0
 }
 
 /// Python's `$` without `re.M`: the end of the text, or before a newline
@@ -78,19 +78,33 @@ fn multiline(pattern: &str) -> bool {
 }
 
 /// Why `pattern` uses a Python construct the library refuses (no faithful
-/// translation), or `None`: `\Z`, `{,n}`, a back-reference (`\1`,
-/// `(?P=name)`) or a look-behind (`(?<=`, `(?<!`). Python accepts them;
-/// a port that needs one must rewrite its pattern.
+/// translation), or `None`: `\Z`, `{,n}` or a back-reference (`\1`,
+/// `(?P=name)`). Python accepts them; no script uses them, and a port that
+/// needs one must rewrite its pattern. Look-ahead and look-behind are
+/// supported (`fancy-regex`, proven on `data/pycompat_corpus.txt`).
 pub fn unsupported(pattern: &str) -> Option<String> {
     let c: Vec<char> = pattern.chars().collect();
     let mut in_class = false;
     let mut i = 0;
+    // 0: after an atom; 1: after a quantifier; 2: after a lazy `?`
+    let mut quant = 0u8;
     let refuse = |what: &str| {
         Some(format!(
             "{what} is not supported by the library (PORTING.md, \"Regex constructs\")"
         ))
     };
     while i < c.len() {
+        if !in_class && let Some(len) = quantifier_at(&c, i) {
+            match (quant, c[i]) {
+                (1, '+') => return refuse("a possessive quantifier (Python 3.10 refuses it)"),
+                (1, '?') => quant = 2,
+                (1 | 2, _) => return refuse("a repeated quantifier (Python: multiple repeat)"),
+                _ => quant = 1,
+            }
+            i += len;
+            continue;
+        }
+        quant = 0;
         match c[i] {
             '\\' => {
                 match c.get(i + 1) {
@@ -113,11 +127,16 @@ pub fn unsupported(pattern: &str) -> Option<String> {
             ']' if in_class => in_class = false,
             '(' if !in_class => {
                 let next: String = c[i + 1..].iter().take(3).collect();
-                if next.starts_with("?<=") || next.starts_with("?<!") {
-                    return refuse("a look-behind");
-                }
                 if next.starts_with("?P=") {
                     return refuse("a named back-reference");
+                }
+                if next.starts_with("?>") {
+                    return refuse("an atomic group (Python 3.10 refuses it)");
+                }
+                // `(?` opens a group form, not a quantifier
+                if next.starts_with('?') {
+                    i += 2;
+                    continue;
                 }
             }
             '{' if !in_class && c.get(i + 1) == Some(&',') => return refuse("`{,n}`"),
@@ -128,28 +147,84 @@ pub fn unsupported(pattern: &str) -> Option<String> {
     None
 }
 
+/// The length of the quantifier at `i` (`*`, `+`, `?`, `{m}`, `{m,}`,
+/// `{m,n}`), or `None` (Python reads any other `{` as a literal).
+fn quantifier_at(c: &[char], i: usize) -> Option<usize> {
+    match c[i] {
+        '*' | '+' | '?' => Some(1),
+        '{' => {
+            let close = c[i..].iter().position(|&x| x == '}')?;
+            let body: String = c[i + 1..i + close].iter().collect();
+            let (lo, hi) = body.split_once(',').unwrap_or((&body, ""));
+            let digits = |s: &str| s.chars().all(|d| d.is_ascii_digit());
+            (!lo.is_empty() && digits(lo) && digits(hi)).then_some(close + 1)
+        }
+        _ => None,
+    }
+}
+
+/// True when `rest` (the text after a `(`) opens a look-around.
+fn opens_lookaround(rest: &[char]) -> bool {
+    matches!(rest, ['?', '=' | '!', ..] | ['?', '<', '=' | '!', ..])
+}
+
+/// The index just past the `)` closing the group whose `(` is at `open`.
+fn group_end(c: &[char], open: usize) -> usize {
+    let (mut depth, mut i, mut in_class) = (0usize, open, false);
+    while i < c.len() {
+        match c[i] {
+            '\\' => i += 1,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => {
+                depth -= 1;
+                if depth == 0 {
+                    return i + 1;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    c.len()
+}
+
 fn translate_with(
     pattern: &str,
     boundary: &str,
     not_boundary: &str,
     dollar: &str,
+    strip_lookaround: bool,
 ) -> (String, bool) {
+    let all: Vec<char> = pattern.chars().collect();
     let mut out = String::with_capacity(pattern.len() + 16);
-    let mut chars = pattern.chars().peekable();
     let mut in_class = false;
     let mut fancy = false;
     let py_dollar = !multiline(pattern);
-    while let Some(c) = chars.next() {
+    let mut i = 0;
+    while i < all.len() {
+        let c = all[i];
+        i += 1;
+        if c == '(' && !in_class && opens_lookaround(&all[i..]) {
+            // look-ahead/look-behind: fancy-regex; the prefilter drops it
+            fancy = true;
+            if strip_lookaround {
+                i = group_end(&all, i - 1);
+                continue;
+            }
+        }
         if c == '$' && !in_class && py_dollar {
             fancy = true;
             out.push_str(dollar);
             continue;
         }
         if c == '\\' {
-            let Some(n) = chars.next() else {
+            let Some(&n) = all.get(i) else {
                 out.push('\\');
                 break;
             };
+            i += 1;
             if !in_class && (n == 'b' || n == 'B') {
                 fancy = true;
                 out.push_str(if n == 'b' { boundary } else { not_boundary });
@@ -162,11 +237,12 @@ fn translate_with(
             in_class = true;
             out.push(c);
             // a `]` right after `[` or `[^` is a literal in Python
-            if chars.peek() == Some(&'^') {
-                out.push(chars.next().unwrap_or('^'));
+            if all.get(i) == Some(&'^') {
+                out.push('^');
+                i += 1;
             }
-            if chars.peek() == Some(&']') {
-                chars.next();
+            if all.get(i) == Some(&']') {
+                i += 1;
                 out.push_str(r"\]");
             }
             continue;
@@ -197,6 +273,56 @@ fn escape_for(n: char, in_class: bool) -> String {
         ('S', _) => format!("[^{PY_S}]"),
         (other, _) => format!("\\{other}"),
     }
+}
+
+/// `s[start:stop]` on characters (code points), with Python's negative
+/// indices and clamping; `None` is an omitted bound.
+pub fn py_slice(s: &str, start: Option<i64>, stop: Option<i64>) -> String {
+    let n = i64::try_from(s.chars().count()).unwrap_or(i64::MAX);
+    let at = |i: Option<i64>, default: i64| match i {
+        None => default,
+        Some(i) if i < 0 => (n + i).max(0),
+        Some(i) => i.min(n),
+    };
+    let (a, b) = (at(start, 0), at(stop, n));
+    if b <= a {
+        return String::new();
+    }
+    let skip = usize::try_from(a).unwrap_or_default();
+    let take = usize::try_from(b - a).unwrap_or_default();
+    s.chars().skip(skip).take(take).collect()
+}
+
+/// `unicodedata.normalize("NFKC", s)` for text inside the repertoire (the
+/// only text a check sees, R13/R20). Within the repertoire NFKC maps one
+/// character at a time (no repertoire character combines with another), so
+/// this is the per-character compatibility mapping, written from the
+/// Unicode data; a character outside the repertoire is returned unchanged
+/// (it cannot reach a check). Proven equal to Python's for every row of
+/// `data/repertoire.tsv` (`nfkc` column) and on the strings of
+/// `data/pycompat_corpus.txt`.
+pub fn nfkc(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\u{b5}' => out.push('\u{3bc}'),
+            '\u{b9}' => out.push('1'),
+            '\u{b2}' => out.push('2'),
+            '\u{b3}' => out.push('3'),
+            '\u{2074}'..='\u{2079}' => {
+                out.push(char::from_u32(u32::from(c) - 0x2070 + 0x30).unwrap_or(c))
+            }
+            '\u{207b}' => out.push('\u{2212}'),
+            '\u{2080}'..='\u{2089}' => {
+                out.push(char::from_u32(u32::from(c) - 0x2080 + 0x30).unwrap_or(c))
+            }
+            '\u{2153}' => out.push_str("1\u{2044}3"),
+            '\u{2154}' => out.push_str("2\u{2044}3"),
+            '\u{2026}' => out.push_str("..."),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Python's `str.splitlines()`: splits on every line boundary Python knows
@@ -342,15 +468,26 @@ pub fn parse_int(s: &str) -> Result<i128, IntError> {
     {
         return Err(bad());
     }
+    // accumulated with the sign, so i128::MIN itself is read
     let mut value: i128 = 0;
     for c in digits.chars().filter(|c| *c != '_') {
-        let d = decimal_value(c).ok_or_else(bad)?;
+        let d = i128::from(decimal_value(c).ok_or_else(bad)?);
         value = value
             .checked_mul(10)
-            .and_then(|v| v.checked_add(i128::from(d)))
-            .ok_or_else(|| IntError::Overflow(t.to_string()))?;
+            .and_then(|v| {
+                if neg {
+                    v.checked_sub(d)
+                } else {
+                    v.checked_add(d)
+                }
+            })
+            .ok_or_else(|| {
+                // beyond i128: red by rule (INT_LIMIT), never wrapped
+                super::pynum::record_int_limit(t);
+                IntError::Overflow(t.to_string())
+            })?;
     }
-    Ok(if neg { -value } else { value })
+    Ok(value)
 }
 
 fn decimal_value(c: char) -> Option<u32> {
@@ -390,14 +527,42 @@ mod tests {
             ("a{,2}b", "`{,n}`"),
             (r"(a)\1", "back-reference"),
             ("(?P<x>a)(?P=x)", "back-reference"),
-            (r"(?<=\d)x", "look-behind"),
-            (r"(?<!\d)x", "look-behind"),
+            // Python 3.10 (the 004 family) raises re.error on these
+            ("a++", "possessive"),
+            ("a*+", "possessive"),
+            ("a{2}+", "possessive"),
+            ("(?>ab)c", "atomic"),
+            ("a**", "repeated"),
+            ("a+??", "repeated"),
         ] {
             let msg = unsupported(p).unwrap_or_default();
             assert!(msg.contains(why), "{p}: {msg}");
             assert!(rx(p).compile_error().is_some(), "{p} does not build");
         }
-        for p in [r"[\Z]", r"a{1,2}", r"\\1", r"[(?<=]", r"(?:x)", r"\{,"] {
+        // look-around is supported (proven on data/pycompat_corpus.txt)
+        assert!(
+            has(r"(?<![\w.\-])12(?![\w.\-])", "a 12 b")
+                && !has(r"(?<![\w.\-])12(?![\w.\-])", "a-12 b")
+        );
+        assert!(rx(r"(?<=\d)x").compile_error().is_none());
+        assert_eq!(relaxed(r"(?<![\w.])(\d+)(?![\d.]|\.\d)"), r"(\d+)");
+        for p in [
+            r"[\Z]",
+            r"a{1,2}",
+            r"\\1",
+            r"[(?<=]",
+            r"(?:x)",
+            r"\{,",
+            r"(?<=\d)x",
+            r"a+?",
+            r"a??",
+            r"\++",
+            r"[+]+",
+            r"(?i)a+",
+            r"(?P<n>a)+",
+            r"x{a}+",
+            r"(?<=a)b+",
+        ] {
             assert_eq!(unsupported(p), None, "{p}");
         }
     }

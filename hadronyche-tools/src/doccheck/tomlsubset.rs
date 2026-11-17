@@ -1,10 +1,11 @@
 //! The 004 family's hand-written TOML reader, ported faithfully
 //! ([`crate::doccheck::policy::TomlReader::Subset004_18`]).
 //!
-//! The scripts 004-03, 06, 08-13, 16-20 and 24-29 carry the same small TOML
-//! reader (`_scan_statements`, `_split_dotted`, `_ValueParser`,
-//! `parse_toml`; byte-identical in 004-06, 004-18, 004-24 and 004-27; 004-03
-//! differs) because their Python 3.10 had no `tomllib`. It is not TOML: it
+//! The scripts 004-03, 05, 06, 08-13, 16-20 and 24-29 carry the same small
+//! TOML reader (`_scan_statements`, `_split_dotted`, `_ValueParser`,
+//! `parse_toml`) because their Python 3.10 had no `tomllib`. The corpus
+//! generator runs all twenty copies; they agree on every snippet (004-03
+//! and 004-05 differ only in formatting). It is not TOML: it
 //! rejects valid TOML (`"""…"""` and `'''…'''` strings parse as an empty
 //! string followed by trailing text) and accepts invalid TOML (`040`, a
 //! duplicate key — the last wins — an unquoted `C-116`, which reads as the
@@ -15,7 +16,8 @@
 //! Each function mirrors its Python original line for line; the corpus
 //! `hadronyche-tools/data/toml_corpus.txt` (generated from the Python reader
 //! by `hadronyche-tools/tools/gen_toml_corpus.py`) is the proof, checked by
-//! the tests below. Known limit: a `\uD800`-style escape gives Python a lone
+//! the tests below. Python's 4 300-digit limit on `int()` from a decimal
+//! string (a longer token stays a string) is reproduced. Known limit: a `\uD800`-style escape gives Python a lone
 //! surrogate, which a Rust string cannot hold; it reads as U+FFFD.
 
 use super::pycompat::PyStr;
@@ -324,6 +326,10 @@ impl ValueParser {
 /// The value of a bare token, as `_ValueParser.bare` reads it: a bool, an
 /// int (hex, octal, binary, decimal), a float, or else the token itself as
 /// a string (a `ValueError` from `int()`/`float()` returns the token).
+/// Python's default limit on the digits `int()` converts from a decimal
+/// string (`sys.int_info.default_max_str_digits`).
+pub(crate) const MAX_STR_DIGITS: usize = 4300;
+
 fn bare_value(tok: &str) -> PyValue {
     let low = tok.to_lowercase();
     if low == "true" {
@@ -342,6 +348,11 @@ fn bare_value(tok: &str) -> PyValue {
             .map_or_else(|| PyValue::Str(tok.to_string()), PyValue::from_big);
     }
     if rx(r"^[+-]?\d+$").is_match(&t) {
+        // Python 3.10.7+ refuses a decimal string over 4 300 digits
+        // (`ValueError`, so the token stays a string)
+        if t.trim_start_matches(['+', '-']).chars().count() > MAX_STR_DIGITS {
+            return PyValue::Str(tok.to_string());
+        }
         return py_int_base(&t, 10)
             .map_or_else(|| PyValue::Str(tok.to_string()), PyValue::from_big);
     }
@@ -351,7 +362,7 @@ fn bare_value(tok: &str) -> PyValue {
 /// An int from Python's `int(s, base)`: an optional sign, the base's prefix
 /// (`0x`, `0o`, `0b`; optional), digits with single underscores; `None` for
 /// a `ValueError`. The value as a decimal string (no size limit).
-fn py_int_base(s: &str, base: u32) -> Option<String> {
+pub(crate) fn py_int_base(s: &str, base: u32) -> Option<String> {
     let t = s.py_strip();
     let (neg, rest) = match t.strip_prefix('-') {
         Some(r) => (true, r),

@@ -120,14 +120,61 @@ pub fn assert_all_denials_tested(spec: &CheckSpec, tested: &[&str]) {
     );
 }
 
+/// Panics unless every denial that expects `REGEX_LIMIT` (a backtracking
+/// input: seconds per test in a debug build) is listed in `slow`.
+pub fn assert_slow_denials_listed(spec: &CheckSpec, slow: &[&str]) {
+    let missing: Vec<&str> = spec
+        .denials
+        .iter()
+        .filter(|d| d.criteria().contains(crate::doccheck::docs::REGEX_LIMIT))
+        .map(|d| d.name)
+        .filter(|n| !slow.contains(n))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{}: backtracking denials not in the `slow:` list of denial_tests! {missing:?}",
+        spec.id
+    );
+}
+
+/// The reason a slow denial test is ignored by the default run.
+pub const SLOW: &str = "slow denial (backtracking): run in release by CI's \
+     'Slow denials' step and the per-change suite: cargo test --release -p hadronyche-tools --test 'doc_*' -- --ignored";
+
 /// One `#[test]` per denial of a check, plus a test that the list and the
-/// tests agree:
+/// tests agree. Denials after `; slow:` (every one that expects
+/// `REGEX_LIMIT`, and any other that takes seconds in a debug build) are
+/// `#[ignore]`d in the default `cargo test` and run in release by CI's
+/// "Slow denials" step and the per-change suite (`-- --ignored`):
 ///
 /// ```ignore
-/// hadronyche_tools::denial_tests!(c004_27::SPEC; ac1_denial_no_probe_section, ac3_denial_fewer_than_four_forms);
+/// hadronyche_tools::denial_tests!(c004_27::SPEC; ac1_denial_no_probe_section, ac3_denial_fewer_than_four_forms; slow: review_r3_026_x);
 /// ```
 #[macro_export]
 macro_rules! denial_tests {
+    ($spec:path; $($name:ident),+ $(,)? ; slow: $($slow:ident),+ $(,)?) => {
+        $(
+            #[test]
+            fn $name() {
+                $crate::doccheck::testing::check_denial(&$spec, stringify!($name));
+            }
+        )+
+        $(
+            #[test]
+            #[ignore = "slow denial (backtracking): cargo test --release -p hadronyche-tools --test 'doc_*' -- --ignored"]
+            fn $slow() {
+                $crate::doccheck::testing::check_denial(&$spec, stringify!($slow));
+            }
+        )+
+        #[test]
+        fn every_denial_of_the_list_has_a_test() {
+            $crate::doccheck::testing::assert_all_denials_tested(
+                &$spec,
+                &[$(stringify!($name)),+ , $(stringify!($slow)),+],
+            );
+            $crate::doccheck::testing::assert_slow_denials_listed(&$spec, &[$(stringify!($slow)),+]);
+        }
+    };
     ($spec:path; $($name:ident),+ $(,)?) => {
         $(
             #[test]
@@ -138,6 +185,7 @@ macro_rules! denial_tests {
         #[test]
         fn every_denial_of_the_list_has_a_test() {
             $crate::doccheck::testing::assert_all_denials_tested(&$spec, &[$(stringify!($name)),+]);
+            $crate::doccheck::testing::assert_slow_denials_listed(&$spec, &[]);
         }
     };
 }
@@ -166,13 +214,15 @@ mod source_rules {
     /// Library files that may call `.parse`: TOML text into the crate's
     /// parser (tomllib, wire_toml), already-validated digits inside the
     /// subset reader (tomlsubset), Rust's own float formatting (pyvalue),
-    /// a replacement's group number (rx).
+    /// a replacement's group number (rx), Python's `float()` on validated
+    /// ASCII (pynum).
     const PARSE_ALLOWED: &[&str] = &[
         "tomllib.rs",
         "wire_toml.rs",
         "tomlsubset.rs",
         "pyvalue.rs",
         "rx.rs",
+        "pynum.rs",
     ];
 
     fn files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -278,6 +328,8 @@ mod source_rules {
             "run)(",
             "take_failures",
             "restore_failures",
+            "take_int_limits",
+            "restore_int_limits",
         ];
         if is_check {
             // whitespace-stripped: `.parse :: <usize>()`, `unwrap_or( 0 )`
@@ -287,6 +339,17 @@ mod source_rules {
                 "from_str(",
                 "unwrap_or(0)",
                 ".evaluate(",
+                // R19 holes of review round 4: a regex run on another
+                // thread, or a result cached across evaluations, escapes
+                // the per-thread failure record
+                "thread::",
+                "OnceLock",
+                "LazyLock",
+                "OnceCell",
+                "thread_local!",
+                "Mutex",
+                "RwLock",
+                "atomic::",
             ]);
         }
         let flat: String = code.chars().filter(|c| !c.is_whitespace()).collect();
@@ -294,6 +357,16 @@ mod source_rules {
             if flat.contains(b) {
                 out.push(format!("{}: uses `{b}`", path.display()));
             }
+        }
+        if is_check
+            && regex::Regex::new(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?static\s")
+                .expect("pattern")
+                .is_match(code)
+        {
+            out.push(format!(
+                "{}: declares a `static` (a check keeps no state across evaluations, R19)",
+                path.display()
+            ));
         }
         if is_check {
             // an aliased import (`use … testing as t`) still names `testing`
@@ -410,14 +483,24 @@ mod source_rules {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            if matches!(name.as_str(), "docs.rs" | "rx.rs" | "testing.rs") {
+            if matches!(
+                name.as_str(),
+                "docs.rs" | "rx.rs" | "pynum.rs" | "testing.rs"
+            ) || p.ends_with("pynum/tests.rs")
+            {
                 continue;
             }
             let flat: String = code_of(&std::fs::read_to_string(p).expect("readable"))
                 .chars()
                 .filter(|c| !c.is_whitespace())
                 .collect();
-            for b in ["run)(", "take_failures", "restore_failures"] {
+            for b in [
+                "run)(",
+                "take_failures",
+                "restore_failures",
+                "take_int_limits",
+                "restore_int_limits",
+            ] {
                 if flat.contains(b) {
                     hits.push(format!("{}: `{b}`", p.display()));
                 }
@@ -505,6 +588,15 @@ mod source_rules {
                 .any(|v| v.contains("another port"))
         );
         assert!(violations(p, "use crate::doccheck::checks::c004_22::X;", true).is_empty());
+        assert!(
+            violations(
+                p,
+                "const N: &'static str = \"x\"; fn f(s: &'static str) {}",
+                true
+            )
+            .is_empty(),
+            "a 'static lifetime is not a static"
+        );
         assert!(!violations(p, "let n = x.parse::<i64>();", true).is_empty());
         for bypass in [
             "use super::super::c004_27::SPEC;",
@@ -517,6 +609,7 @@ mod source_rules {
             "use crate::doccheck::text::rx_raw as rx;",
             "let r = (SPEC.run)(docs);",
             "let f = crate::doccheck::rx::take_failures();",
+            "let f = crate::doccheck::pynum::take_int_limits();",
         ] {
             assert!(!violations(p, bypass, true).is_empty(), "missed: {bypass}");
         }

@@ -69,6 +69,20 @@ impl Dict {
 }
 
 impl PyValue {
+    /// `bool(v)`: empty strings, lists and dicts, zero and `False` are
+    /// false; a date and `nan` are true. A big integer is never zero.
+    pub fn truthy(&self) -> bool {
+        match self {
+            PyValue::Str(s) => !s.is_empty(),
+            PyValue::Int(n) => *n != 0,
+            PyValue::BigInt(_) | PyValue::Date(_) => true,
+            PyValue::Float(f) => *f != 0.0,
+            PyValue::Bool(b) => *b,
+            PyValue::List(l) => !l.is_empty(),
+            PyValue::Dict(d) => !d.is_empty(),
+        }
+    }
+
     /// The Python type name (`str`, `int`, ...), for messages.
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -102,7 +116,11 @@ impl PyValue {
     pub fn py_int(&self) -> Result<i128, IntError> {
         match self {
             PyValue::Int(i) => Ok(*i),
-            PyValue::BigInt(s) => Err(IntError::Overflow(s.clone())),
+            PyValue::BigInt(s) => {
+                // beyond i128: red by rule (INT_LIMIT), never compared
+                super::pynum::record_int_limit(s);
+                Err(IntError::Overflow(s.clone()))
+            }
             PyValue::Bool(b) => Ok(i128::from(*b)),
             PyValue::Float(f) if f.is_finite() && f.abs() < 1e38 => Ok(f.trunc() as i128),
             PyValue::Float(f) => Err(IntError::NotInt(f.to_string())),

@@ -270,8 +270,6 @@ hadronyche_tools::denial_tests!(
     review_r066_r2_tomllib_width_as_float_16_0_frames,
     review_r067_r2_tomllib_duplicate_key_invalid_toml,
     review_r100_r2_d_non_ascii_duplicate_extra_row_rule,
-    review_r3_001_backtracking_4000_backticked_names_then_zzz_32_bits_samples,
-    review_r3_002_backtracking_6000_backticked_names_then_zzz_32_bits_samples,
     review_r3_003_lone_r_in_the_ticket_s_constants_line_adds_c_999_after_it,
     review_r3_004_crlf_ticket,
     review_r3_005_lone_r_starts_3_8_extra_in_the_architecture_s_section_3,
@@ -295,7 +293,61 @@ hadronyche_tools::denial_tests!(
     review_r3_023_date_as_16_nov_2026_month_date,
     review_r3_024_date_as_16_november_2026,
     review_r3_025_main_branch_split_by_a_tab_b_and_s,
+    review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l,
+    ; slow:
+    review_r3_001_backtracking_4000_backticked_names_then_zzz_32_bits_samples,
+    review_r3_002_backtracking_6000_backticked_names_then_zzz_32_bits_samples,
     review_r3_057_backtracking_list_of_4000_then_zzz_32_bits_samples_at_the_en,
     review_r3_058_backtracking_list_of_6000_then_zzz_32_bits_samples_at_the_en,
-    review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l,
 );
+
+/// Review round 4, item 4: the repertoire guard covers what the check
+/// READS, wherever it lies (R20), with no list in the port.
+mod read_log_coverage {
+    use hadronyche_tools::doccheck::Docs;
+    use hadronyche_tools::doccheck::checks::c004_22::SPEC;
+    use hadronyche_tools::doccheck::testing::repo;
+
+    const WIRE: &str = "doc/design/spec/wire.md";
+
+    fn with_link(link: &str, anchor: &str) -> Docs {
+        let wire = repo().read(WIRE).expect("wire.md");
+        let at = wire.find(anchor).expect("anchor") + anchor.len();
+        let text = format!("{}\n\nSee {link}.\n{}", &wire[..at], &wire[at..]);
+        repo().with(WIRE, text)
+    }
+
+    fn repertoire(docs: &Docs) -> Vec<String> {
+        let r = SPEC.evaluate(docs);
+        r.of("REPERTOIRE").iter().map(|f| f.to_string()).collect()
+    }
+
+    #[test]
+    fn a_separate_review_record_is_guarded() {
+        let rec = "doc/design/reports/r4-review-record.md";
+        let docs = with_link(
+            "[the record](../reports/r4-review-record.md)",
+            "## Traceability table",
+        );
+        let clean = docs.with(rec, "# Review record\n\nReviewer: x\n");
+        assert!(repertoire(&clean).is_empty());
+        let bad = docs.with(rec, "# Review record\n\nReviewer: Ren\u{e9}e\n");
+        let hits = repertoire(&bad);
+        assert!(
+            hits.iter().any(|h| h.contains("r4-review-record.md:3")),
+            "{hits:?}"
+        );
+    }
+
+    #[test]
+    fn a_link_target_outside_doc_is_guarded() {
+        // a file at the repository root, outside doc/ (in memory: the
+        // guard sees what the check reads, not what the disk holds)
+        let docs = with_link("[readme](../../../README.md#x)", "## Review record")
+            .with("README.md", "# Readme\n\n## X\n");
+        assert!(repertoire(&docs).is_empty());
+        let bad = docs.with("README.md", "# Readme\n\n## X\n\nna\u{ef}ve\n");
+        let hits = repertoire(&bad);
+        assert!(hits.iter().any(|h| h.contains("README.md:")), "{hits:?}");
+    }
+}

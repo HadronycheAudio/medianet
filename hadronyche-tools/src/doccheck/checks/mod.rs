@@ -77,6 +77,10 @@ pub enum DiffClass {
     /// R19). Applied by the harness itself whenever the port reports
     /// `REGEX_LIMIT`; never listed in `KNOWN`.
     RegexLimit,
+    /// An integer beyond `i128` (Python's is unbounded): the port is red by
+    /// rule ("port stricter (integer limit)"). Applied by the harness itself
+    /// whenever the port reports `INT_LIMIT`; never listed in `KNOWN`.
+    IntLimit,
 }
 
 /// How the two verdicts differ.
@@ -131,7 +135,8 @@ impl DiffKind {
             DiffKind::ScriptTimedOutPortRed | DiffKind::ScriptTimedOutPortPass => false,
         };
         by_kind
-            || (matches!(class, OutsideRepertoire | RegexLimit) && !self.weaker_if_port_passes())
+            || (matches!(class, OutsideRepertoire | RegexLimit | IntLimit)
+                && !self.weaker_if_port_passes())
     }
 
     /// True for the kinds where the port passes (no rule makes those red).

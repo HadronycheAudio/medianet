@@ -202,6 +202,10 @@ pub const REGEX_LIMIT: &str = "the port's regex engine failed (backtracking limi
     the port is red by rule (lead ruling R19), never \"no match\"; the script, which has no limit, \
     is slow (or timed out) and then right";
 
+/// The reason given for every row an integer beyond `i128` decides.
+pub const INT_LIMIT: &str = "an integer beyond i128 (Python's int is unbounded): \
+    the port is red by rule (INT_LIMIT), never a wrapped or saturated comparison";
+
 fn classify(
     spec: &CheckSpec,
     label: &str,
@@ -216,6 +220,9 @@ fn classify(
     }
     if port.contains(crate::doccheck::docs::REGEX_LIMIT) && kind.excused_by(DiffClass::RegexLimit) {
         return Status::Classified(kind, DiffClass::RegexLimit, REGEX_LIMIT);
+    }
+    if port.contains(crate::doccheck::pynum::INT_LIMIT) && kind.excused_by(DiffClass::IntLimit) {
+        return Status::Classified(kind, DiffClass::IntLimit, INT_LIMIT);
     }
     spec.known_differences
         .iter()
@@ -395,6 +402,8 @@ pub fn run(
         script: Duration::ZERO,
         port: Duration::ZERO,
     };
+    // the tree as it was when the run started (not when it ended)
+    let tree = script::head_commit(repo).unwrap_or_else(|| "unknown".into());
     let docs = Docs::dir(repo);
     let boxes = (0..opts.jobs.max(1))
         .map(|_| {
@@ -422,7 +431,7 @@ pub fn run(
     Ok(Outcome {
         id: spec.id.to_string(),
         script_from,
-        tree: script::head_commit(repo).unwrap_or_else(|| "unknown".into()),
+        tree,
         limit: opts.limit,
         current,
         red_commit,
@@ -674,6 +683,11 @@ mod tests {
                 Status::Classified(_, DiffClass::RegexLimit, _)
             ));
         }
+        let ints: BTreeSet<String> = ["INT_LIMIT".to_string()].into();
+        assert!(matches!(
+            classify(&SPEC, "x", diff_kind(&red, false, false, &ints), &ints),
+            Status::Classified(_, DiffClass::IntLimit, _)
+        ));
         // the port passing where the script timed out is never excused
         let kind = diff_kind(&timed_out, true, false, &BTreeSet::new());
         assert_eq!(kind, Some(DiffKind::ScriptTimedOutPortPass));

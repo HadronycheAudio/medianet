@@ -47,6 +47,7 @@
 //! * [`equiv`] — the equivalence harness that compares a port with its
 //!   script (a development tool, bin `doccheck-equiv`).
 
+pub mod blocks;
 pub mod checks;
 pub mod claims;
 pub mod denial;
@@ -58,21 +59,31 @@ pub mod family004;
 pub mod items;
 pub mod links;
 pub mod markdown;
+#[cfg(test)]
+mod mdproof;
 pub mod mutate;
+pub mod negation;
+pub mod numwin;
 pub mod policy;
+#[cfg(test)]
+mod proofs004;
 pub mod pycompat;
+pub mod pynum;
 pub mod pyvalue;
+pub mod rejection_members;
 pub mod repertoire;
 pub mod report;
 pub mod rx;
+pub mod sentences;
 pub mod tables;
 pub mod testing;
 pub mod text;
 pub mod ticket;
 pub mod tomllib;
+pub mod tomlline;
 pub mod tomlsubset;
 pub mod units;
 pub mod wire_toml;
 
 pub use docs::Docs;
-pub use report::{Report, assert_clean, assert_criterion, assert_fails};
+pub use report::{Earlier, Flow, Report, Stop, assert_clean, assert_criterion, assert_fails};
