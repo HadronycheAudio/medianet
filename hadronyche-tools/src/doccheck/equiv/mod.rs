@@ -29,6 +29,7 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the harness runs scripts in sandboxes
 
 pub mod corpus;
+pub mod labels002;
 pub mod script;
 
 use std::collections::BTreeSet;

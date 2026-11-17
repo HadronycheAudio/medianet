@@ -71,6 +71,9 @@ pub const SCRIPT_TIMEOUT_S: u32 = 60;
 pub struct Sandbox {
     pub root: PathBuf,
     script: String,
+    /// The script's text (the epic-002 scripts' unlabelled failures are
+    /// read against it: [`super::labels002`]).
+    source: String,
     env: Vec<(String, String)>,
     timeout_s: u32,
 }
@@ -104,6 +107,7 @@ impl Sandbox {
         Ok(Sandbox {
             root,
             script,
+            source: script_text.to_string(),
             env: env
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -138,13 +142,14 @@ impl Sandbox {
                 anomaly: false,
                 tail: format!("timed out after {} s", self.timeout_s),
             },
-            Ok(o) => verdict(
+            Ok(o) => verdict_with_script(
                 o.status.success(),
                 &format!(
                     "{}{}",
                     String::from_utf8_lossy(&o.stdout),
                     String::from_utf8_lossy(&o.stderr)
                 ),
+                &self.source,
             ),
             Err(e) => verdict(
                 false,
@@ -269,9 +274,34 @@ fn grouped_failures(lines: &[&str]) -> BTreeSet<String> {
 /// FAIL message that quotes the words is not one), or a non-zero exit with
 /// no failed criterion at all.
 pub fn verdict(exit_ok: bool, output: &str) -> ScriptVerdict {
+    verdict_from(exit_ok, output, BTreeSet::new())
+}
+
+/// [`verdict`], plus the criteria of unlabelled `FAIL: message` lines read
+/// against the script's own `bad` call sites ([`super::labels002`]; the
+/// epic-002 bash scripts). A `FAIL: ` message the reader cannot attribute
+/// makes the verdict a crash, never a silent pass or a smaller red.
+pub fn verdict_with_script(exit_ok: bool, output: &str, script: &str) -> ScriptVerdict {
+    let lines: Vec<&str> = output.lines().collect();
+    if !lines.iter().any(|l| l.starts_with("FAIL: ")) {
+        return verdict(exit_ok, output);
+    }
+    match super::labels002::unlabelled_failures(script, &lines) {
+        Ok(extra) => verdict_from(exit_ok, output, extra),
+        Err(unread) => ScriptVerdict {
+            outcome: ScriptOutcome::Crash,
+            criteria: BTreeSet::new(),
+            anomaly: false,
+            tail: format!("unread FAIL lines: {}", unread.join("; ")),
+        },
+    }
+}
+
+fn verdict_from(exit_ok: bool, output: &str, extra: BTreeSet<String>) -> ScriptVerdict {
     let lines: Vec<&str> = output.lines().collect();
     let mut criteria = fail_labels(&lines);
     criteria.extend(grouped_failures(&lines));
+    criteria.extend(extra);
     let last_report = lines
         .iter()
         .rposition(|l| rx(r"^\s*(?:FAIL|PASS|OK|NOTE)\b").is_match(l))
@@ -405,6 +435,30 @@ mod tests {
             "labels with hyphens, digits, dots and spaces are kept whole"
         );
         assert_eq!(labels.outcome, ScriptOutcome::Red);
+    }
+
+    #[test]
+    fn unlabelled_failures_are_read_against_the_script() {
+        let script = "bad() { printf 'FAIL: %s\\n' \"$*\"; }\n# ----------\n# AC 2 — x\n# ----------\nbad \"no answer for $q\"\n";
+        let v = verdict_with_script(
+            false,
+            "PASS: a\nFAIL: no answer for q1\n\n1 passed, 1 failed\n",
+            script,
+        );
+        assert_eq!(v.outcome, ScriptOutcome::Red);
+        assert!(v.criteria.contains("AC2") && v.criteria.len() == 1, "{v:?}");
+        let unread = verdict_with_script(false, "FAIL: printed by nobody\n", script);
+        assert_eq!(
+            unread.outcome,
+            ScriptOutcome::Crash,
+            "an unattributed failure is never dropped"
+        );
+        assert!(verdict_with_script(true, "PASS: a\n", script).passed());
+        let labelled = verdict_with_script(false, "FAIL AC1: x\n", script);
+        assert!(
+            labelled.criteria.contains("AC1"),
+            "labelled output reads as before"
+        );
     }
 
     #[test]
