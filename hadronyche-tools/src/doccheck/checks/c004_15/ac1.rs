@@ -202,7 +202,7 @@ fn size_row(u: &Unit, k: &Calc, f: &mut Fails) -> Flow<()> {
             "AC1",
             format!(
                 "wire-size row {name:?}: payload {payload} is not {label} ({})",
-                expected.unwrap_or(0)
+                expected.unwrap_or_default()
             ),
         );
     }
