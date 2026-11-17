@@ -1,20 +1,10 @@
 //! DoD: evidence tags on prose and on the subsection of every table; open
 //! items name an owner and a falsifier (script lines 1298-1323).
 
-use super::md::{clean_start, has_evidence, prose_blocks};
+use crate::doccheck::wp7::common::{is_open_item, words};
+use crate::doccheck::wp7::md::{has_evidence, prose_blocks};
 use super::{Ctx, py};
 use crate::doccheck::Report;
-
-/// The words of a paragraph as 004-16 to 004-18 count them: `[A-Za-z]{2,}`
-/// outside code spans.
-pub(crate) fn words(body: &str) -> usize {
-    py::finditer("[A-Za-z]{2,}", &py::sub("`[^`]*`", "", body, false), false).len()
-}
-
-/// `re.match(r"\s*\*{0,2}\s*open\s+items?\b", clean_start(body), re.I)`.
-pub(crate) fn is_open_item(body: &str) -> bool {
-    py::matches(r"\s*\*{0,2}\s*open\s+items?\b", clean_start(body), true).is_some()
-}
 
 /// The DoD tag and open-item rules over the section's top text and every
 /// `###` subsection.

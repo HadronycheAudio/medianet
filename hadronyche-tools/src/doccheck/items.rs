@@ -6,6 +6,7 @@
 //! (inventory section 4c lists about fifteen; these three are implemented,
 //! a port adds its own variant).
 
+use super::pycompat::PyStr;
 use super::text::{has_i, rx};
 use super::units::{BlockKind, UnitKind, clean_start, prose_blocks, units};
 
@@ -106,7 +107,7 @@ pub fn labelled(text: &str, label: &str) -> Vec<Labelled> {
         .filter(|b| b.kind == BlockKind::Prose)
         .filter_map(|b| {
             let title = lead.captures(&b.text)?[1]
-                .trim()
+                .py_strip()
                 .trim_end_matches('.')
                 .to_string();
             Some(Labelled {
@@ -124,7 +125,7 @@ pub fn status_sentences(text: &str) -> Vec<String> {
     rx(r"[.;]\s+|\n\s*\n")
         .split(text)
         .filter(|s| has_i(r"\bstatus\b", s))
-        .map(|s| s.trim().to_string())
+        .map(|s| s.py_strip().to_string())
         .collect()
 }
 

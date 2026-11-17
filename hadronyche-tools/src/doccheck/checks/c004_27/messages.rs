@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use super::landed::Landed;
 use super::{Ctx, Field, fields_of, first_field_table, subsections};
 use crate::doccheck::Report;
+use crate::doccheck::pycompat::parse_int;
 use crate::doccheck::text::{first_int, has_i, rx};
 
 /// The probe section as the later criteria read it.
@@ -24,7 +25,7 @@ fn is_msg(title: &str) -> bool {
     t.contains("probe") && (t.contains("request") || t.contains("reply")) && !rx(r"match|validity|identif|binding").is_match(&t)
 }
 
-fn tile_problems(fl: &[Field]) -> (i64, Vec<String>) {
+fn tile_problems(fl: &[Field]) -> (i128, Vec<String>) {
     let (mut cur, mut probs) = (0, Vec::new());
     for f in fl {
         let m: String = f.meaning.chars().take(30).collect();
@@ -34,13 +35,15 @@ fn tile_problems(fl: &[Field]) -> (i64, Vec<String>) {
         if f.size_bits() % 8 != 0 {
             probs.push(format!("'{m}' is not a whole number of bytes"));
         }
-        cur = f.off + f.size_bits() / 8;
+        cur = f.off.saturating_add(f.size_bits() / 8);
     }
     (cur, probs)
 }
 
-fn max_size(text: &str) -> Option<i64> {
-    rx(r"(?i)maximum\s+size[^.]*?(\d+)\s*bytes").captures(text).and_then(|c| c[1].parse().ok())
+/// The stated maximum size; a number beyond i128 equals no row sum, as
+/// Python's big int would not.
+fn max_size(text: &str) -> Option<i128> {
+    rx(r"(?i)maximum\s+size[^.]*?(\d+)\s*bytes").captures(text).and_then(|c| parse_int(&c[1]).ok())
 }
 
 /// The per-message problems of AC1.
@@ -52,7 +55,7 @@ struct Problems {
     code: Vec<String>,
     pad: Vec<String>,
     id: Vec<String>,
-    codes: BTreeSet<i64>,
+    codes: BTreeSet<i128>,
 }
 
 fn request_rows(fl: &[Field], landed: &Landed, p: &mut Problems) {
@@ -85,7 +88,7 @@ fn reply_rows(fl: &[Field], landed: &Landed, p: &mut Problems) {
 }
 
 fn one_message(kind: &str, fl: &[Field], text: &str, landed: &Landed, p: &mut Problems) {
-    let sig: Vec<(i64, i64, String)> = fl.iter().take(7).map(|f| (f.off, f.bits, f.ty.clone())).collect();
+    let sig: Vec<(i128, i128, String)> = fl.iter().take(7).map(|f| (f.off, f.bits, f.ty.clone())).collect();
     if fl.len() < 7 || sig != landed.hdr_sig {
         p.hdr.push(kind.to_string());
     }
@@ -95,7 +98,8 @@ fn one_message(kind: &str, fl: &[Field], text: &str, landed: &Landed, p: &mut Pr
         p.size.push(format!("{kind}: states {:?}, rows sum to {total}", max_size(text)));
     }
     let tf = fl.iter().find(|f| rx(r"(?i)^\s*message\s+type").is_match(&f.meaning));
-    let code = tf.and_then(|f| first_int(&f.valid));
+    // a code beyond i128 is in no block, as Python's big int would not be
+    let code = tf.and_then(|f| first_int(&f.valid).ok().flatten());
     if landed.in_block(code) {
         p.codes.insert(code.unwrap_or_default());
     } else {

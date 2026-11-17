@@ -3,7 +3,7 @@
 //! restated as fact (script lines 1082-1154 and 1267-1296).
 
 use super::ac1::row_for;
-use super::md::{Field, clean_start, find_sub, first_table, parse_tables};
+use crate::doccheck::wp7::md::{Field, clean_start, find_sub, first_table, parse_tables};
 use super::{Ctx, py};
 use crate::doccheck::Report;
 

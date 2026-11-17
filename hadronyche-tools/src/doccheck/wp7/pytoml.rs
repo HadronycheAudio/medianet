@@ -9,10 +9,10 @@
 //! strings do not parse, `0x28` and `40.0` are numbers equal to 40, and a
 //! table header over a value raises a Python exception instead of an error.
 //! A port that judges `wire.toml` the way its script did must read it this
-//! way, so the values are [`PyVal`], with Python's equality, truth and
+//! way, so the values are `PyVal`, with Python's equality, truth and
 //! `str()`.
 //!
-//! [`parse`] returns `Err(Fail::Error)` where the script's reader raises its
+//! `parse` returns `Err(Fail::Error)` where the script's reader raises its
 //! `TomlError` (the script reports "does not parse") and `Err(Fail::Crash)`
 //! where Python raises anything else (the script dies with a traceback).
 
@@ -118,7 +118,9 @@ impl PyVal {
     pub fn eq(&self, other: &PyVal) -> bool {
         match (self, other) {
             (PyVal::Str(a), PyVal::Str(b)) => a == b,
-            (PyVal::List(a), PyVal::List(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.eq(y)),
+            (PyVal::List(a), PyVal::List(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.eq(y))
+            }
             (PyVal::Dict(a), PyVal::Dict(b)) => {
                 a.0.len() == b.0.len() && a.0.iter().all(|(k, v)| b.get(k).is_some_and(|w| v.eq(w)))
             }
@@ -151,10 +153,16 @@ impl PyVal {
             PyVal::Int(i) => i.to_string(),
             PyVal::Float(f) => float_repr(*f),
             PyVal::Str(s) => str_repr(s),
-            PyVal::List(l) => format!("[{}]", l.iter().map(PyVal::repr).collect::<Vec<_>>().join(", ")),
+            PyVal::List(l) => format!(
+                "[{}]",
+                l.iter().map(PyVal::repr).collect::<Vec<_>>().join(", ")
+            ),
             PyVal::Dict(d) => format!(
                 "{{{}}}",
-                d.0.iter().map(|(k, v)| format!("{}: {}", str_repr(k), v.repr())).collect::<Vec<_>>().join(", ")
+                d.0.iter()
+                    .map(|(k, v)| format!("{}: {}", str_repr(k), v.repr()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         }
     }
@@ -188,7 +196,11 @@ impl PyVal {
 
 /// Python's `repr` of a str.
 pub(crate) fn str_repr(s: &str) -> String {
-    let quote = if s.contains('\'') && !s.contains('"') { '"' } else { '\'' };
+    let quote = if s.contains('\'') && !s.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
     let mut out = String::from(quote);
     for c in s.chars() {
         match c {
@@ -239,12 +251,24 @@ pub(crate) fn float_repr(f: f64) -> String {
         } else if (point as usize) >= digits.len() {
             format!("{digits}{}.0", "0".repeat(point as usize - digits.len()))
         } else {
-            format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
+            format!(
+                "{}.{}",
+                &digits[..point as usize],
+                &digits[point as usize..]
+            )
         };
         format!("{sign}{body}")
     } else {
-        let m = if digits.len() > 1 { format!("{}.{}", &digits[..1], &digits[1..]) } else { digits };
-        format!("{sign}{m}e{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs())
+        let m = if digits.len() > 1 {
+            format!("{}.{}", &digits[..1], &digits[1..])
+        } else {
+            digits
+        };
+        format!(
+            "{sign}{m}e{}{:02}",
+            if exp < 0 { '-' } else { '+' },
+            exp.abs()
+        )
     }
 }
 
@@ -310,7 +334,11 @@ fn scan_statements(src: &[char]) -> R<Vec<String>> {
             continue;
         }
         if c == '"' || c == '\'' {
-            let q = if starts_at(src, i, &[c; 3]) { vec![c; 3] } else { vec![c] };
+            let q = if starts_at(src, i, &[c; 3]) {
+                vec![c; 3]
+            } else {
+                vec![c]
+            };
             buf.extend(q.iter());
             i += q.len();
             in_str = Some(q);
@@ -407,7 +435,10 @@ fn int_base(s: &str, base: u32) -> Option<i128> {
         if d >= base {
             return None;
         }
-        v = v.saturating_mul(i128::from(base)).saturating_add(i128::from(d)).min(HUGE);
+        v = v
+            .saturating_mul(i128::from(base))
+            .saturating_add(i128::from(d))
+            .min(HUGE);
     }
     Some(if neg { -v } else { v })
 }
@@ -424,9 +455,18 @@ fn py_float(s: &str) -> Option<f64> {
         return None;
     }
     if matches!(body, "inf" | "infinity" | "nan") {
-        return t.parse::<f64>().ok().or(Some(if body == "nan" { f64::NAN } else if low.starts_with('-') { f64::NEG_INFINITY } else { f64::INFINITY }));
+        return t.parse::<f64>().ok().or(Some(if body == "nan" {
+            f64::NAN
+        } else if low.starts_with('-') {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        }));
     }
-    if !py::has(r"^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$", &t) {
+    if !py::has(
+        r"^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+        &t,
+    ) {
         return None;
     }
     t.parse::<f64>().ok()
@@ -714,7 +754,10 @@ pub(crate) fn parse(src: &str) -> Result<PyDict, Fail> {
             continue;
         }
         let Some(eq) = key_end(&stmt) else {
-            return err(&format!("not a key/value statement: {}", py::head(&stmt, 60)));
+            return err(&format!(
+                "not a key/value statement: {}",
+                py::head(&stmt, 60)
+            ));
         };
         let key = strip(&stmt[..eq]).to_string();
         let mut parser = ValueParser {

@@ -12,11 +12,11 @@ if ! command -v pass >/dev/null 2>&1; then
     tail_of() { printf '%s\n' "$1" | tail -n 4 | tr '\n' ' '; }
 fi
 if [ -z "${wire_check_rc:-}" ]; then
-    wire_check_out=$(cargo run --quiet -p hadronyche-tools --bin wire-check 2>&1)
+    wire_check_out=$(timeout 900 cargo run --quiet -p hadronyche-tools --bin wire-check 2>&1)
     wire_check_rc=$?
 fi
 if [ -z "${wire_tables_rc:-}" ]; then
-    wire_tables_out=$(cargo test -p hadronyche-tools --test wire_tables 2>&1)
+    wire_tables_out=$(timeout 900 cargo test -p hadronyche-tools --test wire_tables 2>&1)
     wire_tables_rc=$?
     wire_tables_line=$(printf '%s\n' "$wire_tables_out" | grep 'test result:' | tail -n 1)
 fi

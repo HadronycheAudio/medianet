@@ -9,7 +9,8 @@
 //! Line numbers in this module are 0-based indices into [`Markdown::lines`];
 //! [`Markdown::line_no`] gives the 1-based number a report prints.
 
-use super::policy::{FencePolicy, HeadingMatch, RowSplit, SectionEnd};
+use super::policy::{FencePolicy, HeadingMatch, SectionEnd, TableRules};
+use super::pycompat::PyStr;
 use super::tables::{Table, parse_tables};
 use super::text::{rx, split_nl};
 
@@ -50,7 +51,7 @@ pub struct Span {
 pub fn slugify(text: &str) -> String {
     let t = rx(r"\[([^\]]*)\]\([^)]*\)").replace_all(text, "$1");
     let t: String = t.chars().filter(|c| !"`*~".contains(*c)).collect();
-    let t = t.trim().to_lowercase();
+    let t = t.py_strip().to_lowercase();
     let t = rx(r"[^\w\- ]").replace_all(&t, "");
     t.replace(' ', "-")
 }
@@ -59,7 +60,7 @@ pub fn slugify(text: &str) -> String {
 /// whitespace squashed, lower case, a trailing `.` dropped.
 pub fn norm_title(text: &str) -> String {
     let t = rx(r"[`*_]").replace_all(text, "");
-    let t = rx(r"\s+").replace_all(&t, " ").trim().to_lowercase();
+    let t = rx(r"\s+").replace_all(&t, " ").py_strip().to_lowercase();
     t.trim_end_matches('.').to_string()
 }
 
@@ -73,7 +74,7 @@ fn fence_mask(lines: &[String], policy: FencePolicy) -> Vec<bool> {
     lines
         .iter()
         .map(|line| {
-            let t = line.trim_start();
+            let t = line.py_lstrip();
             let run = |c: char| t.chars().take_while(|&x| x == c).count();
             let fence = match policy {
                 FencePolicy::Backticks => (run('`') >= 3).then_some(('`', 3)),
@@ -108,7 +109,7 @@ fn find_heads(lines: &[String], in_code: &[bool]) -> Vec<Heading> {
             continue;
         }
         let Some(m) = re.captures(line) else { continue };
-        let text = m[2].trim().to_string();
+        let text = m[2].py_strip().to_string();
         let mut slug = slugify(&text);
         match seen.get_mut(&slug) {
             Some(n) => {
@@ -182,23 +183,36 @@ impl Markdown {
     }
 
     /// The headings that `pattern` finds under the matching rule `how`.
+    ///
+    /// Only the regex variants compile `pattern`; `Substring`, `Exact`,
+    /// `NormEq` and `Slug` compare it literally, so a title such as
+    /// `Foo (x` is safe to pass.
     pub fn find_by(&self, how: HeadingMatch, pattern: &str) -> Vec<&Heading> {
-        let lower = pattern.to_lowercase();
-        let norm = norm_title(pattern);
-        let full = rx(&format!("(?i)^(?:{pattern})$"));
-        let re = rx(pattern);
-        self.heads
-            .iter()
-            .filter(|h| match how {
-                HeadingMatch::Regex => re.is_match(&h.text),
-                HeadingMatch::RegexAtLevel(l) => h.level == l && re.is_match(&h.text),
-                HeadingMatch::FullMatch => full.is_match(&h.text),
-                HeadingMatch::Substring => h.text.to_lowercase().contains(&lower),
-                HeadingMatch::Exact => h.text == pattern,
-                HeadingMatch::NormEq => norm_title(&h.text) == norm,
-                HeadingMatch::Slug => h.slug == pattern,
-            })
-            .collect()
+        let pred: Box<dyn Fn(&Heading) -> bool> = match how {
+            HeadingMatch::Regex => {
+                let re = rx(pattern);
+                Box::new(move |h| re.is_match(&h.text))
+            }
+            HeadingMatch::RegexAtLevel(l) => {
+                let re = rx(pattern);
+                Box::new(move |h| h.level == l && re.is_match(&h.text))
+            }
+            HeadingMatch::FullMatch => {
+                let re = rx(&format!("(?i)^(?:{pattern})$"));
+                Box::new(move |h| re.is_match(&h.text))
+            }
+            HeadingMatch::Substring => {
+                let lower = pattern.to_lowercase();
+                Box::new(move |h| h.text.to_lowercase().contains(&lower))
+            }
+            HeadingMatch::Exact => Box::new(move |h| h.text == pattern),
+            HeadingMatch::NormEq => {
+                let norm = norm_title(pattern);
+                Box::new(move |h| norm_title(&h.text) == norm)
+            }
+            HeadingMatch::Slug => Box::new(move |h| h.slug == pattern),
+        };
+        self.heads.iter().filter(|h| pred(h)).collect()
     }
 
     /// Headings whose text matches `pattern` (a regex; add `(?i)` for case).
@@ -248,12 +262,13 @@ impl Markdown {
 
     /// The tables of `span` outside code (see [`Table`]).
     pub fn tables(&self, span: Span) -> Vec<Table> {
-        self.tables_with(span, RowSplit::Escaped)
+        self.tables_with(span, TableRules::default())
     }
 
-    /// The tables of `span`, cells split by `split`.
-    pub fn tables_with(&self, span: Span, split: RowSplit) -> Vec<Table> {
-        parse_tables(&self.lines, &self.in_code, span.lo, span.hi, split)
+    /// The tables of `span` read under `rules` (row split, separator rule,
+    /// headerless runs; [`TableRules::T004_22`], [`TableRules::FAMILY_004`]).
+    pub fn tables_with(&self, span: Span, rules: TableRules) -> Vec<Table> {
+        parse_tables(&self.lines, &self.in_code, span.lo, span.hi, rules)
     }
 
     /// Every anchor of the document.
@@ -351,6 +366,11 @@ mod tests {
             1
         );
         assert_eq!(md.find_by(HeadingMatch::Slug, "hello-1").len(), 1);
+        assert!(
+            md.find_by(HeadingMatch::Substring, "Foo (x").is_empty(),
+            "no regex, no panic"
+        );
+        assert!(md.find_by(HeadingMatch::Exact, "a[").is_empty());
         let title = md.find("^Title$")[0];
         assert_eq!(md.section_with(title, SectionEnd::AnyHeading).hi, 2);
         assert_eq!(md.section_with(title, SectionEnd::NextLevel2).hi, 2);

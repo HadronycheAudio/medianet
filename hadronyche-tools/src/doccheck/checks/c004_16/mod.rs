@@ -16,10 +16,11 @@
 //! column; the evidence rule (five `[A-Za-z]{2,}` words outside code spans;
 //! a table needs a tag somewhere in its subsection); open items as
 //! paragraphs starting `open item(s)`; wire.toml read with the scripts'
-//! subset reader ([`pytoml`]).
+//! subset reader (`pytoml`).
 //!
-//! This module also hosts the WP7 helpers that 004-17 to 004-20 reuse:
-//! [`py`] (Python semantics), [`md`] and [`pytoml`].
+//! The Markdown helpers, the Python semantics and the TOML subset reader
+//! are the shared WP7 module [`crate::doccheck::wp7`] (004-17 to 004-20 use
+//! them too; no port imports another port).
 //!
 //! Its repository-level assertions (`cargo run --bin wire-check` reports
 //! "checks clean"; `cargo test -p hadronyche-tools --test wire_tables` is
@@ -35,16 +36,17 @@ pub(crate) mod ac4;
 pub(crate) mod ac5;
 pub(crate) mod ac6;
 pub(crate) mod dod;
-pub(crate) mod md;
-pub(crate) mod py;
-pub(crate) mod pytoml;
 
-use super::{CheckSpec, KnownDifference, Target};
+pub mod denials;
+use super::{CheckSpec, DiffClass, KnownDifference, Target};
+use crate::doccheck::policy::TomlReader;
 use crate::doccheck::rejection_members::Enumeration;
 use crate::doccheck::ticket::CONSTANTS_MD;
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
-use md::{Field, Head};
+use crate::doccheck::wp7::common::{NUM, const_int, to_int};
+use crate::doccheck::wp7::md::{self, Field, Head};
+use crate::doccheck::wp7::py;
 
 /// The specification.
 pub const WIRE_MD: &str = "doc/design/spec/wire.md";
@@ -82,10 +84,17 @@ pub const SPEC: CheckSpec = CheckSpec {
     ],
     keywords: &["fits", "falsified", "rejection", "counted", "ignored", "stale", "proposal", "reuse"],
     known_differences: KNOWN,
+    denials: denials::DENIALS,
+    toml: TomlReader::SubsetReader,
 };
 
 /// The differences the harness found and a reviewer accepted.
-const KNOWN: &[KnownDifference] = &[];
+const KNOWN: &[KnownDifference] = &[KnownDifference {
+    label: r"^denial py_denial_(rejection_reasons_a_number|a_counted_width_as_a_string|a_sync_header_row_of_three_cells)$",
+    class: DiffClass::ScriptCrashed,
+    reason: "the script dies with a Python exception (TypeError iterating an int, TypeError adding a str to the size, \
+             IndexError on a sync row of three cells); the port reports the same cause under CRASH",
+}];
 
 /// The constants the script reads (None where unreadable).
 #[derive(Debug, Default)]
@@ -103,32 +112,6 @@ pub(crate) struct Konst {
     pub tag_bits: Option<i128>,
     pub peers_max: Option<i128>,
     pub hello_period_s: Option<i128>,
-}
-
-/// `NUM`: a number with optional digit groups (space or no-break space).
-pub(crate) const NUM: &str = r"(?:\d{1,3}(?:[ \u{a0}]\d{3})+|\d+)";
-
-/// `to_int`: digit groups joined.
-pub(crate) fn to_int(s: &str) -> Option<i128> {
-    py::int(&s.replace([' ', '\u{a0}'], ""))
-}
-
-/// `const_val(cid)`: the third cell of the row starting `| cid |`.
-pub(crate) fn const_val(text: &str, cid: &str) -> String {
-    let lead = format!("| {cid} |");
-    for line in py::splitlines(text) {
-        if line.starts_with(&lead) {
-            let cells: Vec<&str> = line.split('|').collect();
-            return cells.get(3).map_or(String::new(), |c| py::strip(c).to_string());
-        }
-    }
-    String::new()
-}
-
-/// `const_int(cid, pattern)` (any case).
-pub(crate) fn const_int(text: &str, cid: &str, pattern: &str) -> Option<i128> {
-    let v = const_val(text, cid);
-    py::search(pattern, &v, true).and_then(|m| to_int(m.g(1)))
 }
 
 fn konst(text: &str, report: &mut Report) -> Konst {

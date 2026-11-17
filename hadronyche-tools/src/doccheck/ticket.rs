@@ -5,6 +5,7 @@
 //! done checklist. The constants table is the `| C-NN | name | value |` table
 //! of `doc/design/02-constants.md`.
 
+use super::pycompat::PyStr;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::docs::Docs;
@@ -71,7 +72,7 @@ impl Ticket {
                 let n = c
                     .get(1)
                     .map_or(out.len() + 1, |m| m.as_str().parse().unwrap_or(0));
-                out.push((n, c[2].trim().to_string()));
+                out.push((n, c[2].py_strip().to_string()));
             }
         }
         out
@@ -135,7 +136,7 @@ impl Constants {
                 continue;
             };
             let cells: Vec<&str> = line.split('|').collect();
-            let cell = |k: usize| cells.get(k).map_or("", |c| c.trim()).to_string();
+            let cell = |k: usize| cells.get(k).map_or("", |c| c.py_strip()).to_string();
             rows.entry(c[1].to_string()).or_insert(Constant {
                 line: i + 1,
                 name: cell(2),

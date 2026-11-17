@@ -2,7 +2,8 @@
 //!
 //! The recurrent defect this module exists for: a keyword regex satisfied by
 //! its own denial ("not confirmed" matching "confirmed"). A positive
-//! statement is a keyword match in a clause with no negation word; a verdict
+//! statement is a keyword match in a clause with no negation word before it,
+//! in one of two explicit directions ([`must_affirm`], [`claims`]); a verdict
 //! is exactly one of a set of words stated positively; a designation is a
 //! pattern that a bare year never satisfies.
 
@@ -30,23 +31,69 @@ pub fn clauses(text: &str) -> Vec<&str> {
         .collect()
 }
 
-/// True when `clause` holds a negation word.
+/// True when `clause` holds a negation word anywhere.
 pub fn is_negated(clause: &str) -> bool {
     rx(NEGATION).is_match(clause)
 }
 
-/// The clauses of `text` that match `pattern` (a regex) and are not negated.
-pub fn positive_clauses<'a>(text: &'a str, pattern: &str) -> Vec<&'a str> {
-    let re = rx(pattern);
-    clauses(text)
-        .into_iter()
-        .filter(|c| re.is_match(c) && !is_negated(c))
-        .collect()
+/// The negation words of `clause` before byte `at`, "not only" excluded
+/// (it introduces an addition, not a denial).
+pub fn negations_before(clause: &str, at: usize) -> usize {
+    let head = &clause[..at];
+    rx(NEGATION)
+        .find_iter(head)
+        .filter(|m| !rx(r"(?i)^not\s+only\b").is_match(&clause[m.start()..]))
+        .count()
 }
 
-/// True when `text` states `pattern` positively in at least one clause.
+fn matches_with_negations<'a>(text: &'a str, pattern: &str) -> Vec<(&'a str, usize)> {
+    let re = rx(pattern);
+    let mut out = Vec::new();
+    for c in clauses(text) {
+        for m in re.find_iter(c) {
+            out.push((c, negations_before(c, m.start())));
+        }
+    }
+    out
+}
+
+/// Direction "must affirm": true when some clause of `text` states
+/// `pattern` with no negation word before it in the clause. "Confirmed and
+/// not refuted" affirms "confirmed"; "not confirmed" and a double negation
+/// ("not true that it was never confirmed") do not; a negation in another
+/// sentence or clause does not count. Use it where the document must SAY
+/// something; never for a prohibition (see [`claims`]).
+pub fn must_affirm(text: &str, pattern: &str) -> bool {
+    matches_with_negations(text, pattern)
+        .iter()
+        .any(|(_, n)| *n == 0)
+}
+
+/// Direction "must not claim": true when some clause of `text` states
+/// `pattern` with an even number of negation words before it (none, or a
+/// double negation, which affirms). Only a single negation before the
+/// keyword in the same clause makes a mention harmless. Use it where the
+/// document must NOT say something.
+pub fn claims(text: &str, pattern: &str) -> bool {
+    matches_with_negations(text, pattern)
+        .iter()
+        .any(|(_, n)| n % 2 == 0)
+}
+
+/// The clauses of `text` that state `pattern` positively ([`must_affirm`]).
+pub fn positive_clauses<'a>(text: &'a str, pattern: &str) -> Vec<&'a str> {
+    let mut out: Vec<&str> = matches_with_negations(text, pattern)
+        .into_iter()
+        .filter(|(_, n)| *n == 0)
+        .map(|(c, _)| c)
+        .collect();
+    out.dedup();
+    out
+}
+
+/// [`must_affirm`], under its former name.
 pub fn affirms(text: &str, pattern: &str) -> bool {
-    !positive_clauses(text, pattern).is_empty()
+    must_affirm(text, pattern)
 }
 
 /// The verdict words of `words` that `text` states positively (each matched
@@ -75,8 +122,11 @@ pub fn exactly_one_of<'w>(text: &str, words: &[&'w str]) -> Result<&'w str, Vec<
 pub enum Designation {
     /// "2nd edition", "edition 3", "Ed. 2", "third edition" (an edition
     /// number has one or two digits, so "edition 2019" is not one); or a document
-    /// number with its year ("IEEE 1588-2019", "AES67-2018",
-    /// "IEC 61883-6:2005"). A bare year is not an edition.
+    /// number with its year: a standards body prefix (IEEE, IEC, ISO, AES,
+    /// ITU-T, ANSI, SMPTE, EBU, ETSI, RFC) and a number, or letters joined to
+    /// a number of two digits or more ("IEEE 1588-2019", "AES67-2018",
+    /// "IEC 61883-6:2005"). A bare year or year range ("2019-2020", "In
+    /// 2019-2020", "Q3-2019", "May 1-2019") is not an edition.
     Edition,
     /// "draft-ietf-tsvwg-foo-05", "Draft 3", "D3.1" after a document number.
     Draft,
@@ -96,7 +146,7 @@ pub fn designation_pattern(kind: Designation) -> String {
         Designation::Edition => concat!(
             r"(?i:\b(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+edition\b)",
             r"|(?i:\bedition\s+\d{1,2}(?:\.\d+)?\b)|\bEd\.\s?\d{1,2}\b",
-            r"|\b[A-Z][A-Za-z]*\s?\d+(?:[.-]\d+)*[-:](?:19|20)\d\d\b"
+            r"|\b(?:(?:IEEE|IEC|ISO|ISO/IEC|AES|ITU-T|ANSI|SMPTE|EBU|ETSI|RFC)\s?[A-Z]?\d[\d.]*(?:-\d+)*|[A-Z]{2,}\d{2,}(?:-\d+)*)[-:](?:19|20)\d\d\b"
         )
         .to_string(),
         Designation::Draft => {
@@ -145,6 +195,33 @@ mod tests {
     }
 
     #[test]
+    fn the_two_directions() {
+        // "confirmed and not refuted"
+        let t = "The result is confirmed and not refuted.";
+        assert!(must_affirm(t, "(?i)confirmed"));
+        assert!(!must_affirm(t, "(?i)refuted"));
+        assert!(!claims(t, "(?i)refuted"), "a single negation before it");
+        assert!(claims(t, "(?i)confirmed"));
+        // "not only ... but also"
+        let t = "It is not only confirmed but also reproduced.";
+        assert!(must_affirm(t, "(?i)confirmed"));
+        assert!(must_affirm(t, "(?i)reproduced"));
+        // double negation
+        let t = "It is not true that it was never confirmed.";
+        assert!(
+            !must_affirm(t, "(?i)confirmed"),
+            "must affirm wants a plain statement"
+        );
+        assert!(claims(t, "(?i)confirmed"), "a double negation is a claim");
+        // a guard word in another sentence
+        let t = "It was not tested. It is confirmed.";
+        assert!(must_affirm(t, "(?i)confirmed"));
+        assert!(claims(t, "(?i)confirmed"));
+        let t = "It was not confirmed.";
+        assert!(!must_affirm(t, "(?i)confirmed") && !claims(t, "(?i)confirmed"));
+    }
+
+    #[test]
     fn clauses_keep_decimal_numbers_whole() {
         assert_eq!(
             clauses("Width 1.5 bits. Next"),
@@ -177,6 +254,17 @@ mod tests {
         assert!(designations("published in 2019", ed).is_empty());
         assert!(designations("the 2019 text", ed).is_empty());
         assert!(designations("edition 2019", ed).is_empty());
+        for bare in [
+            "In 2019-2020",
+            "Since 2018-2019",
+            "From 2019:2020",
+            "Q3-2019",
+            "May 1-2019",
+            "2019-2020",
+        ] {
+            assert!(designations(bare, ed).is_empty(), "{bare}");
+        }
+        assert!(!designations("ISO/IEC 9899:2018", ed).is_empty());
         assert_eq!(
             designations("IEEE 1588-2019 clause 7", ed),
             vec!["IEEE 1588-2019"]

@@ -1,7 +1,7 @@
 //! AC1: every hello content has a row, the bundle element and the port
 //! element (script lines 527-638).
 
-use super::md::{Field, fields_of, find_sub, first_table, is_field_table};
+use crate::doccheck::wp7::md::{Field, fields_of, find_sub, first_table, is_field_table};
 use super::{Ctx, Layout, py};
 use crate::doccheck::Report;
 
@@ -15,16 +15,6 @@ pub(crate) struct Rows {
     pub bun_fields: Vec<Field>,
     pub e_bytes: i128,
     pub t_ct: Option<i128>,
-}
-
-/// `md_name(meaning)`: the leading words of a Meaning cell.
-pub(crate) fn md_name(meaning: &str) -> &str {
-    py::matches(r"\s*([A-Za-z][A-Za-z ]*[A-Za-z]|[A-Za-z])", meaning, false).map_or(meaning, |m| m.g(1))
-}
-
-/// `norm_name(text)`.
-pub(crate) fn norm_name(text: &str) -> String {
-    py::strip(&py::sub(r"[\s_]+", " ", &text.replace('-', " ").to_lowercase(), false)).to_string()
 }
 
 /// `row_for(pattern, counted)`: the first layout row whose Meaning starts

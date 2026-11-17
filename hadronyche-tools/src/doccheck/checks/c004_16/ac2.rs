@@ -2,37 +2,11 @@
 //! 640-777; the falsified branch's fallback-name check is reported under
 //! AC3, as the script does).
 
+use crate::doccheck::wp7::common::split_sentences;
 use super::ac1::Rows;
-use super::md::{Field, clean_start};
+use crate::doccheck::wp7::md::{Field, clean_start};
 use super::{Ctx, Layout, NUM, py, to_int};
 use crate::doccheck::Report;
-
-/// `re.split(r"(?<=[.;])\s+", text)`.
-pub(crate) fn split_sentences(text: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut start = 0;
-    let mut prev: Option<char> = None;
-    let mut it = text.char_indices().peekable();
-    while let Some((i, c)) = it.next() {
-        if py::is_space(c) && matches!(prev, Some('.' | ';')) {
-            out.push(&text[start..i]);
-            let mut end = i + c.len_utf8();
-            while let Some(&(j, d)) = it.peek() {
-                if !py::is_space(d) {
-                    break;
-                }
-                end = j + d.len_utf8();
-                it.next();
-            }
-            start = end;
-            prev = text[..end].chars().next_back();
-            continue;
-        }
-        prev = Some(c);
-    }
-    out.push(&text[start..]);
-    out
-}
 
 /// `re.sub(r"(?:(?<=\s)|^)'[^']*'(?=\s|[.,;:)]|$)|\"[^\"]*\"|“[^”]*”|`[^`]*`", " ", text)`.
 pub(crate) fn unquote(text: &str) -> String {

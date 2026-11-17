@@ -13,13 +13,20 @@ jobs:
     name: unit tests
     runs-on: ubuntu-latest
     steps:
+      # full history: the document checks' red-phase tests read the tree at
+      # the commit that added each ported script (criterion (b)); without it
+      # they fail (DOCCHECK_ALLOW_SHALLOW=1 would skip them visibly)
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install the no_std target
         run: rustup target add aarch64-unknown-none
       - name: Unit tests (workspace)
         run: cargo test --workspace --all-targets --quiet
+      - name: Red-phase trees of the ported document checks (shows EXECUTED lines)
+        run: cargo test -p hadronyche-tools --test 'doc_*' red_phase_tree_fails_every_criterion
       - name: Unit tests (probes)
         run: |
           for d in probes/*/; do
@@ -69,7 +76,10 @@ jobs:
     name: code coverage
     runs-on: ubuntu-latest
     steps:
+      # full history: coverage runs the red-phase tests too (see "unit tests")
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov

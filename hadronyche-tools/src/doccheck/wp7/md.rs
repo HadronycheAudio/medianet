@@ -41,7 +41,10 @@ pub(crate) fn split_row(line: &str) -> Vec<String> {
         prev = Some(c);
     }
     cells.push(cur);
-    cells.into_iter().map(|c| strip(&c).replace("\\|", "|")).collect()
+    cells
+        .into_iter()
+        .map(|c| strip(&c).replace("\\|", "|"))
+        .collect()
 }
 
 /// The 004 separator line test.
@@ -148,7 +151,11 @@ pub(crate) fn prose_blocks(text: &str) -> Vec<(char, String)> {
             kind = None;
             continue;
         }
-        let k = if lstrip(line).starts_with('|') { 't' } else { 'p' };
+        let k = if lstrip(line).starts_with('|') {
+            't'
+        } else {
+            'p'
+        };
         if kind.is_some_and(|x| x != k) {
             out.push((kind.unwrap_or('p'), cur.join("\n")));
             cur.clear();
@@ -180,16 +187,25 @@ const KEY_RULES: [(&str, &str); 7] = [
 /// `key_of(meaning)`.
 pub(crate) fn key_of(meaning: &str) -> Option<&'static str> {
     let m = clean_start(meaning).to_lowercase();
-    KEY_RULES.iter().find(|(_, r)| py::has(r, &m)).map(|(k, _)| *k)
+    KEY_RULES
+        .iter()
+        .find(|(_, r)| py::has(r, &m))
+        .map(|(k, _)| *k)
 }
 
 /// `EVIDENCE.search(text)` (the six tags, any case).
 pub(crate) fn has_evidence(text: &str) -> bool {
-    py::has_i(r"\[(?:code|measured|kernel-doc|standard|memory|decision)\]", text)
+    py::has_i(
+        r"\[(?:code|measured|kernel-doc|standard|memory|decision)\]",
+        text,
+    )
 }
 
 fn norm_head(x: &str) -> String {
-    x.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit()).collect()
+    x.to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        .collect()
 }
 
 /// `is_field_table`: Offset, Width, Type, Meaning, Valid range.
@@ -208,7 +224,13 @@ pub(crate) fn width_of(cell: &str) -> (Option<i128>, Option<i128>) {
     let s = strip(cell).replace(['`', '*'], "").replace('X', "x");
     let bits = |n: &str, unit: Option<&str>| {
         let unit = unit.unwrap_or("bytes").to_lowercase();
-        py::int(n).map(|n| if unit.starts_with("bit") { n } else { n.saturating_mul(8) })
+        py::int(n).map(|n| {
+            if unit.starts_with("bit") {
+                n
+            } else {
+                n.saturating_mul(8)
+            }
+        })
     };
     if let Some(m) = py::fullmatch(r"(\d+)\s*(bytes?|bits?)?\s*(?:x|×)\s*max\s*(\d+)", &s, true) {
         return (bits(m.g(1), m.opt(2)), py::int(m.g(3)));
@@ -233,12 +255,18 @@ pub(crate) struct Field {
 impl Field {
     /// `size_bits`: bits times the max count (a zero count counts once).
     pub fn size_bits(&self) -> i128 {
-        self.bits.saturating_mul(self.maxc.filter(|&m| m != 0).unwrap_or(1))
+        self.bits
+            .saturating_mul(self.maxc.filter(|&m| m != 0).unwrap_or(1))
     }
 }
 
 /// `fields_of(table, ac, where)`.
-pub(crate) fn fields_of(table: Option<&PyTable>, ac: &str, place: &str, report: &mut Report) -> Vec<Field> {
+pub(crate) fn fields_of(
+    table: Option<&PyTable>,
+    ac: &str,
+    place: &str,
+    report: &mut Report,
+) -> Vec<Field> {
     let Some(t) = table else { return Vec::new() };
     if !is_field_table(&t.header) {
         report.fail(ac, format!("{place}: the table does not have the five columns Offset, Width, Type, Meaning, Valid range"));
@@ -247,15 +275,30 @@ pub(crate) fn fields_of(table: Option<&PyTable>, ac: &str, place: &str, report: 
     let mut out = Vec::new();
     for r in &t.rows {
         if r.len() < 5 {
-            report.fail(ac, format!("{place}: a row has fewer than five cells: {:?}", &r[..r.len().min(2)]));
+            report.fail(
+                ac,
+                format!(
+                    "{place}: a row has fewer than five cells: {:?}",
+                    &r[..r.len().min(2)]
+                ),
+            );
             continue;
         }
         if py::fullmatch(r"\d+", strip(&r[0]), false).is_none() {
-            report.fail(ac, format!("{place}: the Offset cell '{}' is not a byte offset", r[0]));
+            report.fail(
+                ac,
+                format!("{place}: the Offset cell '{}' is not a byte offset", r[0]),
+            );
             continue;
         }
         let (Some(bits), maxc) = width_of(&r[1]) else {
-            report.fail(ac, format!("{place}: the Width cell '{}' is neither a byte count nor 'E × max M'", r[1]));
+            report.fail(
+                ac,
+                format!(
+                    "{place}: the Width cell '{}' is neither a byte count nor 'E × max M'",
+                    r[1]
+                ),
+            );
             continue;
         };
         out.push(Field {
@@ -279,15 +322,24 @@ pub(crate) fn subsections<S: AsRef<str>>(lines: &[S]) -> Vec<(String, String)> {
         if *lvl != 3 {
             continue;
         }
-        let end = hs[k + 1..].iter().find(|h| h.1 <= 3).map_or(lines.len(), |h| h.0);
-        let body: Vec<&str> = lines[(idx + 1).min(end)..end].iter().map(AsRef::as_ref).collect();
+        let end = hs[k + 1..]
+            .iter()
+            .find(|h| h.1 <= 3)
+            .map_or(lines.len(), |h| h.0);
+        let body: Vec<&str> = lines[(idx + 1).min(end)..end]
+            .iter()
+            .map(AsRef::as_ref)
+            .collect();
         out.push((title.clone(), body.join("\n")));
     }
     out
 }
 
 /// `find_sub(subs, pattern)`: titles matching `pattern` (any case).
-pub(crate) fn find_sub<'a>(subs: &'a [(String, String)], pattern: &str) -> Vec<&'a (String, String)> {
+pub(crate) fn find_sub<'a>(
+    subs: &'a [(String, String)],
+    pattern: &str,
+) -> Vec<&'a (String, String)> {
     subs.iter().filter(|(t, _)| py::has_i(pattern, t)).collect()
 }
 
@@ -300,10 +352,18 @@ pub(crate) fn first_table(text: &str, pred: impl Fn(&[String]) -> bool) -> Optio
 /// (`re.search`, any case) at `level` (any level when `None`), up to the
 /// next heading of the same or a higher level, as a line range without the
 /// heading line.
-pub(crate) fn section_span(lines_len: usize, heads: &[Head], pattern: &str, level: Option<usize>) -> Option<(usize, usize)> {
+pub(crate) fn section_span(
+    lines_len: usize,
+    heads: &[Head],
+    pattern: &str,
+    level: Option<usize>,
+) -> Option<(usize, usize)> {
     for (i, (idx, lvl, title)) in heads.iter().enumerate() {
         if py::has_i(pattern, title) && level.is_none_or(|l| l == *lvl) {
-            let end = heads[i + 1..].iter().find(|h| h.1 <= *lvl).map_or(lines_len, |h| h.0);
+            let end = heads[i + 1..]
+                .iter()
+                .find(|h| h.1 <= *lvl)
+                .map_or(lines_len, |h| h.0);
             return Some((idx + 1, end));
         }
     }
@@ -329,7 +389,14 @@ mod tests {
         let hs = heading_index(&lines);
         assert_eq!(hs, vec![(0, 1, "A".to_string()), (4, 3, "B".to_string())]);
         let b = prose_blocks("para one\ntwo\n| t |\n\n## H\nnext");
-        assert_eq!(b, vec![('p', "para one\ntwo".to_string()), ('t', "| t |".to_string()), ('p', "next".to_string())]);
+        assert_eq!(
+            b,
+            vec![
+                ('p', "para one\ntwo".to_string()),
+                ('t', "| t |".to_string()),
+                ('p', "next".to_string())
+            ]
+        );
         assert_eq!(width_of("2"), (Some(16), None));
         assert_eq!(width_of("`4` X max 3"), (Some(32), Some(3)));
         assert_eq!(width_of("16 bits"), (Some(16), None));

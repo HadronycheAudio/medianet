@@ -1,94 +1,16 @@
 //! AC6 (document part): the hello of wire.toml, read with the scripts'
 //! subset reader, against the Markdown layout (script lines 1328-1407).
 
+use crate::doccheck::wp7::common::{Num, get_or, md_name, mul, ne, ne_str, norm_name, read, set_of, sortable, str_of};
 use std::collections::BTreeSet;
 
-use super::ac1::{Rows, md_name, norm_name};
-use super::md::Field;
-use super::pytoml::{self, Fail, PyDict, PyVal};
+use super::ac1::Rows;
+use crate::doccheck::wp7::md::Field;
+use crate::doccheck::wp7::pytoml::{self, PyDict, PyVal};
 use super::{Ctx, Layout, py};
 use crate::doccheck::Report;
-use crate::doccheck::wire_toml::WIRE_TOML;
 
 const PRIM: [&str; 10] = ["u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128"];
-
-/// A running Python sum: an int until a float joins it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Num {
-    I(i128),
-    F(f64),
-}
-
-impl Num {
-    /// `self + v` for a numeric value; `None` where Python raises
-    /// `TypeError` (a str, list or dict joins the sum).
-    pub fn add(self, v: &PyVal) -> Option<Num> {
-        Some(match (self, v) {
-            (Num::I(a), PyVal::Int(_) | PyVal::Bool(_)) => Num::I(a.saturating_add(v.as_int()?)),
-            (Num::I(a), PyVal::Float(f)) => Num::F(a as f64 + f),
-            (Num::F(a), _) => Num::F(a + v.number()?),
-            _ => return None,
-        })
-    }
-
-    /// Python `self != n`.
-    pub fn ne_int(self, n: i128) -> bool {
-        match self {
-            Num::I(a) => a != n,
-            Num::F(a) => a != n as f64,
-        }
-    }
-}
-
-/// `a * b` for two values; `None` unless both are numbers (a str or list
-/// times an int is a str or list, which the sum then rejects).
-pub(crate) fn mul(a: &PyVal, b: &PyVal) -> Option<PyVal> {
-    match (a.as_int(), b.as_int()) {
-        (Some(x), Some(y)) => Some(PyVal::Int(x.saturating_mul(y))),
-        _ => Some(PyVal::Float(a.number()? * b.number()?)),
-    }
-}
-
-/// `d.get(key, default)` with an int default.
-pub(crate) fn get_or(d: &PyDict, key: &str, default: i128) -> PyVal {
-    d.get(key).cloned().unwrap_or(PyVal::Int(default))
-}
-
-/// `d.get(key)` compared with `!=` against an int (a missing key is `None`,
-/// unequal to every int).
-pub(crate) fn ne(d: &PyDict, key: &str, n: i128) -> bool {
-    !d.get(key).is_some_and(|v| v.eq_int(n))
-}
-
-/// `d.get(key) != text` (None is unequal).
-pub(crate) fn ne_str(d: &PyDict, key: &str, text: &str) -> bool {
-    !d.get(key).is_some_and(|v| v.as_str() == Some(text))
-}
-
-/// `str(d.get(key, ""))`.
-pub(crate) fn str_of(d: &PyDict, key: &str) -> String {
-    d.get(key).map_or(String::new(), PyVal::str)
-}
-
-/// Reads wire.toml; `None` after reporting a missing file, an error or a
-/// crash.
-pub(crate) fn read(text: Option<&str>, ac: &str, report: &mut Report) -> Option<PyDict> {
-    let Some(text) = text else {
-        report.fail(ac, format!("{WIRE_TOML} does not exist"));
-        return None;
-    };
-    match pytoml::parse(text) {
-        Ok(d) => Some(d),
-        Err(Fail::Error(e)) => {
-            report.fail(ac, format!("{WIRE_TOML} does not parse: {e}"));
-            None
-        }
-        Err(Fail::Crash(e)) => {
-            report.fail("CRASH", format!("the script's TOML reader raises: {e}"));
-            None
-        }
-    }
-}
 
 fn fields(t: &PyDict, lay: &[Field], report: &mut Report) -> Option<(Vec<PyVal>, Num)> {
     let tf_val = t.get("field").filter(|v| v.truthy()).cloned().unwrap_or(PyVal::List(Vec::new()));
@@ -163,31 +85,6 @@ fn nested(ctx: &Ctx, tf: &[PyVal], lay: &[Field], rows: &Rows, report: &mut Repo
             report.fail("AC6", format!("the toml bundle field does not state the {mm}-member maximum (C-08)"));
         }
     }
-}
-
-/// `set(v or [])`: the distinct items, or the TypeError Python raises (a
-/// value that is not iterable, or an unhashable item).
-pub(crate) fn set_of(v: Option<&PyVal>) -> Result<Vec<PyVal>, &'static str> {
-    let raw = v.filter(|v| v.truthy()).cloned().unwrap_or(PyVal::List(Vec::new()));
-    let Some(items) = raw.iter_items() else {
-        return Err("TypeError: the value is not iterable");
-    };
-    if items.iter().any(|v| !v.hashable()) {
-        return Err("TypeError: unhashable item");
-    }
-    let mut have: Vec<PyVal> = Vec::new();
-    for v in items {
-        if !have.iter().any(|h| h.eq(&v)) {
-            have.push(v);
-        }
-    }
-    Ok(have)
-}
-
-/// `sorted(values)` does not raise: no str beside a non-str.
-pub(crate) fn sortable(values: &[&PyVal]) -> bool {
-    let strs = values.iter().filter(|v| v.as_str().is_some()).count();
-    values.len() < 2 || strs == 0 || strs == values.len()
 }
 
 fn reasons(ctx: &Ctx, t: &PyDict, exact: &BTreeSet<String>, report: &mut Report) {

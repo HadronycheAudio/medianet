@@ -2,9 +2,10 @@
 //! ticket's list, member reasons or argued non-rejections, no invented
 //! reason (script lines 1156-1265).
 
+use crate::doccheck::wp7::common::named_reasons;
 use std::collections::BTreeSet;
 
-use super::md::parse_tables;
+use crate::doccheck::wp7::md::parse_tables;
 use super::{Ctx, py};
 use crate::doccheck::Report;
 use crate::doccheck::rejection_members::Enumeration;
@@ -91,25 +92,6 @@ fn exact(cat: &str) -> Option<&'static str> {
         "reserved" => "ReservedNonZero",
         _ => return None,
     })
-}
-
-/// `named_reasons(outcome)`: the member names of the outcome not negated
-/// by `not|never|nor|no|neither` in the 24 characters before them.
-pub(crate) fn named_reasons(outcome: &str, members: &Enumeration) -> Vec<String> {
-    let mut found = Vec::new();
-    for m in py::finditer(r"\b[A-Za-z]+\b", outcome, false) {
-        let w = m.all();
-        if !members.contains(w) {
-            continue;
-        }
-        let at = py::char_index(outcome, m.start);
-        let before = py::slice(outcome, at.saturating_sub(24), at);
-        if py::has_i(r"\b(not|never|nor|no|neither)\b[^|;.]*$", before) {
-            continue;
-        }
-        found.push(w.to_string());
-    }
-    found
 }
 
 fn one_row(form: &str, outcome: &str, members: &Enumeration, seen: &mut BTreeSet<&'static str>, report: &mut Report) {

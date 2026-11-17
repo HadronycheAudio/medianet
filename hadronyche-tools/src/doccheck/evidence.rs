@@ -33,6 +33,7 @@
 //! single-tag rules of 003-02, 003-05, 004-01, 006-01 and 006-02. 004-27 also
 //! requires a tag in every `###` subsection: [`subsections_untagged`].
 
+use super::pycompat::PyStr;
 use super::text::{rx, strip_links};
 use super::units::{BlockKind, UnitKind, prose_blocks, units};
 
@@ -216,9 +217,7 @@ pub fn count_words(text: &str, count: WordCount) -> usize {
     match count {
         WordCount::NonSpaceNoLinks => rx(r"\S+").find_iter(&strip_links(text)).count(),
         WordCount::NonSpace => rx(r"\S+").find_iter(text).count(),
-        WordCount::SplitBlanking(chars) => super::text::blank_chars(text, chars)
-            .split_whitespace()
-            .count(),
+        WordCount::SplitBlanking(chars) => super::text::blank_chars(text, chars).py_split().count(),
         WordCount::AlphaNoCode => {
             let no_code = rx(r"`[^`]*`").replace_all(text, "");
             rx(r"[A-Za-z]{2,}").find_iter(&no_code).count()
@@ -265,11 +264,11 @@ fn every_block_untagged(text: &str, policy: &TagPolicy, inherit: bool) -> Vec<Un
         let start = line;
         line += block.matches('\n').count() + 2;
         let content: Vec<&str> = block
-            .trim()
+            .py_strip()
             .lines()
-            .filter(|l| !l.trim_start().starts_with('#'))
+            .filter(|l| !l.py_lstrip().starts_with('#'))
             .collect();
-        if block.trim().is_empty() {
+        if block.py_strip().is_empty() {
             continue;
         }
         if content.is_empty() {
@@ -277,12 +276,12 @@ fn every_block_untagged(text: &str, policy: &TagPolicy, inherit: bool) -> Vec<Un
             continue;
         }
         let body = content.join("\n");
-        let body = body.trim();
+        let body = body.py_strip();
         let is_table = content
             .iter()
-            .filter(|l| !l.trim().is_empty())
-            .all(|l| l.trim().starts_with('|'));
-        let is_code = content[0].trim_start().starts_with("```");
+            .filter(|l| !l.py_strip().is_empty())
+            .all(|l| l.py_strip().starts_with('|'));
+        let is_code = content[0].py_lstrip().starts_with("```");
         if tagged(body, policy) || (inherit && (is_table || is_code) && prev_tagged) {
             prev_tagged = true;
             continue;

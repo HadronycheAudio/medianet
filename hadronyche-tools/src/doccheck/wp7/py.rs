@@ -26,7 +26,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::doccheck::rejection_members::digit_value;
-use crate::doccheck::text::rx;
+use std::sync::Arc;
+
+use crate::doccheck::text::rx_raw as rx;
 
 /// Python's `open()` text mode: `\r\n` and a lone `\r` read as `\n`.
 pub(crate) fn universal(text: &str) -> String {
@@ -79,7 +81,9 @@ pub(crate) const HUGE: i128 = 10_i128.pow(36);
 
 /// Python `\w` for one character.
 pub(crate) fn py_word(c: char) -> bool {
-    c == '_' || c.is_ascii_alphanumeric() || (!c.is_ascii() && rx(r"^[\p{L}\p{N}]$").is_match(c.encode_utf8(&mut [0; 4])))
+    c == '_'
+        || c.is_ascii_alphanumeric()
+        || (!c.is_ascii() && rx(r"^[\p{L}\p{N}]$").is_match(c.encode_utf8(&mut [0; 4])))
 }
 
 fn rust_word(c: char) -> bool {
@@ -174,8 +178,12 @@ fn fold_i(pattern: &str) -> String {
     out
 }
 
-fn compile(pattern: &str, icase: bool) -> &'static regex::Regex {
-    if icase { rx(&fold_i(pattern)) } else { rx(pattern) }
+fn compile(pattern: &str, icase: bool) -> Arc<regex::Regex> {
+    if icase {
+        rx(&fold_i(pattern))
+    } else {
+        rx(pattern)
+    }
 }
 
 /// One match: byte span in the original text and its groups.
@@ -215,7 +223,9 @@ pub(crate) fn finditer<'t>(pattern: &str, text: &'t str, icase: bool) -> Vec<Hit
             Hit {
                 start: m.start(),
                 end: m.end(),
-                groups: (0..c.len()).map(|k| c.get(k).map(|g| &text[g.start()..g.end()])).collect(),
+                groups: (0..c.len())
+                    .map(|k| c.get(k).map(|g| &text[g.start()..g.end()]))
+                    .collect(),
                 text,
             }
         })
@@ -231,7 +241,9 @@ pub(crate) fn search<'t>(pattern: &str, text: &'t str, icase: bool) -> Option<Hi
         Hit {
             start: m.start(),
             end: m.end(),
-            groups: (0..c.len()).map(|k| c.get(k).map(|g| &text[g.start()..g.end()])).collect(),
+            groups: (0..c.len())
+                .map(|k| c.get(k).map(|g| &text[g.start()..g.end()]))
+                .collect(),
             text,
         }
     })
@@ -307,7 +319,10 @@ mod tests {
         assert!(has(r"a\sb", "a\u{1f}b"));
         let h = search(r"(\w+)", "x \u{b2}\u{b3}y", false).expect("hit");
         assert_eq!(h.g(1), "x");
-        let all: Vec<&str> = finditer(r"\w+", "\u{e9}t\u{e9} \u{b2}", false).iter().map(Hit::all).collect();
+        let all: Vec<&str> = finditer(r"\w+", "\u{e9}t\u{e9} \u{b2}", false)
+            .iter()
+            .map(Hit::all)
+            .collect();
         assert_eq!(all, ["\u{e9}t\u{e9}", "\u{b2}"]);
     }
 
@@ -326,7 +341,10 @@ mod tests {
         assert_eq!(int(" 12 "), Some(12));
         assert_eq!(int("\u{663}\u{664}"), Some(34));
         assert_eq!(int("1x"), None);
-        assert_eq!(int("123456789012345678901234567890"), Some(123_456_789_012_345_678_901_234_567_890));
+        assert_eq!(
+            int("123456789012345678901234567890"),
+            Some(123_456_789_012_345_678_901_234_567_890)
+        );
         assert_eq!(int(&"9".repeat(60)), Some(HUGE));
         assert_eq!(slice("h\u{e9}llo", 1, 3), "\u{e9}l");
         assert_eq!(slice("abc", 2, 10), "c");

@@ -176,7 +176,7 @@ pub(crate) fn digit_value(c: char) -> Option<u8> {
     if c.is_ascii_digit() {
         return Some(c as u8 - b'0');
     }
-    let nd = crate::doccheck::text::rx(r"^\p{Nd}$");
+    let nd = crate::doccheck::text::rx_raw(r"^\p{Nd}$");
     if c.is_ascii() || !nd.is_match(c.encode_utf8(&mut [0; 4])) {
         return None;
     }
@@ -234,14 +234,15 @@ fn heading(line: &str) -> Option<(usize, String)> {
 /// only a boolean, so the length change does not matter).
 fn is_rejection_title(title: &str) -> bool {
     let folded = title.replace(['\u{131}', '\u{130}'], "i");
-    crate::doccheck::text::rx(r"(?i)rejection[-\s\x1c-\x1f]+reasons?").is_match(&folded)
+    crate::doccheck::text::rx_raw(r"(?i)rejection[-\s\x1c-\x1f]+reasons?").is_match(&folded)
 }
 
 /// The data rows of every table of `text` (the 004 family's
 /// `parse_tables`).
 fn tables(text: &str) -> Vec<Vec<Vec<String>>> {
     let lines = crate::doccheck::text::splitlines(text);
-    let sep = crate::doccheck::text::rx(r"^[\s\x1c-\x1f]*\|?[\s\x1c-\x1f:|-]+\|?[\s\x1c-\x1f]*$");
+    let sep =
+        crate::doccheck::text::rx_raw(r"^[\s\x1c-\x1f]*\|?[\s\x1c-\x1f:|-]+\|?[\s\x1c-\x1f]*$");
     let mut out = Vec::new();
     let mut in_fence = false;
     let mut i = 0;

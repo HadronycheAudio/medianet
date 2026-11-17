@@ -2,7 +2,7 @@
 //! against the sync header) and the hello layout that starts with it
 //! (script lines 417-524).
 
-use super::md::{Field, key_of, fields_of, find_sub, first_table, is_field_table, prose_blocks};
+use crate::doccheck::wp7::md::{Field, key_of, fields_of, find_sub, first_table, is_field_table, prose_blocks};
 use super::{Ctx, Layout, NUM, py, to_int};
 use crate::doccheck::Report;
 

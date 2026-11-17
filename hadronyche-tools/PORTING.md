@@ -1,40 +1,95 @@
 # Porting a `checks/*.sh` script to a Rust document check
 
 The ticket checks under `checks/` are bash wrappers around embedded Python,
-one per ticket. They move into this crate one at a time: the document
-assertions become `cargo test` tests on the library `hadronyche_tools::doccheck`,
-the assertions that run tools or read repository state go to
-`scripts/repo-state-checks.sh`, and the script is deleted in the same commit.
-This file is the procedure. It is written so several porters can work in
+one per ticket. They move into this crate one at a time:
+- the document assertions become `cargo test` tests on the library
+  `hadronyche_tools::doccheck`;
+- the assertions that run tools or read repository state go to
+  `scripts/repo-state.d/<id>.sh`;
+- the script is deleted in the same commit.
+
+This file is the procedure. It is written so that several porters can work in
 parallel without editing the same files.
 
 ## Rulings that bind every port
 
 1. **Equivalence first.** A port reproduces *its own script's* variant of
-   every rule, even where scripts disagree (the same rule is written about
-   fifteen ways across the scripts; see
-   `swarm/notes/checks-inventory-2026-11-16.md`, section 4). The library
-   offers each disputed rule as a function taking an explicit, named policy;
-   the port names the policy of its script at the call site. Unifying the
-   variants is a later, separate, reviewed step — never a side effect of a
-   port.
-2. **Not ported** (they stay scripts; the suite keeps running them):
+   every rule, even where scripts disagree. The same rule is written about
+   fifteen ways across the scripts (`swarm/notes/checks-inventory-2026-11-16.md`,
+   section 4).
+   - The library offers each disputed rule as a function that takes an
+     explicit, named policy. The port names its script's policy at the call
+     site.
+   - Unifying the variants is a later, separate, reviewed step. It is never a
+     side effect of a port.
+2. **Python compatibility is part of equivalence.** The scripts ran on
+   Python. Wherever their Python differs from Rust's defaults, use the
+   helper of `doccheck::pycompat`, never the Rust default:
+   - `\w`, `\W`, `\s`, `\S`: Python's classes. `²` is a word character, a
+     combining mark is not, and `\x1c`–`\x1f` are white space. `text::rx`
+     translates every pattern, so you get them by using `rx`.
+   - `strip`, `lstrip`, `rstrip`, `split()`: the `PyStr` trait
+     (`py_strip`, `py_lstrip`, `py_rstrip`, `py_split`). Never use `trim`
+     or `split_whitespace` in a check.
+   - Reading a file: `open()` gives universal newlines. Splitting:
+     `split("\n")` or `splitlines()`. Pick `LineSplit::Nl` or
+     `LineSplit::PySplitlines`, and normalise every document text with it
+     before use.
+   - Paths: `os.path.normpath` keeps a leading `..` (`docs::join`, policy
+     `PathNorm`). A path outside the repository names no document.
+   - Integers: `int()` has no size limit. Use `pycompat::parse_int` and
+     `text::first_int`/`ints`, which are checked. A number beyond `i128` is
+     *reported* as a failure, never wrapped, and never a panic. Arithmetic
+     on document numbers saturates.
+   - TOML values as the script's reader and Python saw them: `py_int`
+     (`int()`), `py_is_int` (`isinstance`), `py_eq_int` and `py_eq`
+     (`40.0 == 40`), `py_iter` (a string iterates its characters),
+     `py_dicts`.
+   - Known limit: `\b` keeps Rust's word definition. It differs from
+     Python's only next to `²`-like numerals and combining marks. Write the
+     boundary as a class if your script depends on that.
+3. **TOML reader semantics.** Most 004 scripts used a hand-written subset
+   reader (`TomlReader::SubsetReader`); 004-22 used `tomllib`. Ports parse
+   with the crate's TOML parser and read values through `pycompat`.
+   - A type error the script caught must still fail. Example:
+     `rejection_reasons = "BadLength"`, where a string stands for an array.
+   - A script crash (KeyError, TypeError) is reported by the port as a
+     failure ("the script's reader crashes here").
+   - Where the subset reader rejects valid TOML and no assertion was aimed
+     at that, classify the difference `SubsetTomlReader`.
+   - Where the typed parser rejects what Python let through, classify it
+     `PortStricterTyped`.
+4. **Not ported.** These stay scripts, and the suite keeps running them:
    - 003-01, 003-03, 003-04, 003-06, 003-07, 003-09: they freeze-check,
      build or run the proof of concept;
    - 003-02, 003-05, 003-08: their content parts read files outside the
      repository (untracked notes, the proof of concept's `BASELINE.md`).
-   The harness cannot sandbox what lies outside `doc/`, and a test must not
-   read outside the repository.
-3. **Tool gates run once.** An assertion that runs a tool (`cargo run --bin
-   wire-check`, `cargo test -p hadronyche-tools --test wire_tables`,
-   `doc/kickoff/check-design.py`, a script running sibling scripts, git
-   against a ref, the proof of concept's state) would be circular or
-   environment-dependent inside `cargo test`. It goes to
-   `scripts/repo-state-checks.sh`, and each tool runs there once: a port
-   adds a named assertion on the shared result, keeping any per-ticket pin
-   ("at least 12 passed") as its own line.
-4. **Header and code disagree → follow the code** (it is what has been
-   passing), and record the disagreement in the test's doc comment.
+5. **Tool gates run once.** An assertion that runs a tool would be circular
+   or environment-dependent inside `cargo test`. Examples: `cargo run --bin
+   wire-check`, `cargo test --test wire_tables`, `check-design.py`, sibling
+   scripts, git against a ref, the proof of concept.
+   - Such assertions go to `scripts/repo-state.d/<id>.sh`.
+   - `scripts/repo-state-checks.sh` runs each tool once, with the scripts'
+     900 s timeout, and exposes the results.
+   - Per-ticket pins ("at least 12 passed") stay as named lines.
+6. **A check reads only its `Docs`.** The library test
+   `doccheck::checks::tests::checks_read_only_their_docs` scans every check
+   source and every `tests/doc_*.rs` file for forbidden uses, and fails on
+   any of them:
+   - processes, files and the environment (`std::process`, `Command`,
+     `std::fs`, `env::var`, `include_str!`, …);
+   - other document sources (`Docs::repo`, `Docs::dir`, `at_commit`,
+     `repo_root`, `commit_exists`).
+
+   Test files get their documents from `doccheck::testing`, the allow-list.
+   A script's "reads the working tree only / runs no other check" DoD lives
+   there.
+7. **Header and code disagree → follow the code.** The code is what has been
+   passing. Record the disagreement in the test's doc comment.
+8. **A check reports, never panics,** on any input.
+   `checks::tests::no_check_panics_on_malformed_input` runs every registered
+   check on malformed documents (empty, garbage, huge integers, wrong TOML
+   types).
 
 ## What a port consists of
 
@@ -43,203 +98,296 @@ For ticket `<id>` (`004-27`), with `<mod>` = `c` + the id with `-` as `_`
 
 | File | What |
 |---|---|
-| `src/doccheck/checks/<mod>/mod.rs` (or `<mod>.rs`) | the check: `pub fn run(docs: &Docs) -> Report` and `pub const SPEC: CheckSpec`; split into files per criterion as needed |
-| `tests/doc_<id>.rs` (`doc_004_27.rs`) | one `#[test]` per acceptance criterion and DoD item, the denial fixtures, the red-phase test |
-| `equivalence/<id>.md` | the harness report the port was accepted on |
-| `scripts/repo-state-checks.sh`, section `# --- <id>` | the relocated repository-state assertions |
+| `src/doccheck/checks/<mod>/mod.rs` | the check: `pub fn run(docs: &Docs) -> Report`, `pub const SPEC: CheckSpec`, `const KNOWN` (classified differences); split into files per criterion |
+| `src/doccheck/checks/<mod>/denials.rs` | `pub const DENIALS: &[Denial]`: the denial list (see below) |
+| `tests/doc_<id>.rs` | one `#[test]` per acceptance criterion and DoD item, the red-phase test, and `hadronyche_tools::denial_tests!(SPEC; …)` with every denial name |
+| `equivalence/<id>.md` | the committed harness summary |
+| `scripts/repo-state.d/<id>.sh` | the relocated repository-state assertions |
 | `checks/<id>.sh` | deleted, in the port's commit |
 
-There is no registry to edit: `build.rs` generates the list of ports from
-the files named `src/doccheck/checks/c<digits>…`. A port is registered by
-existing.
+There is no registry to edit: `build.rs` generates it from
+`src/doccheck/checks/c<digits>…`. A malformed entry fails the build with a
+message, for example a directory without `mod.rs` or a `c…` file that is not
+`.rs`.
+
+`SPEC` fields:
+
+| Field | What it holds |
+|---|---|
+| `id` | the ticket id |
+| `run` | the check function |
+| `script_env` | the override variables that make the script skip its cargo runs, usually `[("WIRE_MD", "doc/design/spec/wire.md")]` |
+| `targets` | the sections the corpus mutates |
+| `keywords` | extra words to negate |
+| `known_differences` | `KNOWN` |
+| `denials` | `denials::DENIALS` |
+| `toml` | the script's `TomlReader` |
 
 ## Which files a porter may edit
 
-- **Yours alone:** `src/doccheck/checks/<mod>/` (or `<mod>.rs`),
-  `tests/doc_<id>.rs`, `equivalence/<id>.md`, and deleting
-  `checks/<id>.sh`.
-- **Shared, append-only:** `scripts/repo-state-checks.sh`. Add one section
-  `# ------------------------------------------------------------ <id>`
-  before the `end` section. Reuse the shared tool results at the top
-  (`wire_check_rc`, `wire_check_out`, `wire_tables_*`). If your ticket
-  needs a tool nobody runs yet, add one line to the shared block that runs
-  it once and stores its result; on a merge conflict keep both sides.
-- **Not yours:** every other file of `src/doccheck/` (the library and the
-  harness), other ports, `scripts/per-change-suite.sh`, anything under
-  `doc/`, and every other script under `checks/` (never weaken or edit one;
-  the only allowed change to a script is deleting your own with its port).
+- **Yours alone:**
+  - `src/doccheck/checks/<mod>/` (all of it);
+  - `tests/doc_<id>.rs`;
+  - `equivalence/<id>.md`;
+  - `scripts/repo-state.d/<id>.sh`;
+  - deleting `checks/<id>.sh`.
+- **Shared, by addition only:** a new shared tool goes in
+  `scripts/repo-state-checks.sh`, as one block in "shared tool runs" that
+  exports its results. On a merge conflict, keep both blocks.
+- **Not yours:**
+  - every other file of `src/doccheck/` (the library and the harness);
+  - other ports;
+  - `scripts/per-change-suite.sh`;
+  - `.github/`;
+  - anything under `doc/`;
+  - every other script under `checks/`. Never weaken or edit one; the only
+    allowed change to a script is deleting your own, with its port.
 
-### Adding a library helper
+### Adding to the library, and fixing a library bug
 
 The library is shared by every port, so a change to it can break another
-port's equivalence. The rules:
+port's equivalence.
 
-1. Start private. Write the helper in your own module
+1. **Start private.** Write a helper in your own module
    (`src/doccheck/checks/<mod>/helpers.rs`). Your port lands with it.
-2. Propose it separately: a commit or PR touching only `src/doccheck/`
-   (`feat(tools): doccheck <helper>`), with unit tests in the module, that
-   **adds** — a new function, a new enum variant, a new named policy
-   constant — and never changes what an existing function returns.
-3. A new variant of a disputed rule is a new named policy (for example
-   `TagPolicy::PROSE_004_25`), documented in the policy's module table with
-   the scripts that use it. Never edit an existing policy: other ports were
-   proven equivalent with it.
-4. After it merges, switch your port to it in a follow-up and rerun the
-   harness.
+2. **A new rule variant** is a new named policy: a new enum variant or a new
+   constant (`TagPolicy::PROSE_004_25`, `TableRules::…`), documented in its
+   module's table with the scripts that use it. Never change what an
+   existing policy does: other ports were proven with it.
+3. **A library addition** is its own commit or PR touching only
+   `src/doccheck/` (`feat(tools): doccheck <what>`). It carries unit tests
+   and adds only.
+4. **A library bug fix** changes existing behaviour, for example a Python
+   semantic the library got wrong (round 1 of PR #42 fixed `\w`,
+   `normpath`, `splitlines`, the separator rule). It goes in a library PR
+   that:
+   - fixes the primitive and adds a unit test for it;
+   - reruns `cargo run --release -p hadronyche-tools --bin doccheck-equiv --
+     --all --out hadronyche-tools/equivalence`, which reruns every
+     registered port with its denials;
+   - commits the regenerated summaries;
+   - lists in the PR every port whose summary changed and why.
+
+   A port that becomes "port weaker" blocks the fix until it is resolved.
+5. After an addition merges, switch your port to it in a follow-up and rerun
+   the harness for your id.
+
+## The denial list
+
+A denial is the real documents with one edit applied in memory, plus what
+the port must report on them (`Denial { name, file, edit, expect }`):
+- `edit` is a `DenialEdit::Text(fn)` built from `doccheck::mutate` helpers,
+  or `DenialEdit::Delete`;
+- `expect` lists `(criterion, message substring)` pairs. An empty `expect`
+  means the port must pass: the agreement is the point, or the script's red
+  is a classified difference.
+
+Every port has ONE list (`denials.rs`), used twice:
+- **as tests:** `denial_tests!(SPEC; name, …)` makes one `#[test]` each,
+  plus a test that the list and the tests agree;
+- **by the harness against the old script:** the targeted denials are the
+  strongest evidence, since a random corpus is only 8–13 % red.
+
+Write one denial per negative the script's header lists, plus one per
+assertion that has none. Scope an edit with `mutate::within_section` when
+the same words occur in an earlier section.
 
 ## The library in one table
 
 | Module | Use it for |
 |---|---|
-| `docs` | `Docs`: the documents as a value. `Docs::repo()` in tests; `docs.mutate(path, edit)`, `with`, `without` for fixtures (in memory, never a file in `/tmp`, never an environment variable); `Docs::at_commit` for a red-phase tree; `glob`, `is_file`, `commit_exists` |
-| `markdown` | headings with GitHub anchors (`slug`), `section`, `section_with(SectionEnd)`, `find`, `find_by(HeadingMatch)`, `find_path`, `head_norms`, `tables_with(RowSplit)`, spans |
-| `tables` | `Table` (`head`, `head_norm`, `col`, `col_named`), `Row` (`cell`, `joined`, `rest`, `line`), `split_row_with` |
-| `units` | `units` (paragraphs, list items, table rows, headings with lines), `prose_blocks`, `strip_fences`, `clean_start` |
-| `links` | `links`, `resolve` (file and anchor across files) |
-| `evidence` | the six tags (`TagSet`), `untagged(text, &TagPolicy)`, `subsections_untagged` |
-| `items` | `open_items` / `unowned_items(text, OpenItemPolicy)`, `labelled` ("Reported contradiction", "Hand-on", "Open item N"), `status_sentences`, `status_names` |
-| `claims` | `affirms` (keyword in a clause with no negation), `exactly_one_of` (verdict words), `designations` (edition, draft, comment record, test suite, working-group document; a bare year never matches) |
-| `ticket` | `Ticket::load` (acceptance criteria, DoD, `depends_on`, `sentence_after`), `expand_constant_ids`, `cid`, `Constants` (the constants table by id) |
-| `wire_toml` | `WireToml` over the crate's TOML parser: `messages`, `message`, `array`, `field_info`, `fields`, `text`, `int`, `display` |
-| `text` | `rx` (the regex cache: always use it, never `Regex::new` in a loop), `has`, `has_i`, `starts`, `full`, Python-compatible `splitlines`, `split_nl`, `join_digit_groups`, `first_int`, `ints`, `head` |
-| `mutate` | fixture helpers by content: `delete_row`, `delete_unit`, `delete_section`, `rename_heading`, `strip_tags`, `replace_in_line`, `negate`, `replace_all`, `within_section` |
-| `report` | `Report` (`check`, `fail`, `fail_at` with file and line), `assert_criterion`, `assert_clean`, `assert_fails` |
+| `docs` | `Docs`, the documents as a value: `with`, `without` and `mutate` for edits in memory; `glob`; `is_file`; `join` (`normpath`). `at_commit` returns `Err` on any git failure. |
+| `pycompat` | Python semantics: `translate`, `PyStr`, `splitlines`, `universal_newlines`, `normpath`, `parse_int`, `py_int`, `py_is_int`, `py_eq_int`, `py_eq`, `py_iter`, `py_dicts`, `is_word`, `is_space`, `is_nd` |
+| `policy` | `FencePolicy`, `HeadingMatch`, `SectionEnd`, `RowSplit`, `SeparatorRule`, `HeaderlessRuns`, `TableRules`, `LineSplit`, `PathNorm`, `TomlReader` |
+| `markdown` | headings with GitHub anchors, `section`, `section_with`, `find`, `find_by` (literal variants never compile a regex), `find_path`, `head_norms`, `tables_with(span, TableRules)` |
+| `tables` | `Table`, `Row`, `split_row_with`, `is_separator`, `is_separator_line` |
+| `units` | `units`, `prose_blocks`, `strip_fences`, `clean_start` |
+| `links` | `links`, `resolve`, `file_slugs` |
+| `evidence` | `TagSet`, `TagPolicy` constants, `untagged`, `subsections_untagged` |
+| `items` | `OpenItemPolicy`, `open_items`, `unowned_items`, `labelled`, `status_sentences` |
+| `claims` | `must_affirm` (the document must say it) and `claims` (the document must not say it): two directions of the negation guard; `exactly_one_of`; `designations` (a bare year or year range is never an edition) |
+| `ticket` | `Ticket`, `expand_constant_ids`, `cid`, `Constants` |
+| `wire_toml` | `WireToml`, `fields`, `text`, `int`, `display` |
+| `text` | `rx` (Python classes; a cache bounded at `RX_CACHE_LIMIT`, sharing compiled regexes; escape document text you embed in a pattern), `rx_raw`, `has`, `has_i`, `starts`, `full`, `first_int`, `ints`, `join_digit_groups`, `head` |
+| `mutate` | `delete_row`, `delete_unit`, `delete_section`, `rename_heading`, `strip_tags`, `replace_in_line`, `negate`, `replace_all`, `within_section` |
+| `report` | `Report` (`check`, `fail`, `fail_at`), `assert_criterion`, `assert_clean`, `assert_fails` |
+| `denial` | `Denial`, `DenialEdit` |
+| `testing` | `repo`, `report_of`, `red_phase`, `check_denial`, `denial_tests!` |
 
 ### The named policies
 
-| Policy | Variants now | Where |
-|---|---|---|
-| `FencePolicy` | `Backticks` (004 family), `BackticksOrTildes` (003-02), `Matching` (006-01) | `policy` |
-| `HeadingMatch` | `Regex`, `RegexAtLevel(n)` (`span_of`), `FullMatch` (004-09/10/11), `Substring` (003-02/05), `Exact` (006-02), `NormEq` (004-21), `Slug` | `policy` |
-| `SectionEnd` | `SameOrHigher`, `AnyHeading` (003-08), `NextLevel2` (002-10 to 002-14) | `policy` |
-| `RowSplit` | `Escaped` (most 004), `Plain` (004-22) | `policy` |
-| `TagPolicy` | `UNITS_004_22`, `PROSE_004_27`, `PROSE_004_29` (004-25/28/29), `PROSE_004_26`, `ALPHA_004_16`, `ALNUM_004_14`, `EVERY_BLOCK_004_09` (004-03 to 004-11 family), `EVERY_BLOCK_004_13`; each sets tag set and case, unit, word count, minimum, table inheritance | `evidence` (its module documentation lists the variants still to add) |
-| `OpenItemPolicy` | `Mention` (004-22; 004-24 and 004-25 test the same substring on their own blocks), `LeadingWithTicket` (004-27), `Leading` (004-29) | `items` |
+| Policy | Variants now |
+|---|---|
+| `LineSplit` | `Nl` (004-22), `PySplitlines` (004 family) |
+| `TableRules` (`RowSplit` × `SeparatorRule` × `HeaderlessRuns`) | `T004_22` (plain split, cell-wise separator, headerless runs kept); `FAMILY_004` (escaped split, line-regex separator, headerless runs dropped; 004-01, 03-06, 08-13, 16-21, 24-29) |
+| `FencePolicy` | `Backticks` (004 family), `BackticksOrTildes` (003-02), `Matching` (006-01) |
+| `HeadingMatch` | `Regex`, `RegexAtLevel(n)` (`span_of`), `FullMatch` (004-09/10/11), `Substring` (003-02/05), `Exact` (006-02), `NormEq` (004-21), `Slug` |
+| `SectionEnd` | `SameOrHigher`, `AnyHeading` (003-08), `NextLevel2` (002-10 to 002-14) |
+| `PathNorm` | `PyNormpath` |
+| `TomlReader` | `Tomllib` (004-22), `SubsetReader` (004 family) |
+| `TagPolicy` | `UNITS_004_22`, `PROSE_004_27`, `PROSE_004_29` (004-25/28/29), `PROSE_004_26`, `ALPHA_004_16`, `ALNUM_004_14`, `EVERY_BLOCK_004_09`, `EVERY_BLOCK_004_13`. Each sets the tag set and case, the unit, the word count, the minimum and table inheritance. |
+| `OpenItemPolicy` | `Mention` (004-22), `LeadingWithTicket` (004-27), `Leading` (004-29) |
 
-The rest of the inventory's variants (the epic 002 pointer-line and
-figure-paragraph windows, the separator tests, the reason-token patterns,
-the negation look-backs, the `to_int` variants, the 13-name pin) are not in
-the library yet: the first port that needs one adds it as above.
+The word class is not a parameter: `rx` is always Python's.
+
+**Not in the library yet.** The first port that needs one of these adds it
+as above:
+- the epic 002 pointer-line and figure-paragraph tag windows;
+- 003-08's three-tag rule and 004-04's list inheritance;
+- the reason-token regexes, the negation look-backs and the `NON_REJECTION`
+  sets;
+- the `to_int` variants;
+- the 13-name pin.
 
 ## Procedure
 
-1. **Read the script whole**, header and code. Number every assertion it
-   makes (every `fail`/`check`/`bad` call), and mark each as *document*
-   (reads files under `doc/`) or *repository state* (runs a tool, reads git,
-   the proof of concept, the script's own text). Note where the header and
-   the code disagree.
-2. **Name the variants.** For every shared rule the script uses (fences,
-   headings, sections, tables, tags, open items, reasons), find or add the
-   policy that reproduces it exactly.
-3. **Write the check** in `src/doccheck/checks/<mod>/`. Keep the script's
-   criterion labels (`AC1`, `DoD`, ...) as the `Report` criteria: the
-   harness compares them. Keep each function under 100 code lines
-   (`scripts/function-length.py`); split per criterion.
-4. **Fill `SPEC`:** `script_env` (the override variables the script honours
-   and that switch off its cargo runs: usually `[("WIRE_MD",
-   "doc/design/spec/wire.md")]`), `targets` (the sections the corpus
-   mutates: every section the check reads, and whole files such as
-   wire.toml or the constants), `keywords` (words whose negation matters),
-   and `known_differences` (empty until the harness shows one).
-5. **Write the tests** in `tests/doc_<id>.rs`:
-   - one `#[test]` per acceptance criterion and DoD item, named after it
-     (`ac2_…`, `dod_…`), whose doc comment quotes the ticket sentence and the
-     script header's description of what is checked;
-   - the denial fixtures: every negative the script's header lists, plus one
-     per assertion that has none, each the real documents with one mutation
-     in memory (`base().mutate(WIRE_MD, |t| delete_row(t, …))`), asserting
-     the right criterion fails with the right message (`assert_fails`);
-     scope an edit with `within_section` when the same words occur in an
-     earlier section;
-   - the red-phase test: the tree at the commit that added the script fails
-     the same criteria (skip when `commit_exists` is false).
-   Compute the report on the real documents once (`OnceLock`).
-6. **Run the harness** until it says EQUIVALENT:
-
-   ```
-   cargo run --release -p hadronyche-tools --bin doccheck-equiv -- <id> \
-       --out hadronyche-tools/equivalence/<id>.md
-   ```
-
-   Options: `--seed N` (default 2026), `--limit N` (default 300 mutations),
-   `--no-red` (skip the red-phase tree). Run a second, larger corpus with
-   another seed (`--seed 7 --limit 2000`) before you commit.
-7. **Relocate** the repository-state assertions to your section of
-   `scripts/repo-state-checks.sh` and run it (`bash
-   scripts/repo-state-checks.sh`).
-8. **Commit** (Conventional Commits, `test(<id>): port checks/<id>.sh to
-   Rust; delete the script`) with: the check module, the test file, the
-   equivalence report, your repo-state section, and `git rm
-   checks/<id>.sh`. The message lists every assertion of the script and
-   where it now lives (test name, or repo-state section). Nothing a script
-   asserted may disappear; an INFO/NOTE print is not an assertion.
+1. **Read the script whole**, header and code.
+   - Number every assertion it makes (every `fail`, `check` or `bad` call).
+   - Mark each one as *document* (reads files under `doc/`) or *repository
+     state* (runs a tool, reads git or the proof of concept, greps its own
+     text).
+   - Note where its Python semantics matter: how it reads and splits
+     lines, `\w`, `int()`, TOML values.
+   - Note where the header and the code disagree.
+2. **Name the variants.** For every shared rule the script uses, find or add
+   the policy that reproduces it exactly.
+3. **Write the check** in `src/doccheck/checks/<mod>/`.
+   - Keep the script's criterion labels (`AC1`, `DoD`, `WIRE`) as the
+     `Report` criteria; the harness compares them criterion by criterion.
+   - Keep each function under 100 code lines (`scripts/function-length.py`).
+4. **Write the denial list and the tests**, then fill `SPEC`.
+5. **Run the harness** (below) until it says EQUIVALENT. Classify every
+   difference that is genuinely not "port weaker" in `KNOWN`, with a reason
+   a reviewer can check.
+6. **Relocate** the repository-state assertions to
+   `scripts/repo-state.d/<id>.sh`, and run `bash
+   scripts/repo-state-checks.sh`.
+7. **Commit** with the Conventional Commits title `test(<id>): port
+   checks/<id>.sh to Rust; delete the script`. The commit holds the check,
+   the denial list, the test file, `equivalence/<id>.md`, the repo-state
+   file, and `git rm checks/<id>.sh`.
+   - The message lists every assertion of the script and where it now
+     lives.
+   - Nothing a script asserted may disappear. An INFO or NOTE print is not
+     an assertion.
 
 ### Gates before a port is pushed
 
-`cargo test --workspace`; `cargo clippy --workspace --all-targets -- -D
-warnings`; `cargo fmt --check`; `python3 scripts/function-length.py`;
-`python3 doc/kickoff/check-design.py doc/design`; `bash
-scripts/repo-state-checks.sh`; every remaining `checks/*.sh` still green; the
-harness report EQUIVALENT.
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo fmt --check`
+- `python3 scripts/function-length.py`
+- `python3 doc/kickoff/check-design.py doc/design`
+- `bash scripts/repo-state-checks.sh`
+- every remaining `checks/*.sh` still green
+- the harness summary EQUIVALENT
 
 ## The harness
 
-`doccheck-equiv` (source `src/doccheck/equiv/`, bin
-`src/bin/doccheck-equiv.rs`) compares the port with its script on the same
-inputs:
+`doccheck-equiv` lives in `src/doccheck/equiv/`, with the bin
+`src/bin/doccheck-equiv.rs`. Usage:
 
+```
+cargo run --release -p hadronyche-tools --bin doccheck-equiv -- <id> --out hadronyche-tools/equivalence/<id>.md
+cargo run --release -p hadronyche-tools --bin doccheck-equiv -- --all --out hadronyche-tools/equivalence
+cargo run --release -p hadronyche-tools --bin doccheck-equiv -- <id> --denials-only     # quick: (a) and the denials
+```
+
+**The committed run is the default.** It covers:
 - **(a)** the current tree: both must pass;
-- **(b)** the tree at the commit that first added the script
-  (`git log --diff-filter=A -- checks/<id>.sh`), where the script was written
-  red: both must fail, on the same criteria;
-- **(c)** a deterministic corpus of structured mutations of the `targets`:
-  every table row deleted, every unit deleted, every subsection deleted,
-  every tag stripped, keywords negated (`no`→`a`, `not`→``, `is`→`is not`,
-  the spec's `keywords` → `not …`, …), every number incremented, every
-  heading renamed; each (kind, target) group shuffled by the seed, targets
-  interleaved within a kind, kinds taken round-robin up to the limit. For
-  every mutation the script's exit status must equal the port's verdict.
+- **(b)** the tree at the commit that first added the script: both red on
+  the same criteria;
+- **(c)** two seeds (2026 and 7) of 2 000 structured mutations each: rows,
+  units and subsections deleted, tags stripped, keywords negated, numbers
+  incremented, headings renamed. Each (kind, target) group is shuffled by
+  the seed, then targets and kinds take turns;
+- **(d)** the denial list, on both the script and the port.
 
-**Acceptance rule.** A verdict difference is acceptable only when the
-port's `known_differences` classify it, with a reason a reviewer can check:
-`PortStricter` (the port rejects what the script accepted, and why that is
-right) or `ScriptWrong` (how the script is wrong). A mutation the script
-rejects and the port accepts is **port weaker** and fails the run, whatever
-reasons are recorded; an unclassified difference fails the run too. When
-both are red, differing criteria are counted and shown but do not fail the
-run (the verdict is the contract; look at them anyway).
+Other options: `--seeds A,B`, `--limit N`, `--no-red`, `--no-denials`,
+`--full` (every row; never commit it).
 
-**How the script runs.** The harness exports `doc/` from the same `Docs` the
-port reads (the working tree, or `git archive` of the red-phase commit) into
-a temporary directory outside the repository, writes the script to
-`checks/<id>.sh` there, and runs `bash checks/<id>.sh` from that directory,
-so a script that reads fixed paths reads the export. The spec's
-`script_env` variables (e.g. `WIRE_MD`) point at the exported files, which
-makes the scripts that honour them skip their cargo runs; `cargo` on the
-script's `PATH` is a stub that exits 97, so a cargo run that was not switched
-off makes the script red instead of silently testing the real tree. For a
-mutation, the harness rewrites the one exported file, runs the script and
-restores the file. The directory is removed on exit.
+It writes the **summary**: the tree and script commits, counts per seed and
+for the denials, rows (a) and (b), and every row that is not "same". A
+script run takes about 0.3 s, so the committed run takes about 20 minutes
+per check.
 
-**Limits.** The script is run on the export of `doc/` only: a script that
-reads outside `doc/` (the proof of concept, untracked notes, `Cargo.toml`)
-cannot be compared, which is one reason for the not-ported list. Python
-crashes (a traceback, exit 1, no FAIL line) count as red with no criteria.
-The corpus is structural, not semantic: most mutations of a large section
-are neutral (both pass), so run a large corpus; the denial fixtures cover
-the specific negatives. Mutations are line-based and never touch fenced
-code.
+**Comparison.**
+- "Same" means both pass, or both fail the same set of criteria.
+- Every other pair is a difference of a kind:
+  - script red, port pass;
+  - script pass, port red;
+  - port fails more criteria;
+  - port misses a criterion;
+  - script crash with port red;
+  - script crash with port pass.
+- A script **crash** (traceback, non-zero exit without a FAIL line, or the
+  300 s timeout) is its own outcome; it never matches a port red.
+- A script that prints FAIL and exits 0 counts as red and is reported as an
+  anomaly.
+- Every edit of the export is read back after writing and after restoring.
+  Any error aborts the run, so an unapplied mutation can never read "same".
 
-**Where it runs.** Never in `cargo test`, the per-change suite or CI: it
-needs the old scripts and Python. It reads a deleted script from the parent
-of the commit that deleted it, so it stays usable until the last port.
+**Acceptance rule.**
+- A difference passes only when a `KNOWN` entry matches its label, with a
+  class allowed to excuse that kind:
+
+  | Class | Use |
+  |---|---|
+  | `PortStricter` | the port rejects what the script accepted, for a stated reason |
+  | `PortStricterTyped` | the typed TOML parser rejects what Python let through |
+  | `ScriptWrong` | the script's verdict is wrong; the reason says how |
+  | `SubsetTomlReader` | the subset reader rejected valid TOML |
+  | `ScriptCrashed` | the script crashed; the port reports the cause |
+
+- The weaker kinds (script red/port pass, port misses a criterion, script
+  crash/port pass) are "**port weaker**". No class excuses them, except
+  `SubsetTomlReader` (lead ruling R3).
+- An unexcused difference, or a denial whose expectations the port does
+  not meet, fails the run.
+
+**How the script runs.**
+- The harness exports `doc/` from the same `Docs` the port reads (the
+  working tree, or `git archive` of the red-phase commit) into a temporary
+  directory outside the repository, about 14 MB, removed on exit.
+- It writes the script to `checks/<id>.sh` there and runs it from that
+  directory, so fixed paths resolve inside the export.
+- `script_env` points override variables at the exported files.
+- A `cargo` stub that exits 97 makes any un-skipped cargo run red.
+- A deleted script is read from the parent of the commit that deleted it.
+
+**Limits.**
+- Only `doc/` is exported, so a script that reads outside it cannot be
+  compared (one reason for the not-ported list).
+- The corpus is structural and mostly neutral; that is why there are
+  denials.
+- Mutations are line-based and never touch fenced code.
+
+**Where it runs.** Never in `cargo test`, the per-change suite or CI. It
+needs the old scripts and Python.
+
+## Red-phase tests
+
+```rust
+#[test]
+fn red_phase_tree_fails_every_criterion() {
+    red_phase(&SPEC, "<full commit>", &["AC1", "AC2", "AC3", "AC4", "DoD"]);
+}
+```
+
+- A missing commit **fails** the test. With `DOCCHECK_ALLOW_SHALLOW=1` it
+  prints a visible `SKIPPED` line instead.
+- A run prints a visible `EXECUTED` line. CI checks out the full history
+  (`fetch-depth: 0`) and runs the red-phase tests in their own step, so the
+  log shows them.
 
 ## Naming
 
-- module `c<id with _>` (`c004_27`), constant `SPEC`, function `run`;
-- tests file `doc_<id>.rs`; test functions `ac<N>_<what the criterion
-  says>`, `dod_<item>`, `ac<N>_denial_<what is broken>`,
-  `red_phase_tree_fails_every_criterion`;
-- criteria in the `Report` as the script printed them (`AC1`, `AC 1` →
-  `AC1`, `DoD`, `WIRE`);
-- repo-state lines `PASS <id> <criterion>: …` / `FAIL <id> <criterion>: …`.
+- Module `c<id with _>` (`c004_27`), constant `SPEC`, function `run`,
+  denial list `denials::DENIALS`.
+- Test file `doc_<id>.rs`. Tests are named `ac<N>_<what the criterion
+  says>` and `dod_<item>`; denials `ac<N>_denial_<what is broken>`;
+  review-born denials `review_<finding>_<what>`.
+- Criteria in the `Report` as the script printed them (`AC 1` becomes
+  `AC1`, plus `DoD`, `WIRE`).
+- Repo-state lines read `PASS <id> <criterion>: …` and `FAIL <id>
+  <criterion>: …`.

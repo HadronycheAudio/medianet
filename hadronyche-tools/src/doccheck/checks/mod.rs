@@ -8,6 +8,8 @@
 
 use super::Docs;
 use super::Report;
+use super::denial::Denial;
+use super::policy::TomlReader;
 
 /// What the equivalence harness needs to know about one port.
 #[derive(Debug)]
@@ -28,6 +30,11 @@ pub struct CheckSpec {
     pub keywords: &'static [&'static str],
     /// The verdict differences that are understood, with their reason.
     pub known_differences: &'static [KnownDifference],
+    /// The check's denial list: run by its tests and, with `--denials`, by
+    /// the harness against the old script.
+    pub denials: &'static [Denial],
+    /// The TOML reader the script used.
+    pub toml: TomlReader,
 }
 
 /// A section of a document the corpus mutates.
@@ -40,22 +47,80 @@ pub struct Target {
     pub heading: Option<&'static str>,
 }
 
-/// The class of an understood difference. "Port weaker" is never a class:
-/// a mutation the script rejects and the port accepts fails the harness.
+/// The class of an understood difference, with the direction it may
+/// excuse (see [`DiffKind`]). "Port weaker" is never a class: a script red
+/// that the port does not match fails the harness, with the one exception
+/// the lead ruled (R3) for the subset TOML reader rejecting valid TOML.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffClass {
     /// The port rejects what the script accepted, for the stated reason.
     PortStricter,
+    /// The port's typed TOML parser rejects a value the script's reader let
+    /// through (`dscp = 40.0` compares equal to 40 in Python).
+    PortStricterTyped,
     /// The script's verdict is wrong; the reason says how.
     ScriptWrong,
+    /// The script's hand-written subset TOML reader rejected valid TOML
+    /// (`note = """…"""`) and no assertion of the script was aimed at it.
+    SubsetTomlReader,
+    /// The script crashed (a traceback, no FAIL line) on input the port
+    /// reports as a failure.
+    ScriptCrashed,
 }
 
-/// One understood difference: mutations whose label matches `label` (a
-/// regex) and where the port's verdict is `port_fails`.
+/// How the two verdicts differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffKind {
+    /// The script fails, the port passes.
+    ScriptRedPortPass,
+    /// The script passes, the port fails.
+    ScriptPassPortRed,
+    /// Both fail; the port fails every criterion the script failed, and more.
+    PortMoreCriteria,
+    /// Both fail; the script failed a criterion the port did not.
+    PortMissingCriteria,
+    /// The script crashed; the port fails.
+    ScriptCrashPortRed,
+    /// The script crashed; the port passes.
+    ScriptCrashPortPass,
+}
+
+impl DiffKind {
+    /// True when this kind, unexcused, makes the port weaker.
+    pub fn weaker(self) -> bool {
+        matches!(
+            self,
+            DiffKind::ScriptRedPortPass
+                | DiffKind::PortMissingCriteria
+                | DiffKind::ScriptCrashPortPass
+        )
+    }
+
+    /// True when `class` may excuse a difference of this kind.
+    pub fn excused_by(self, class: DiffClass) -> bool {
+        use DiffClass::*;
+        match self {
+            DiffKind::ScriptRedPortPass | DiffKind::ScriptCrashPortPass => {
+                class == SubsetTomlReader
+            }
+            DiffKind::ScriptPassPortRed => {
+                matches!(class, PortStricter | PortStricterTyped | ScriptWrong)
+            }
+            DiffKind::PortMoreCriteria => {
+                matches!(class, PortStricter | PortStricterTyped | ScriptWrong)
+            }
+            DiffKind::PortMissingCriteria => matches!(class, ScriptWrong | SubsetTomlReader),
+            DiffKind::ScriptCrashPortRed => class == ScriptCrashed,
+        }
+    }
+}
+
+/// One understood difference: mutations or denials whose label matches
+/// `label` (a regex), excused by `class` when the class fits the kind of
+/// difference, for the stated reason.
 #[derive(Debug, Clone, Copy)]
 pub struct KnownDifference {
     pub label: &'static str,
-    pub port_fails: bool,
     pub class: DiffClass,
     pub reason: &'static str,
 }
@@ -65,4 +130,150 @@ include!(concat!(env!("OUT_DIR"), "/checks_registry.rs"));
 /// The port of `id`, if one is registered.
 pub fn find(id: &str) -> Option<&'static CheckSpec> {
     registry().into_iter().find(|s| s.id == id)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    /// What a check, or a check's test file, must not use: a check reads
+    /// only the `Docs` it is given (lead ruling R4; it replaces 004-27's
+    /// self-grep "reads the working tree only, runs no other check"). Test
+    /// files get their documents from `doccheck::testing`, the allow-list.
+    const FORBIDDEN: &[&str] = &[
+        "std::process",
+        "Command",
+        "std::fs",
+        "fs::",
+        "File::",
+        "read_to_string",
+        "std::env",
+        "env::var",
+        "env!(",
+        "option_env!",
+        "include_str!",
+        "include_bytes!",
+        "std::net",
+        "at_commit",
+        "Docs::repo",
+        "Docs::dir",
+        "repo_root",
+        "commit_exists",
+        "PathBuf",
+        "std::path",
+    ];
+
+    fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(dir).expect("readable").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                sources(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+
+    /// `bad` in `code` as a whole path (`refs::` does not contain `fs::`).
+    fn uses(code: &str, bad: &str) -> bool {
+        crate::doccheck::text::rx_raw(&format!(r"(?:^|[^A-Za-z0-9_]){}", regex::escape(bad)))
+            .is_match(code)
+    }
+
+    fn code_lines(text: &str) -> Vec<(usize, String)> {
+        text.lines()
+            .enumerate()
+            .map(|(i, l)| (i + 1, l.split("//").next().unwrap_or("").to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn checks_read_only_their_docs() {
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = Vec::new();
+        sources(&crate_dir.join("src/doccheck/checks"), &mut files);
+        files.retain(|f| {
+            f.file_name().is_some_and(|n| n != "mod.rs")
+                || f.parent() != Some(&crate_dir.join("src/doccheck/checks"))
+        });
+        let tests = std::fs::read_dir(crate_dir.join("tests"))
+            .expect("tests/")
+            .flatten();
+        files.extend(tests.map(|e| e.path()).filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("doc_"))
+        }));
+        assert!(files.len() >= 2, "the scan found no check source");
+        let mut hits = Vec::new();
+        for f in &files {
+            let text = std::fs::read_to_string(f).expect("readable");
+            for (n, code) in code_lines(&text) {
+                for bad in FORBIDDEN.iter().filter(|b| uses(&code, b)) {
+                    hits.push(format!("{}:{n}: uses `{bad}`", f.display()));
+                }
+            }
+        }
+        assert!(
+            hits.is_empty(),
+            "a check must read only the Docs it is given:\n{}",
+            hits.join("\n")
+        );
+    }
+
+    #[test]
+    fn the_scan_catches_a_process() {
+        let lines = code_lines(
+            "let x = 1; // std::process is fine in a comment\nstd::process::Command::new(\"git\");",
+        );
+        let found: Vec<_> = lines
+            .iter()
+            .filter(|(_, c)| FORBIDDEN.iter().any(|b| c.contains(b)))
+            .collect();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, 2);
+    }
+
+    /// Lead ruling R8: a check reports, never panics, on malformed input.
+    #[test]
+    fn no_check_panics_on_malformed_input() {
+        let big = "9".repeat(60);
+        let wire_md = [
+            String::new(),
+            "|".into(),
+            "#".into(),
+            "# Foo (x\n## Traceability table\n| Rule 1 | (x |\n|---|\n| 1 |".into(),
+            format!(
+                "## Path-MTU probe pair\n### Path-MTU probe request\n| Offset | Width | Type | Meaning | Valid |\n|---|---|---|---|---|\n| {big} | {big} × max {big} | u8 | Message type {big} | {big} |\nmaximum size {big} bytes"
+            ),
+            "a\u{2028}### x\u{0c}| a |\r\n|---|\r| b |".into(),
+        ];
+        let wire_toml = [
+            String::new(),
+            "[[".into(),
+            "message = 5".into(),
+            "refusal = [{ name = [1], value = 1 }]".into(),
+            "[[message]]\nname = \"path-MTU probe request\"\nfield = \"abc\"\nrejection_reasons = 7".into(),
+            "[[message]]\nname = \"path-MTU probe reply\"\nmax_size = 9223372036854775807\n[[message.field]]\nname = \"a\"\noffset = 9223372036854775807\nwidth = 9223372036854775807\nmax_count = 9223372036854775807".into(),
+            "[[message]]\n[[message.field]]\nwidth = 1".into(),
+        ];
+        let constants = format!("| C-06 | x | {big} |\n| C-17 | x | at most {big} bytes |");
+        let base = crate::doccheck::Docs::repo();
+        for spec in super::registry() {
+            for md in &wire_md {
+                for t in &wire_toml {
+                    let docs = base
+                        .with("doc/design/spec/wire.md", md.clone())
+                        .with("doc/design/spec/wire.toml", t.clone())
+                        .with("doc/design/02-constants.md", constants.clone());
+                    let run = spec.run;
+                    let outcome = std::panic::catch_unwind(|| run(&docs));
+                    assert!(
+                        outcome.is_ok(),
+                        "{} panicked on wire.md {md:?} and wire.toml {t:?}",
+                        spec.id
+                    );
+                }
+            }
+        }
+    }
 }
