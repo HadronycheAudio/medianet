@@ -71,9 +71,10 @@ pub const SCRIPT_TIMEOUT_S: u32 = 60;
 pub struct Sandbox {
     pub root: PathBuf,
     script: String,
-    /// The script's text (the epic-002 scripts' unlabelled failures are
-    /// read against it: [`super::labels002`]).
-    source: String,
+    /// The script's text, when the port selected the `bad`-call-site
+    /// reader ([`super::labels002::selected`]); `None` otherwise: the
+    /// other readers only, untouched.
+    source: Option<String>,
     env: Vec<(String, String)>,
     timeout_s: u32,
 }
@@ -107,7 +108,7 @@ impl Sandbox {
         Ok(Sandbox {
             root,
             script,
-            source: script_text.to_string(),
+            source: super::labels002::selected(id).then(|| script_text.to_string()),
             env: env
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -142,15 +143,17 @@ impl Sandbox {
                 anomaly: false,
                 tail: format!("timed out after {} s", self.timeout_s),
             },
-            Ok(o) => verdict_with_script(
-                o.status.success(),
-                &format!(
+            Ok(o) => {
+                let out = format!(
                     "{}{}",
                     String::from_utf8_lossy(&o.stdout),
                     String::from_utf8_lossy(&o.stderr)
-                ),
-                &self.source,
-            ),
+                );
+                match &self.source {
+                    Some(src) => verdict_with_script(o.status.success(), &out, src),
+                    None => verdict(o.status.success(), &out),
+                }
+            }
             Err(e) => verdict(
                 false,
                 &format!("Traceback (most recent call last): harness cannot run bash: {e}"),

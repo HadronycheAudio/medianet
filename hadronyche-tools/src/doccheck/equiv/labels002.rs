@@ -22,8 +22,24 @@
 //!   failure can never be silently dropped.
 //!
 //! The ports of these scripts name their criteria the same way.
+//!
+//! **Opt-in, per port** (coordinator's ruling): the reader applies only to
+//! the ports listed in [`SELECTED`]; every other port's script is read by
+//! the other readers alone, unchanged. One reader per port: a port listed
+//! here selects no other unlabelled-line reader. The list is interim:
+//! when `m/doccheck-lib` gives a port a single explicit reader setting,
+//! each listed port sets it there and this list goes.
 
 use std::collections::BTreeSet;
+
+/// The ports that select this reader: the bash scripts of epic 002 ported
+/// by WP1.
+pub const SELECTED: &[&str] = &["002-02", "002-03", "002-04"];
+
+/// True when the port `id` selected this reader.
+pub fn selected(id: &str) -> bool {
+    SELECTED.contains(&id)
+}
 
 /// One `bad` call site.
 #[derive(Debug, Clone)]
@@ -345,6 +361,12 @@ bad() { printf 'FAIL: %s\n' "$*"; fail=$((fail + 1)); }
 # ---------------------------------------------------------------------------
       bad "$label line $k carries a file:line pointer but no evidence tag"
 "#;
+
+    #[test]
+    fn only_the_selecting_ports_use_the_reader() {
+        assert!(selected("002-02") && selected("002-04"));
+        assert!(!selected("002-13") && !selected("004-27") && !selected("002-01"));
+    }
 
     #[test]
     fn banners_name_the_criteria() {
