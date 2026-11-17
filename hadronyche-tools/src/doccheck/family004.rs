@@ -8,10 +8,18 @@
 //! behaviour (the 004-27 equivalence proofs did not move). Each reproduces
 //! the scripts' Python: digit captures through `parse_int`, tables by
 //! [`TableRules::FAMILY_004`], Python's `strip`.
+//!
+//! M1-lib adds the other helpers every 004 script carries a copy of, each
+//! variant named: [`heading_index`], [`section_span`] ([`SpanRule`]),
+//! [`norm_name`] ([`NameNorm`]), [`width_to_bits`] ([`WidthRule`]). Each is
+//! proven against the scripts' own definitions, run by Python 3.10 and 3.13
+//! on `data/family004_corpus.txt` (`tools/gen_family004_corpus.py`; the test
+//! is `doccheck::proofs004`), which also records which script's copy is
+//! which variant.
 
 use super::markdown::{Markdown, Span};
 use super::policy::{HeadingMatch, TableRules};
-use super::pycompat::{IntError, PyStr, parse_int};
+use super::pycompat::{IntError, PyStr, is_space, parse_int};
 use super::report::Report;
 use super::tables::{Row, Table};
 use super::text::{full, rx};
@@ -182,6 +190,155 @@ pub fn sentences(text: &str, newline: bool) -> Vec<String> {
     }
     out.push(text[start..].to_string());
     out
+}
+
+/// A heading of [`heading_index`]: (0-based line, level, title).
+pub type Head = (usize, usize, String);
+
+/// `heading_index(lines)` of every 004 script (one variant, 004-03 to
+/// 004-29): headings `^(#{1,6})\s+(.*?)\s*#*\s*$` outside fences, a fence
+/// being a line matching `^\s*```` (tildes are not fences), the title
+/// stripped. Proven on `data/family004_corpus.txt`.
+pub fn heading_index<S: AsRef<str>>(lines: &[S]) -> Vec<Head> {
+    let fence = rx(r"^\s*```");
+    let head = rx(r"^(#{1,6})\s+(.*?)\s*#*\s*$");
+    let mut out = Vec::new();
+    let mut in_fence = false;
+    for (idx, line) in lines.iter().enumerate() {
+        let line = line.as_ref();
+        if fence.is_match(line) {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if let Some(m) = head.captures(line) {
+            out.push((idx, m[1].chars().count(), m[2].py_strip().to_string()));
+        }
+    }
+    out
+}
+
+/// Which section span a script computes from [`heading_index`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpanRule {
+    /// `section_span(pattern, level=None)` of 004-16 to 004-18 (and
+    /// `section_span(pattern)` of 004-19/004-20, the same with no level):
+    /// the lines after the first heading whose title matches `pattern`
+    /// (`re.search`, any case) at `level`, up to the next heading of the
+    /// same or a higher level.
+    AfterHeading004_16,
+    /// `span_of(pattern, level)` of 004-24, 004-25, 004-28, 004-29: the
+    /// level is required and tested first; the span STARTS AT the heading
+    /// line itself.
+    WithHeading004_24,
+}
+
+/// The (start, end) line range of the section named by `pattern` under
+/// `rule`, or `None` (see [`SpanRule`]).
+pub fn section_span(
+    n_lines: usize,
+    heads: &[Head],
+    pattern: &str,
+    level: Option<usize>,
+    rule: SpanRule,
+) -> Option<(usize, usize)> {
+    let re = rx(&format!("(?i){pattern}"));
+    for (i, (idx, lvl, title)) in heads.iter().enumerate() {
+        if level.is_none_or(|l| l == *lvl) && re.is_match(title) {
+            let end = heads[i + 1..]
+                .iter()
+                .find(|h| h.1 <= *lvl)
+                .map_or(n_lines, |h| h.0);
+            return Some(match rule {
+                SpanRule::AfterHeading004_16 => (idx + 1, end),
+                SpanRule::WithHeading004_24 => (*idx, end),
+            });
+        }
+    }
+    None
+}
+
+/// The name normalisers of the 004 scripts, each a named variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameNorm {
+    /// `norm_name` of 004-06, 08-13, 19: `re.sub(r"[^a-z0-9]", "",
+    /// s.lower())`.
+    Alnum004_06,
+    /// `norm_name` of 004-16 to 004-18: `-` to a space, lower case, runs
+    /// of `\s` and `_` to one space, stripped.
+    Spaced004_16,
+    /// `norm` of 004-20: `re.sub(r"[^a-z]", "", s.lower())`.
+    Letters004_20,
+}
+
+/// `s` normalised under `rule`.
+pub fn norm_name(s: &str, rule: NameNorm) -> String {
+    let lower = s.to_lowercase();
+    match rule {
+        NameNorm::Alnum004_06 => lower
+            .chars()
+            .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            .collect(),
+        NameNorm::Spaced004_16 => {
+            let mut out = String::with_capacity(lower.len());
+            let mut gap = false;
+            for c in lower.replace('-', " ").chars() {
+                if is_space(c) || c == '_' {
+                    gap = true;
+                    continue;
+                }
+                if gap {
+                    out.push(' ');
+                    gap = false;
+                }
+                out.push(c);
+            }
+            if gap {
+                out.push(' ');
+            }
+            out.py_strip().to_string()
+        }
+        NameNorm::Letters004_20 => lower.chars().filter(char::is_ascii_lowercase).collect(),
+    }
+}
+
+/// The `width_to_bits(cell)` variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WidthRule {
+    /// 004-06, 08, 09, 10, 13, 19: `(\d[\d _]*)\s*bits?` reads bits (spaces
+    /// and `_` dropped from the number); else the first `(\d[\d _]*)` × 8.
+    DigitGroups004_06,
+    /// 004-20: the first `\d+`; bits when `\bbits?\b` occurs and
+    /// `\bbytes?\b` does not, else × 8.
+    FirstNumber004_20,
+}
+
+/// `width_to_bits(cell)` under `rule`: `Ok(None)` when the cell has no
+/// number, `Err` beyond `i128` (Python would have kept the number).
+pub fn width_to_bits(cell: &str, rule: WidthRule) -> Result<Option<i128>, IntError> {
+    let s = cell.to_lowercase();
+    match rule {
+        WidthRule::DigitGroups004_06 => {
+            let int = |m: &str| parse_int(&m.replace([' ', '_'], ""));
+            if let Some(c) = rx(r"(\d[\d _]*)\s*bits?").captures(&s) {
+                return int(&c[1]).map(Some);
+            }
+            match rx(r"(\d[\d _]*)").captures(&s) {
+                Some(c) => Ok(Some(int(&c[1])?.saturating_mul(8))),
+                None => Ok(None),
+            }
+        }
+        WidthRule::FirstNumber004_20 => {
+            let Some(c) = rx(r"(\d+)").captures(&s) else {
+                return Ok(None);
+            };
+            let n = parse_int(&c[1])?;
+            let bits = rx(r"\bbits?\b").is_match(&s) && !rx(r"\bbytes?\b").is_match(&s);
+            Ok(Some(if bits { n } else { n.saturating_mul(8) }))
+        }
+    }
 }
 
 /// A document and the constants table, as the family reads them.
