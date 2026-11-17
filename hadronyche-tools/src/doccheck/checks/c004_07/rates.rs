@@ -130,9 +130,9 @@ pub(crate) fn candidates(marker: &str, text: &str) -> Vec<Cand> {
 /// contains the first) agrees with 65 536 x interval within 30 %.
 pub(crate) fn pairs(c: &Cand, durs: &[(f64, usize)]) -> Option<f64> {
     let computed = MODULUS * c.interval;
-    let pos = c.pos as i64;
+    let pos = c.pos;
     durs.iter()
-        .filter(|(_, p)| pos - 700 <= *p as i64 && *p as i64 <= pos + 900)
+        .filter(|(_, p)| pos.checked_sub(700).is_none_or(|lo| lo <= *p) && *p <= pos + 900)
         .any(|(s, _)| (s - computed).abs() <= TOL * computed)
         .then_some(computed)
 }

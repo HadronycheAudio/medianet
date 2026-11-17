@@ -19,9 +19,8 @@
 //! only together with the other exceed-branch failures.
 
 use hadronyche_tools::doccheck::checks::c004_15::SPEC;
-use hadronyche_tools::doccheck::mutate::{replace_all, replace_in_line, within_section};
-use hadronyche_tools::doccheck::testing::{red_phase, repo, report_of};
-use hadronyche_tools::doccheck::{assert_criterion, assert_fails};
+use hadronyche_tools::doccheck::testing::{red_phase, report_of};
+use hadronyche_tools::doccheck::assert_criterion;
 
 /// AC1 — "`wire.md` states the new wire size per default packet and bit rate
 /// per stream with the arithmetic shown."
@@ -105,27 +104,6 @@ fn dod_the_inputs_read() {
 
 // ---------------------------------------------------------------- denials
 
-/// "The section does not name C-118 as marked for recompute" needs the
-/// constants (C-20 changed so the difference exceeds 5 %) and wire.md
-/// (C-118 mangled) edited together; a denial edits one file.
-#[test]
-fn ac3_denial_over_five_percent_with_a_constant_not_named() {
-    let docs = repo()
-        .mutate("doc/design/02-constants.md", |t| {
-            replace_in_line(t, r"^\| C-20 \|", "1 320", "1 200")
-        })
-        .mutate("doc/design/spec/wire.md", |t| {
-            within_section(t, "^Wire size and capacity recompute$", |s| {
-                replace_all(s, "C-118", "C-1l8")
-            })
-        });
-    assert_fails(
-        &SPEC.evaluate(&docs),
-        "AC3",
-        "does not name C-118 as marked for recompute",
-    );
-}
-
 /// The tree at the commit that added the script fails the criterion the
 /// script failed: AC1 (its subsection did not exist).
 #[test]
@@ -135,6 +113,23 @@ fn red_phase_tree_fails_the_criteria_the_script_failed() {
 
 hadronyche_tools::denial_tests!(
     SPEC;
+    a_c20_of_0,
+    a_c20_of_007,
+    a_c20_of_plus7,
+    a_c20_of_1_2,
+    a_c20_of_2e63,
+    a_c20_of_20_digits,
+    a_c20_of_45_digits,
+    a_c20_of_1e13,
+    a_c20_of_1e19,
+    a_c20_of_1e36,
+    a_c20_of_superscript,
+    a_c20_of_micro,
+    a_payload_of_1e13,
+    a_payload_of_1e19,
+    a_payload_of_1e36,
+    a_payload_of_45_digits,
+    ac3_denial_over_five_percent_with_a_constant_not_named,
     denial_wire_md_missing,
     denial_wire_toml_missing,
     denial_constants_missing,
@@ -219,9 +214,7 @@ hadronyche_tools::denial_tests!(
     a_result_with_a_zero_decimal_passes,
     a_result_with_a_decimal_part_fails,
     a_payload_with_an_underscore,
-    a_c20_of_1e13,
     a_c20_beyond_i128,
-    a_c20_of_zero_crashes,
     a_c21_of_zero_crashes,
     a_c04_of_zero_crashes,
     a_toml_value_with_trailing_tabs_and_a_comment_passes,

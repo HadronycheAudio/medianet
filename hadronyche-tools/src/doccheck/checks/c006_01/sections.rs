@@ -3,8 +3,9 @@
 
 use std::collections::BTreeSet;
 
-use super::scan::{Block as Table, Head, Scan, norm_text, section_body};
+use super::scan::{Block as Table, Head, Scan, section_body};
 use crate::doccheck::Report;
+use crate::doccheck::family006::norm_text;
 use crate::doccheck::markdown::{Heading, stem_match};
 use crate::doccheck::pycompat::{PyStr, parse_int};
 use crate::doccheck::text::rx;

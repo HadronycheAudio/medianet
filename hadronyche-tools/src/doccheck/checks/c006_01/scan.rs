@@ -1,9 +1,10 @@
 //! Fences, headings, tables and the constants of 02-constants.md, as
 //! `checks/006-01.sh` reads them.
 
-use crate::doccheck::markdown::{Markdown, code_mask};
+use crate::doccheck::family006::norm_text;
+use crate::doccheck::markdown::{Markdown, fence_scan};
 use crate::doccheck::policy::{FencePolicy, TableRules};
-use crate::doccheck::pycompat::{PyStr, nfkc, splitlines};
+use crate::doccheck::pycompat::{PyStr, splitlines};
 use crate::doccheck::tables::{Table, split_row_char_walk};
 use crate::doccheck::text::{full, has, has_i, rx};
 
@@ -16,41 +17,10 @@ pub(crate) struct Scan {
     pub errors: Vec<String>,
 }
 
-/// `norm_text`: NFKC, the figure and thin spaces as spaces, zero-width
-/// characters dropped, typographic dashes and quotes plain, blanks squashed.
-pub(crate) fn norm_text(s: &str) -> String {
-    let mut t = nfkc(s);
-    for ch in ['\u{a0}', '\u{2007}', '\u{202f}', '\u{2009}', '\u{200a}'] {
-        t = t.replace(ch, " ");
-    }
-    t = t.replace(['\u{200b}', '\u{feff}'], "");
-    let t = rx(r"[‐-―−]").replace_all(&t, "-");
-    let t = t
-        .replace(['\u{2018}', '\u{2019}'], "'")
-        .replace(['\u{201c}', '\u{201d}'], "\"");
-    rx(r"\s+").replace_all(&t, " ").py_strip().to_string()
-}
-
-/// True when the fence mask ends inside an open fence (the script's final
-/// `in_fence`). Two probes are appended to the lines: a backtick marker and
-/// a tilde marker, both longer than any fence, then a plain line. The plain
-/// line is outside code exactly when the open fence (if any) was closed by
-/// the marker of its own character; when no fence was open the marker opens
-/// one, which keeps the plain line inside code.
-fn ends_open(lines: &[&str]) -> bool {
-    let probe = |marker: &str| {
-        let mut v: Vec<&str> = lines.to_vec();
-        let owned = marker.repeat(1000);
-        v.push(&owned);
-        v.push("x");
-        !code_mask(&v, FencePolicy::Matching)[v.len() - 1]
-    };
-    probe("`") || probe("~")
-}
-
 /// `scan_fences_and_headings`.
 pub(crate) fn scan(lines: &[&str]) -> Scan {
-    let mask = code_mask(lines, FencePolicy::Matching);
+    let fences = fence_scan(lines, FencePolicy::Matching);
+    let mask = fences.mask;
     let (mut headings, mut errors) = (Vec::new(), Vec::new());
     let heading = rx(r"^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$");
     for (k, line) in lines.iter().enumerate() {
@@ -68,15 +38,10 @@ pub(crate) fn scan(lines: &[&str]) -> Scan {
             headings.push((i, h[1].len(), h[2].py_strip().to_string()));
         }
     }
-    if ends_open(lines) {
-        let at = (0..lines.len())
-            .rev()
-            .find(|&k| mask[k] && (k == 0 || !mask[k - 1]))
-            .unwrap_or_default();
+    if let Some((at, marker)) = fences.open_at_end {
         errors.push(format!(
-            "line {}: unclosed code fence opened with {}",
-            at + 1,
-            lines[at].trim_start_matches([' ', '\t'])
+            "line {}: unclosed code fence opened with {marker}",
+            at + 1
         ));
     }
     Scan { headings, errors }

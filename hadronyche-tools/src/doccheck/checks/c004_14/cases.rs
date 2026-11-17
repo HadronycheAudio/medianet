@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use super::comp::{Comp, Consts};
 use super::section::{STable, Sec, cell_num, classify_case, row_kind, row_label};
 use super::section::{norm, sentences};
+use crate::doccheck::checked::{add, sub, sum};
 use crate::doccheck::report::Report;
 use crate::doccheck::text::{has, has_i, rx};
 
@@ -21,8 +22,8 @@ pub(crate) struct Case {
     pub ext: i128,
 }
 
-fn sum(vals: &BTreeMap<&'static str, Vec<i128>>, k: &str) -> Option<i128> {
-    vals.get(k).map(|v| v.iter().sum())
+fn part_sum(vals: &BTreeMap<&'static str, Vec<i128>>, k: &str) -> Option<i128> {
+    vals.get(k).map(|v| sum(v.iter().copied()))
 }
 
 /// Checks the part rows of one column against the toml sizes.
@@ -112,7 +113,7 @@ fn column(t: &STable, c: usize, k: &Comp, cs: &Consts, f: &mut Report) -> Option
         f.fail("AC1", format!("budget column {label} has no spare row"));
         return None;
     };
-    let comp_total: i128 = vals.values().flatten().sum();
+    let comp_total: i128 = sum(vals.values().flatten().copied());
     if comp_total != total {
         f.fail(
             "AC5",
@@ -122,8 +123,8 @@ fn column(t: &STable, c: usize, k: &Comp, cs: &Consts, f: &mut Report) -> Option
         );
     }
     parts(&vals, &label, k, cs, f);
-    let ann = vals.get("ann").map_or(0, |v| v.iter().sum());
-    let ext = sum(&vals, "ext").unwrap_or_default();
+    let ann = vals.get("ann").map_or(0, |v| sum(v.iter().copied()));
+    let ext = part_sum(&vals, "ext").unwrap_or_default();
     judge(
         &Case {
             kind,
@@ -169,14 +170,14 @@ fn judge(c: &Case, k: &Comp, cs: &Consts, f: &mut Report) -> Option<Case> {
             ),
         );
     }
-    if c.spare != bound - c.total {
+    if c.spare != sub(bound, c.total) {
         f.fail(
             "AC1",
             format!(
                 "budget column {label}: spare {} != {bound} - {} = {}",
                 c.spare,
                 c.total,
-                bound - c.total
+                sub(bound, c.total)
             ),
         );
     }
@@ -184,7 +185,7 @@ fn judge(c: &Case, k: &Comp, cs: &Consts, f: &mut Report) -> Option<Case> {
         if c.ann != k.ann_count || c.ext != 0 {
             f.fail("AC1", format!("default column {label} must hold the mandatory parts only (announcement count byte, no extension)"));
         }
-        if c.total != k.mandatory() + cs.audio {
+        if c.total != add(k.mandatory(), cs.audio) {
             f.fail(
                 "AC1",
                 format!(
@@ -253,7 +254,7 @@ pub(crate) fn coverage(cs: &[Case], k: &Comp, c: &Consts, sec: &Sec, f: &mut Rep
             "AC1",
             format!(
                 "no default 1 472 budget column (mandatory parts only: total {})",
-                k.mandatory() + c.audio
+                add(k.mandatory(), c.audio)
             ),
         );
     }
@@ -262,7 +263,7 @@ pub(crate) fn coverage(cs: &[Case], k: &Comp, c: &Consts, sec: &Sec, f: &mut Rep
             "AC2",
             format!(
                 "no worst-case 1 472 column with all announcements and the extension (total {})",
-                k.max_non_audio() + c.audio
+                add(k.max_non_audio(), c.audio)
             ),
         );
     }

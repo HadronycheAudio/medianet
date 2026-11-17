@@ -3,6 +3,7 @@
 
 use super::rows::{SecTable, ceil_to_offset, floor_to_position, verify};
 use crate::doccheck::Report;
+use crate::doccheck::checked::sub;
 use crate::doccheck::numwin::window;
 use crate::doccheck::text::{has, has_i, rx};
 
@@ -205,7 +206,7 @@ pub(crate) fn ac5(tables: &[SecTable], origin: i128, r: &mut Report) {
         {
             offsets.insert(v.output);
             if !v.relative_out {
-                offsets.insert(v.output - origin);
+                offsets.insert(sub(v.output, origin));
             }
         }
         if !offsets.is_empty() && !offsets.contains(&expected) {

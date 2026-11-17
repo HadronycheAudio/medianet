@@ -2,7 +2,7 @@
 //! figures stated beside them.
 
 use super::num::{
-    Fails, close, dec_value, floats, has_number, ints, mbit_list, pcts, sentences, tol_of,
+    Fails, close, dec_value, fl, floats, has_number, ints, mbit_list, pcts, sentences, tol_of,
 };
 use super::setup::Calc;
 use super::units::{Sub, Unit};
@@ -87,8 +87,8 @@ const SIGNED_PCT: &str = r"(?<![\w\-])([−+-])\s*(\d+)(?:\.(\d+))?\s*%";
 /// Every stated difference and percent against C-22 is evaluated.
 pub(crate) fn against_c22(sub: &Sub, k: &Calc, f: &mut Fails) -> Flow<()> {
     for &(ch, streams, c22_rate, _) in &k.c22 {
-        let exp_diff = streams as f64 * k.rate_stream - c22_rate as f64;
-        let base2 = streams as f64 * k.c21;
+        let exp_diff = fl(streams) * k.rate_stream - fl(c22_rate);
+        let base2 = fl(streams) * k.c21;
         for t in sub.units.iter().flat_map(sentences_of) {
             let n = ints(&t);
             if !n.contains(&ch) || !n.contains(&c22_rate) {
@@ -103,7 +103,7 @@ pub(crate) fn against_c22(sub: &Sub, k: &Calc, f: &mut Fails) -> Flow<()> {
             let bases: Vec<f64> = if unrounded {
                 vec![base2]
             } else {
-                vec![c22_rate as f64, base2]
+                vec![fl(c22_rate), base2]
             };
             for (p, d, _) in signed(SIGNED_PCT, &t) {
                 if !bases

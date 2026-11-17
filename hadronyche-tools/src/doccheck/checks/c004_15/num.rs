@@ -73,10 +73,15 @@ pub(crate) fn dec_value(int: &str, frac: Option<&str>) -> Option<Dec> {
     dec_of(int, frac)
 }
 
+/// `float(n)` of an int (nearest double, as Python).
+pub(crate) fn fl(n: i128) -> f64 {
+    PyNum::Int(n).as_f64()
+}
+
 /// `tol_of(decimals)`.
 pub(crate) fn tol_of(decimals: usize) -> f64 {
     if decimals > 0 {
-        0.5 * 10f64.powf(-(decimals as f64))
+        0.5 * 10f64.powf(-fl(i128::try_from(decimals).unwrap_or_default()))
     } else {
         0.5
     }
@@ -91,7 +96,9 @@ pub(crate) fn close(a: f64, b: f64, tol: f64) -> bool {
 /// (Python subtracts ints exactly), anything else as floats.
 pub(crate) fn close_n(a: PyNum, b: PyNum, tol: f64) -> bool {
     match (a, b) {
-        (PyNum::Int(x), PyNum::Int(y)) => (x.abs_diff(y) as f64) <= tol + 1e-9,
+        (PyNum::Int(x), PyNum::Int(y)) => {
+            i128::try_from(x.abs_diff(y)).is_ok_and(|d| fl(d) <= tol + 1e-9)
+        }
         _ => (a.as_f64() - b.as_f64()).abs() <= tol + 1e-9,
     }
 }

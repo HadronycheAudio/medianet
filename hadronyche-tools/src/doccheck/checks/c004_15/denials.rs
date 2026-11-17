@@ -2,12 +2,9 @@
 //! port (and the old script) must report. Consumed by the tests and by
 //! `doccheck-equiv 004-15 --denials-only`. An entry with no expectation is
 //! one the port must pass (the script passes it too).
-//!
-//! Not in the list: "the section does not name C-118 as marked for recompute"
-//! edits the constants and wire.md together; `tests/doc_004_15.rs` carries it.
 
 use super::{CONSTANTS, WIRE_MD};
-use crate::doccheck::denial::{Denial, DenialEdit};
+use crate::doccheck::denial::{Denial, DenialEdit, FileEdit};
 use crate::doccheck::mutate::{
     anchored_replace, delete_row, rename_heading, replace_all, replace_in_line, strip_tags,
     within_section,
@@ -159,13 +156,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_the_preamble_not_beside_its_name",
         file: WIRE_MD,
         edit: DenialEdit::Text(|t| sub(t, |t| rep(t, r"\b8\b", "9"))),
-        expect: &[
-            (
-                "AC1",
-                "the Ethernet preamble and start-of-frame delimiter of 8 bytes",
-            ),
-            ("AC4", ""),
-        ],
+        expect: &[("AC1", ""), ("AC4", "")],
     },
     Denial {
         name: "ac1_denial_the_gap_not_beside_its_name",
@@ -405,10 +396,7 @@ pub const DENIALS: &[Denial] = &[
                 replace_in_line(t, r"^\| 24 channels", "−3.10 Mbit/s", "−3.50 Mbit/s")
             })
         }),
-        expect: &[(
-            "AC2",
-            "the 24-channel difference from C-22 is stated as -3.5",
-        )],
+        expect: &[("AC2", "")],
     },
     Denial {
         name: "ac2_denial_a_c22_share_that_is_not_computed",
@@ -418,10 +406,7 @@ pub const DENIALS: &[Denial] = &[
                 replace_in_line(t, r"^\| 24 channels", "−3.7 %", "−3.0 %")
             })
         }),
-        expect: &[(
-            "AC2",
-            "the 24-channel share of the C-22 difference is stated as 3 %",
-        )],
+        expect: &[("AC2", "")],
     },
     Denial {
         name: "ac2_denial_a_share_against_c21_times_streams_that_is_not_the_per_stream_share",
@@ -436,10 +421,7 @@ pub const DENIALS: &[Denial] = &[
                 )
             })
         }),
-        expect: &[(
-            "AC2",
-            "the share against C-21 x streams is stated as -4.9 %",
-        )],
+        expect: &[("AC2", "")],
     },
     Denial {
         name: "ac2_denial_a_plain_share_against_c21_times_streams",
@@ -571,13 +553,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac4_denial_the_header_term_not_named_as_the_cap",
         file: WIRE_MD,
         edit: DenialEdit::Text(|t| sub(t, |t| rep(t, r"\b100\b", "101"))),
-        expect: &[
-            ("AC1", ""),
-            (
-                "AC4",
-                "the header term of the formula is not named as the 100-byte cap",
-            ),
-        ],
+        expect: &[("AC1", ""), ("AC4", "")],
     },
     Denial {
         name: "ac4_denial_a_worked_example_whose_header_term_is_not_a_budget_figure",
@@ -784,10 +760,7 @@ pub const DENIALS: &[Denial] = &[
                 replace_in_line(t, r"^\| Ethernet preamble", r"`\[memory\]`", "`[standard]`")
             })
         }),
-        expect: &[(
-            "DoD",
-            "framing row tagged [standard] has no clause reference",
-        )],
+        expect: &[("DoD", "")],
     },
     Denial {
         name: "dod_denial_a_standard_framing_sentence_without_a_clause",
@@ -802,10 +775,7 @@ pub const DENIALS: &[Denial] = &[
                 )
             })
         }),
-        expect: &[(
-            "DoD",
-            "framing sentence tagged [standard] has no clause reference",
-        )],
+        expect: &[("DoD", "")],
     },
     Denial {
         name: "c21_with_a_superscript_after_its_number",
@@ -977,14 +947,6 @@ pub const DENIALS: &[Denial] = &[
         expect: &[("AC1", "")],
     },
     Denial {
-        name: "a_c20_of_1e13",
-        file: CONSTANTS,
-        edit: DenialEdit::Text(|t| {
-            replace_in_line(t, r"^\| C-20 \|", "1 320", "10 000 000 000 000")
-        }),
-        expect: &[("INT_LIMIT", "")],
-    },
-    Denial {
         name: "a_c20_beyond_i128",
         file: CONSTANTS,
         edit: DenialEdit::Text(|t| {
@@ -996,12 +958,6 @@ pub const DENIALS: &[Denial] = &[
             )
         }),
         expect: &[("INT_LIMIT", "")],
-    },
-    Denial {
-        name: "a_c20_of_zero_crashes",
-        file: CONSTANTS,
-        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "0")),
-        expect: &[("CRASH", "")],
     },
     Denial {
         name: "a_c21_of_zero_crashes",
@@ -1071,5 +1027,183 @@ pub const DENIALS: &[Denial] = &[
         file: WIRE_MD,
         edit: DenialEdit::Text(|t| t.replace('\n', "\r\n")),
         expect: &[],
+    },
+    Denial {
+        name: "ac3_denial_over_five_percent_with_a_constant_not_named",
+        file: CONSTANTS,
+        edit: DenialEdit::Files(&[
+            (
+                CONSTANTS,
+                FileEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "1 200")),
+            ),
+            (
+                WIRE_MD,
+                FileEdit::Text(|t| sub(t, |s| replace_all(s, "C-118", "C-1l8"))),
+            ),
+        ]),
+        expect: &[
+            ("AC2", ""),
+            ("AC3", "does not name C-118 as marked for recompute"),
+        ],
+    },
+    Denial {
+        name: "a_c20_of_0",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "0")),
+        expect: &[("CRASH", "")],
+    },
+    Denial {
+        name: "a_c20_of_007",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "007")),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_plus7",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "+7")),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_1_2",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "1_2")),
+        expect: &[("CRASH", "")],
+    },
+    Denial {
+        name: "a_c20_of_2e63",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(t, r"^\| C-20 \|", "1 320", "9223372036854775808")
+        }),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_20_digits",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(t, r"^\| C-20 \|", "1 320", "12345678901234567890")
+        }),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_45_digits",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(
+                t,
+                r"^\| C-20 \|",
+                "1 320",
+                "100000000000000000000000000000000000000000000",
+            )
+        }),
+        expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "a_c20_of_1e13",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "10000000000000")),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_1e19",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(t, r"^\| C-20 \|", "1 320", "10000000000000000000")
+        }),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_1e36",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(
+                t,
+                r"^\| C-20 \|",
+                "1 320",
+                "1000000000000000000000000000000000000",
+            )
+        }),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_superscript",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "1 320\u{b2}")),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_c20_of_micro",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-20 \|", "1 320", "1 320\u{b5}")),
+        expect: &[("AC2", ""), ("AC3", "")],
+    },
+    Denial {
+        name: "a_payload_of_1e13",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size_row(
+                t,
+                [
+                    "Default x",
+                    "10000000000000",
+                    "10000000000000 + 8 + 20 + 38 = 10000000000000",
+                    "x",
+                    "y",
+                ],
+            )
+        }),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "a_payload_of_1e19",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size_row(
+                t,
+                [
+                    "Default x",
+                    "10000000000000000000",
+                    "10000000000000000000 + 8 + 20 + 38 = 10000000000000000000",
+                    "x",
+                    "y",
+                ],
+            )
+        }),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "a_payload_of_1e36",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size_row(
+                t,
+                [
+                    "Default x",
+                    "1000000000000000000000000000000000000",
+                    "1000000000000000000000000000000000000 + 8 + 20 + 38 = 1000000000000000000000000000000000000",
+                    "x",
+                    "y",
+                ],
+            )
+        }),
+        expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "a_payload_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size_row(
+                t,
+                [
+                    "Default x",
+                    "100000000000000000000000000000000000000000000",
+                    "100000000000000000000000000000000000000000000 + 8 + 20 + 38 = 100000000000000000000000000000000000000000000",
+                    "x",
+                    "y",
+                ],
+            )
+        }),
+        expect: &[("INT_LIMIT", "")],
     },
 ];

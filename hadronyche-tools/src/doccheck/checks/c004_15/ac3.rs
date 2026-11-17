@@ -1,8 +1,9 @@
 //! AC 3 (the 5 % rule) and the audio declared rate.
 
-use super::num::{Fails, close, mbit_list, sentences, to_int, tol_of};
+use super::num::{Fails, close, fl, mbit_list, sentences, to_int, tol_of};
 use super::setup::Calc;
 use super::units::Sub;
+use crate::doccheck::checked::{add, mul, sum};
 use crate::doccheck::report::{Flow, crash};
 use crate::doccheck::text::{has, has_i, rx};
 
@@ -74,8 +75,8 @@ pub(crate) fn rule(sub: &Sub, sents: &[String], k: &Calc, f: &mut Fails) {
 /// If a sentence states an audio stream's declared rate, it is the cap form:
 /// cap + audio + 66 bytes at 2 000 packets/s.
 pub(crate) fn declared_rate(sents: &[String], k: &Calc, f: &mut Fails) -> Flow<()> {
-    let aud_bytes = k.cap + k.audio + k.ovh;
-    let aud_bits = aud_bytes * 8 * k.slice_rate;
+    let aud_bytes = sum([k.cap, k.audio, k.ovh]);
+    let aud_bits = mul(mul(aud_bytes, 8), k.slice_rate);
     for t in sents
         .iter()
         .filter(|t| has_i("declared", t) && has_i("audio", t))
@@ -90,26 +91,24 @@ pub(crate) fn declared_rate(sents: &[String], k: &Calc, f: &mut Fails) -> Flow<(
         let mb = mbit_list(t);
         if !mb.is_empty() || !bits.is_empty() {
             let allowed: Vec<f64> = [
-                k.def_pay + k.ovh,
-                k.v1_largest_pay + k.ovh,
-                k.ann_max_pay + k.ovh,
+                add(k.def_pay, k.ovh),
+                add(k.v1_largest_pay, k.ovh),
+                add(k.ann_max_pay, k.ovh),
                 aud_bytes,
             ]
             .iter()
-            .map(|w| (*w * 8 * k.slice_rate) as f64 / 1e6)
+            .map(|w| fl(mul(mul(*w, 8), k.slice_rate)) / 1e6)
             .collect();
             let all_known = mb
                 .iter()
                 .all(|&(v, d)| allowed.iter().any(|&a| close(v, a, tol_of(d))))
                 && bits
                     .iter()
-                    .all(|&b| allowed.iter().any(|&a| (b as f64 - a * 1e6).abs() <= 0.5));
+                    .all(|&b| allowed.iter().any(|&a| (fl(b) - a * 1e6).abs() <= 0.5));
             let cap_form = mb
                 .iter()
-                .any(|&(v, d)| close(v, aud_bits as f64 / 1e6, tol_of(d)))
-                || bits
-                    .iter()
-                    .any(|&b| (b as f64 - aud_bits as f64).abs() <= 0.5);
+                .any(|&(v, d)| close(v, fl(aud_bits) / 1e6, tol_of(d)))
+                || bits.iter().any(|&b| (fl(b) - fl(aud_bits)).abs() <= 0.5);
             if !all_known {
                 f.fail("AC5", format!("an audio declared rate is stated as a figure the layout does not compute (the cap form is {aud_bytes} bytes, {aud_bits} bit/s): {}", head(t, 100)));
             } else if !cap_form {

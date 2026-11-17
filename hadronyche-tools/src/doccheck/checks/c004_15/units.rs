@@ -2,7 +2,7 @@
 //! (each row carries its caption and header in its text), and the
 //! equations written in them.
 
-use super::num::{Dec, mbit_list, nrm, to_int};
+use super::num::{Dec, fl, mbit_list, nrm, to_int};
 use crate::doccheck::family004::heading_index;
 use crate::doccheck::markdown::code_mask;
 use crate::doccheck::policy::FencePolicy;
@@ -245,10 +245,10 @@ pub(crate) fn equations(text: &str) -> Flow<Vec<Eq>> {
         let frac = m.get(3).map(|x| x.as_str());
         let rhs_raw = match frac {
             Some(f) => {
-                let Some(fl) = py_float(&format!("0.{f}")) else {
+                let Some(fv) = py_float(&format!("0.{f}")) else {
                     return crash("float()");
                 };
-                PyNum::Float(int_part as f64 + fl)
+                PyNum::Float(fl(int_part) + fv)
             }
             None => PyNum::Int(int_part),
         };
@@ -260,7 +260,7 @@ pub(crate) fn equations(text: &str) -> Flow<Vec<Eq>> {
         };
         let dec = frac.map_or(0, |f| f.chars().count());
         let base = if dec > 0 {
-            0.5 * 10f64.powf(-(dec as f64))
+            0.5 * 10f64.powf(-fl(i128::try_from(dec).unwrap_or_default()))
         } else if scale.is_some() {
             0.5
         } else {
@@ -271,8 +271,11 @@ pub(crate) fn equations(text: &str) -> Flow<Vec<Eq>> {
             (None, r) => (base, r),
         };
         let ok = match rhs {
-            PyNum::Int(r) => lhs_val == r || (lhs_val.abs_diff(r) as f64) <= tol + 1e-9,
-            PyNum::Float(r) => (lhs_val as f64 - r).abs() <= tol + 1e-9,
+            PyNum::Int(r) => {
+                lhs_val == r
+                    || i128::try_from(lhs_val.abs_diff(r)).is_ok_and(|d| fl(d) <= tol + 1e-9)
+            }
+            PyNum::Float(r) => (fl(lhs_val) - r).abs() <= tol + 1e-9,
         };
         out.push(Eq {
             terms: nums,

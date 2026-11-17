@@ -1,6 +1,7 @@
 //! The constants and the part sizes the check computes everything from.
 
-use super::num::{Dec, floats, ints, nrm, to_int};
+use super::num::{Dec, fl, floats, ints, nrm, to_int};
+use crate::doccheck::checked::{add, mul, sub, sum};
 use crate::doccheck::pycompat::{PyStr, splitlines};
 use crate::doccheck::pynum::{py_float, record_int_limit};
 use crate::doccheck::report::{Earlier, Flow, crash, exit};
@@ -38,12 +39,6 @@ pub(crate) struct Calc {
     pub doc: Doc,
 }
 
-/// The largest magnitude the arithmetic is computed with: the port
-/// multiplies a few such values in `i128` without overflow checks, so a
-/// larger number is red by rule (`INT_LIMIT`, recorded) like one beyond
-/// `i128`; the documents' values are a few thousand.
-const WORK_LIMIT: i128 = 1_000_000_000_000;
-
 /// `const_cell(cid)`: the third cell of the first row of `cid`, normalised.
 fn const_cell(src: &str, cid: &str) -> Option<String> {
     for line in splitlines(src) {
@@ -63,16 +58,10 @@ fn first<T: Copy>(v: &[T], what: &str) -> Flow<T> {
     v.first().copied().map_or_else(|| crash(what), Ok)
 }
 
-/// A value the arithmetic can use (see `WORK_LIMIT`).
+/// A parsed number; `None` is `int()`'s failure (a number beyond `i128` was
+/// recorded as `INT_LIMIT` by `parse_int`).
 fn small(n: Option<i128>, what: &str) -> Flow<i128> {
-    match n {
-        Some(n) if n.unsigned_abs() <= WORK_LIMIT.unsigned_abs() => Ok(n),
-        Some(n) => {
-            record_int_limit(&n.to_string());
-            crash(format!("{what} beyond the work limit"))
-        }
-        None => crash(format!("{what}: int() failed")),
-    }
+    n.map_or_else(|| crash(format!("{what}: int() failed or beyond i128")), Ok)
 }
 
 /// The constants the check reads (`CELL` and what is parsed from it).
@@ -147,14 +136,14 @@ fn consts(src: &str) -> Flow<Consts> {
         c22: c22v,
         cap,
         ch,
-        audio: ch * frames * sample,
+        audio: mul(mul(ch, frames), sample),
     })
 }
 
 /// A value as Python arithmetic sees it: an int or a bool (`True + 1`).
 fn int_like(v: &Value) -> Option<i128> {
     match v {
-        Value::Int(n) => small(Some(*n), "toml int").ok(),
+        Value::Int(n) => Some(*n),
         Value::Bool(b) => Some(i128::from(*b)),
         Value::BigInt(s) => {
             record_int_limit(s);
@@ -234,29 +223,31 @@ fn parts(mp: &Table, count: &Table, entry: &Table) -> Flow<[i128; 6]> {
     let flds = fields(mp)?;
     let mut pkt = 0;
     for f in &flds {
-        if geti(f, "offset", 0)? + geti(f, "width", 0)? <= 128 {
-            pkt += idx(f, "width")?;
+        if add(geti(f, "offset", 0)?, geti(f, "width", 0)?) <= 128 {
+            pkt = add(pkt, idx(f, "width")?);
         }
     }
     let mut slice = 0;
     for f in &flds {
         let off = geti(f, "offset", -1)?;
         if 128 <= off && off < idx(count, "offset")? {
-            slice += idx(f, "width")?;
+            slice = add(slice, idx(f, "width")?);
         }
     }
     let (Some(ann_count), Some(ent)) = (fbytes(count), fbytes(entry)) else {
         return crash("None in arithmetic");
     };
     let entry_max = geti(entry, "max_count", 0)?;
-    if entry_max > WORK_LIMIT / 1_000_000 {
-        return crash("range(ENTRY_MAX + 1) does not finish");
+    if entry_max > 100_000_000 {
+        return crash(
+            "range(ENTRY_MAX + 1) does not finish (the script runs out of time or memory)",
+        );
     }
-    let start = idx(entry, "offset")? + idx(entry, "width")? * entry_max;
+    let start = add(idx(entry, "offset")?, mul(idx(entry, "width")?, entry_max));
     let mut ext = 0;
     for f in &flds {
         if geti(f, "offset", -1)? >= start {
-            ext += idx(f, "width")?;
+            ext = add(ext, idx(f, "width")?);
         }
     }
     Ok([
@@ -301,17 +292,25 @@ fn size(m: &Table) -> Flow<i128> {
 fn header_figures(p: [i128; 6], cwv: i128, cksum: i128, max_hdr: i128, cap: i128) -> Vec<i128> {
     let [pkt, slice, ann_count, ent, entry_max, ext] = p;
     let mut hdr = vec![
-        pkt + slice + ann_count + cwv + cksum,
-        pkt + slice + ann_count + ent + ext + cksum,
-        pkt + slice + ann_count + ent + cksum,
+        sum([pkt, slice, ann_count, cwv, cksum]),
+        sum([pkt, slice, ann_count, ent, ext, cksum]),
+        sum([pkt, slice, ann_count, ent, cksum]),
         max_hdr,
         cap,
     ];
     for k in 0..=entry_max {
         for e in [0, 1] {
-            hdr.push(pkt + slice + ann_count + ent * k + ext * e + cwv + cksum);
+            hdr.push(sum([
+                pkt,
+                slice,
+                ann_count,
+                mul(ent, k),
+                mul(ext, e),
+                cwv,
+                cksum,
+            ]));
         }
-        hdr.push(cwv + cksum + pkt + slice + ann_count + ent * k);
+        hdr.push(sum([cwv, cksum, pkt, slice, ann_count, mul(ent, k)]));
     }
     hdr
 }
@@ -356,29 +355,35 @@ pub(crate) fn calc(
     };
     let [pkt, slice, ann_count, ent, entry_max, ext] = parts(mp, count, entry)?;
     let (cksum, cwv) = (size(ck)?, size(cw)?);
-    let def_pay = pkt + slice + ann_count + cwv + cksum + c.audio;
-    let ann_max_pay = pkt + slice + ann_count + ent * entry_max + ext + cwv + cksum + c.audio;
-    let v1 = pkt + slice + ann_count + ent + ext + cwv + cksum + c.audio;
+    let def_pay = sum([pkt, slice, ann_count, cwv, cksum, c.audio]);
+    let ann_max_pay = sum([
+        pkt,
+        slice,
+        ann_count,
+        mul(ent, entry_max),
+        ext,
+        cwv,
+        cksum,
+        c.audio,
+    ]);
+    let v1 = sum([pkt, slice, ann_count, ent, ext, cwv, cksum, c.audio]);
     let (ovh, eth) = (28 + 38, 38);
-    let wire = def_pay + ovh;
-    let bits_stream = wire * 8 * c.slice_rate;
+    let wire = add(def_pay, ovh);
+    let bits_stream = mul(mul(wire, 8), c.slice_rate);
     if c.ch == 0 || c.c20 == 0 || c.c21 == 0.0 {
         return crash("ZeroDivisionError");
     }
     #[allow(clippy::cast_precision_loss)]
-    let (rate_stream, diff_b) = (bits_stream as f64 / 1e6, wire - c.c20);
+    let (rate_stream, diff_b) = (fl(bits_stream) / 1e6, sub(wire, c.c20));
     #[allow(clippy::cast_precision_loss)]
-    let (pct_b, rate_ch) = (
-        diff_b as f64 / c.c20 as f64 * 100.0,
-        rate_stream / c.ch as f64,
-    );
+    let (pct_b, rate_ch) = (fl(diff_b) / fl(c.c20) * 100.0, rate_stream / fl(c.ch));
     let diff_r = rate_stream - c.c21;
     let pct_r = diff_r / c.c21 * 100.0;
     let hdr = header_figures(
         [pkt, slice, ann_count, ent, entry_max, ext],
         cwv,
         cksum,
-        ann_max_pay - c.audio,
+        sub(ann_max_pay, c.audio),
         c.cap,
     );
     if let Some(b) = budget_default(&doc)
@@ -404,7 +409,7 @@ pub(crate) fn calc(
         ann_max_pay,
         v1_largest_pay: v1,
         wire,
-        wire_max: ann_max_pay + ovh,
+        wire_max: add(ann_max_pay, ovh),
         ovh,
         eth,
         bits_stream,

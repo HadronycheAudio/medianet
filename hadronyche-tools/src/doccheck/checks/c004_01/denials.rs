@@ -2,13 +2,9 @@
 //! port (and the old script) must report. Consumed by the tests and by
 //! `doccheck-equiv 004-01 --denials-only`. An entry with no expectation is
 //! one the port must pass (the script passes it too).
-//!
-//! Not in the list: "C-22 has no value in the Constants subsection" needs
-//! the constants table and wire.md edited together (a denial edits one
-//! file); `tests/doc_004_01.rs` carries it as a test.
 
 use super::{CONSTANTS_MD, WIRE_MD};
-use crate::doccheck::denial::{Denial, DenialEdit};
+use crate::doccheck::denial::{Denial, DenialEdit, FileEdit};
 use crate::doccheck::mutate::{replace_all, replace_in_line, within_section};
 use crate::doccheck::text::rx;
 
@@ -609,5 +605,22 @@ pub const DENIALS: &[Denial] = &[
         file: CONSTANTS_MD,
         edit: DenialEdit::Text(|t| replace_in_line(t, r"^\| C-40 \|", "100 ms", "100 \u{b5}s")),
         expect: &[],
+    },
+    Denial {
+        name: "ac7_denial_an_id_without_a_value",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Files(&[
+            (
+                CONSTANTS_MD,
+                FileEdit::Text(|t| set_cell(t, r"^\| C-22 \|", 2, "tbd")),
+            ),
+            (
+                WIRE_MD,
+                FileEdit::Text(|t| {
+                    within_section(t, "^Constants$", |s| set_cell(s, r"^\| C-22 \|", 2, "n/a"))
+                }),
+            ),
+        ]),
+        expect: &[("AC7", "")],
     },
 ];

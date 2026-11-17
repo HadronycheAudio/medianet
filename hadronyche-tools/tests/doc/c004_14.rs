@@ -23,9 +23,8 @@
 //! reproduces both (the first is dropped by the same exit).
 
 use hadronyche_tools::doccheck::checks::c004_14::SPEC;
-use hadronyche_tools::doccheck::mutate::{replace_all, within_section};
-use hadronyche_tools::doccheck::testing::{red_phase, repo, report_of};
-use hadronyche_tools::doccheck::{assert_criterion, assert_fails};
+use hadronyche_tools::doccheck::testing::{red_phase, report_of};
+use hadronyche_tools::doccheck::assert_criterion;
 
 /// AC1 — "The default-packet budget shows 6 channels plus all mandatory
 /// headers fit in 1 472 bytes and states the spare bytes as a number (epic
@@ -138,32 +137,6 @@ fn dod_the_machine_readable_tables_parse() {
 
 // ---------------------------------------------------------------- denials
 
-/// "A falsified verdict must say C-04 falls to 5 channels" needs the
-/// constants (a header cap below the mandatory 46 bytes) and wire.md (no
-/// "5 channels") edited together; a denial edits one file.
-#[test]
-fn ac4_denial_a_falsified_verdict_without_five_channels() {
-    let docs = repo()
-        .mutate("doc/design/02-constants.md", |t| {
-            replace_all(
-                t,
-                "at most 100 bytes for all headers",
-                "at most 40 bytes for all headers",
-            )
-        })
-        .mutate("doc/design/spec/wire.md", |t| {
-            within_section(t, "^Size budget$", |s| {
-                hadronyche_tools::doccheck::text::rx(r"(?i)5 channels|five channels")
-                    .replace_all(s, "fewer channels")
-            })
-        });
-    assert_fails(
-        &SPEC.evaluate(&docs),
-        "AC4",
-        "must say C-04 falls to 5 channels",
-    );
-}
-
 /// The tree at the commit that added the script fails the criteria the
 /// script failed.
 #[test]
@@ -177,6 +150,33 @@ fn red_phase_tree_fails_the_criteria_the_script_failed() {
 
 hadronyche_tools::denial_tests!(
     SPEC;
+    ac4_denial_a_falsified_verdict_without_five_channels,
+    a_total_of_0,
+    a_max_size_of_0,
+    a_total_of_007,
+    a_max_size_of_007,
+    a_total_of_plus7,
+    a_max_size_of_plus7,
+    a_total_of_1_2,
+    a_max_size_of_1_2,
+    a_total_of_2e63,
+    a_max_size_of_2e63,
+    a_total_of_20_digits,
+    a_max_size_of_20_digits,
+    a_total_of_45_digits,
+    a_max_size_of_45_digits,
+    a_total_of_1e13,
+    a_max_size_of_1e13,
+    a_total_of_1e19,
+    a_max_size_of_1e19,
+    a_total_of_1e36,
+    a_max_size_of_1e36,
+    a_total_of_superscript,
+    a_total_of_micro,
+    a_c02_frames_of_1e13,
+    a_c02_frames_of_1e19,
+    a_c02_frames_of_1e36,
+    a_c02_frames_of_45_digits,
     denial_wire_md_missing,
     denial_wire_toml_missing,
     denial_constants_missing,
@@ -266,8 +266,6 @@ hadronyche_tools::denial_tests!(
     a_max_size_with_an_underscore_passes,
     a_hex_max_size_passes,
     a_zero_padded_max_size_passes,
-    a_max_size_of_1e19,
-    a_max_size_beyond_i128,
     a_boolean_max_size,
     fields_that_is_an_int_then_a_field_crashes,
     fields_that_is_a_list_of_an_int_crashes,
@@ -275,9 +273,6 @@ hadronyche_tools::denial_tests!(
     a_toml_value_with_trailing_tabs_and_a_comment_passes,
     a_field_after_a_comment_line_passes,
     a_zero_sparse_entry_size,
-    a_total_of_1e13,
-    a_total_of_1e19,
-    a_total_beyond_i128,
     a_total_with_an_underscore,
     a_total_written_1e3,
     a_total_with_a_decimal_part,
@@ -286,5 +281,4 @@ hadronyche_tools::denial_tests!(
     a_spare_with_a_spaced_minus,
     a_spare_with_a_deficit_word,
     crlf_line_ends_pass,
-    a_constant_of_1e13,
 );

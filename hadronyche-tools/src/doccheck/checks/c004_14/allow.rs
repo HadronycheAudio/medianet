@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 
 use super::comp::{Comp, Consts};
 use super::section::{STable, Sec, norm, row_label, sentences};
+use crate::doccheck::checked::{add, sub};
 use crate::doccheck::pycompat::{PyStr, parse_int};
 use crate::doccheck::report::{Flow, Report, crash};
 use crate::doccheck::tables::{NUM_004_14, cell_number_004_14, first_int_004_14};
@@ -85,9 +86,7 @@ fn column_of(hdr: &[String], pattern: &str, exclude: Option<&str>) -> Option<usi
 pub(crate) type AllowRow = (String, i128);
 
 fn cell(r: &[String], i: usize) -> Option<i128> {
-    r.get(i)
-        .and_then(|c| cell_number_004_14(c).ok().flatten())
-        .map(super::comp::limited)
+    r.get(i).and_then(|c| cell_number_004_14(c).ok().flatten())
 }
 
 /// One allowance row; returns its allowance.
@@ -125,9 +124,9 @@ fn allowance_row(
     };
     seen.insert(path);
     let expect = if bound == c.cap {
-        c.cap - counted - cksum
+        sub(sub(c.cap, counted), cksum)
     } else if bound == c.pay_def || bound == c.fb_pay {
-        bound - audio - counted - cksum
+        sub(sub(sub(bound, audio), counted), cksum)
     } else {
         f.fail("AC6", format!("allowance row {lab:?}: bound {bound} is neither the cap {} nor a path payload ({} or {})", c.cap, c.pay_def, c.fb_pay));
         return None;
@@ -237,14 +236,14 @@ fn sparse_sentence(t: &str, k: &Comp, allowances: &[i128]) -> Flow<bool> {
         let Some(tr) = k.transport else {
             return crash("TypeError: TRANSPORT + SP_HDR");
         };
-        if a >= tr + k.sp_hdr {
+        if a >= add(tr, k.sp_hdr) {
             let Some(se) = k.sp_entry else {
                 return crash("TypeError: // SP_ENTRY");
             };
             if se == 0 {
                 return crash("ZeroDivisionError");
             }
-            cands.insert((a - tr - k.sp_hdr).div_euclid(se));
+            cands.insert(sub(sub(a, tr), k.sp_hdr).div_euclid(se));
         }
     }
     for s in sentences(t) {

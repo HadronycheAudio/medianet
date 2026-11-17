@@ -1,6 +1,7 @@
 //! The constants the budget needs, and the part sizes computed from the
 //! landed toml tables (read by the library's `Line004_14` reader).
 
+use crate::doccheck::checked::{add, mul, sub, sum};
 use crate::doccheck::pycompat::{PyStr, splitlines};
 use crate::doccheck::pynum::record_int_limit;
 use crate::doccheck::report::{Earlier, Flow, Report, crash, exit};
@@ -34,26 +35,9 @@ pub(crate) fn const_value(src: &str, cid: &str) -> Option<String> {
     None
 }
 
-/// The largest magnitude the budget arithmetic is computed with: the port
-/// multiplies up to three such values in `i128` without overflow checks, so
-/// a larger number is red by rule (`INT_LIMIT`, recorded) like one beyond
-/// `i128`; the documents' values are a few thousand.
-const WORK_LIMIT: i128 = 1_000_000_000_000;
-
-pub(crate) fn limited(n: i128) -> i128 {
-    if n.unsigned_abs() > WORK_LIMIT.unsigned_abs() {
-        record_int_limit(&n.to_string());
-        return 0;
-    }
-    n
-}
-
 /// `first_int(const_value(cid))`, `None` when there is no such number.
 fn first(src: &str, cid: &str) -> Option<i128> {
-    first_int_004_14(&const_value(src, cid)?)
-        .ok()
-        .flatten()
-        .map(limited)
+    first_int_004_14(&const_value(src, cid)?).ok().flatten()
 }
 
 /// Reads the constants; `Err` is the script's `FAIL setup` exit.
@@ -62,8 +46,7 @@ pub(crate) fn consts(src: &str) -> Flow<Consts> {
     let (fb_mtu, fb_pay) = (first(src, "C-06"), first(src, "C-17"));
     let cap = rx(r"at most\s+(\d+)\s+bytes")
         .captures(&const_value(src, "C-137").unwrap_or_default())
-        .and_then(|c| crate::doccheck::pycompat::parse_int(&c[1]).ok())
-        .map(limited);
+        .and_then(|c| crate::doccheck::pycompat::parse_int(&c[1]).ok());
     let (Some(ch), Some(frames), Some(sample), Some(fb_mtu), Some(fb_pay), Some(cap)) =
         (ch, frames, sample, fb_mtu, fb_pay, cap)
     else {
@@ -73,7 +56,7 @@ pub(crate) fn consts(src: &str) -> Flow<Consts> {
             Earlier::Kept,
         );
     };
-    let pay_fb = fb_mtu - 20 - 8;
+    let pay_fb = sub(sub(fb_mtu, 20), 8);
     if pay_fb != fb_pay {
         return exit(
             "setup",
@@ -81,7 +64,7 @@ pub(crate) fn consts(src: &str) -> Flow<Consts> {
             Earlier::Kept,
         );
     }
-    let audio = ch * frames * sample;
+    let audio = mul(mul(ch, frames), sample);
     Ok(Consts {
         c04: const_value(src, "C-04"),
         sample,
@@ -114,31 +97,31 @@ pub(crate) struct Comp {
 
 impl Comp {
     pub fn ann_max(&self) -> i128 {
-        self.ann_count + self.entry * self.entry_max
+        add(self.ann_count, mul(self.entry, self.entry_max))
     }
 
     pub fn mandatory(&self) -> i128 {
-        self.pkt + self.slice + self.ann_count + self.cw + self.cksum
+        sum([self.pkt, self.slice, self.ann_count, self.cw, self.cksum])
     }
 
     pub fn max_non_audio(&self) -> i128 {
-        self.mandatory() + self.entry * self.entry_max + self.ext
+        sum([self.mandatory(), mul(self.entry, self.entry_max), self.ext])
     }
 
     /// `ALLOWED_ANN_BYTES`.
     pub fn allowed_ann(&self) -> Vec<i128> {
         (0..=self.entry_max)
-            .map(|k| self.ann_count + self.entry * k)
+            .map(|k| add(self.ann_count, mul(self.entry, k)))
             .collect()
     }
 
     /// `ALLOWED_COUNTED`.
     pub fn allowed_counted(&self) -> Vec<i128> {
-        let base = self.pkt + self.slice + self.ann_count + self.cw;
+        let base = sum([self.pkt, self.slice, self.ann_count, self.cw]);
         let mut out = Vec::new();
         for k in 0..=self.entry_max {
             for e in [0, self.ext] {
-                out.push(base + self.entry * k + e);
+                out.push(sum([base, mul(self.entry, k), e]));
             }
         }
         out
@@ -149,7 +132,7 @@ impl Comp {
 /// a bool; an int beyond `i128` is red by rule (recorded) and reads 0.
 fn int_like(v: &Value) -> Option<i128> {
     match v {
-        Value::Int(n) => Some(limited(*n)),
+        Value::Int(n) => Some(*n),
         Value::Bool(b) => Some(i128::from(*b)),
         Value::BigInt(s) => {
             record_int_limit(s);
@@ -218,9 +201,10 @@ fn field<'a>(m: Option<&'a Table>, name: &str) -> Flow<Option<&'a Table>> {
 fn by_name_hashable(d: &Doc) -> Flow<()> {
     for m in &d.messages {
         if let Some(Value::List(xs)) = m.get("name")
-            && !xs.is_empty() {
-                return crash("TypeError: unhashable type: 'list'");
-            }
+            && !xs.is_empty()
+        {
+            return crash("TypeError: unhashable type: 'list'");
+        }
     }
     Ok(())
 }
@@ -268,8 +252,8 @@ fn media_parts(mp: &Table, count: &Table, entry: &Table, raw: &mut Raw) -> Flow<
     let flds = fields(mp)?;
     let mut hdr = 0;
     for f in &flds {
-        if geti(f, "offset", 0)? + geti(f, "width", 0)? <= 128 {
-            hdr += idx(f, "width")?;
+        if add(geti(f, "offset", 0)?, geti(f, "width", 0)?) <= 128 {
+            hdr = add(hdr, idx(f, "width")?);
         }
     }
     raw.pkt = Some(hdr.div_euclid(8));
@@ -277,18 +261,21 @@ fn media_parts(mp: &Table, count: &Table, entry: &Table, raw: &mut Raw) -> Flow<
     for f in &flds {
         let off = geti(f, "offset", -1)?;
         if 128 <= off && off < idx(count, "offset")? {
-            sl += idx(f, "width")?;
+            sl = add(sl, idx(f, "width")?);
         }
     }
     raw.slice = Some(sl.div_euclid(8));
     raw.ann_count = Some(fbytes(Some(count)));
     raw.entry = Some(fbytes(Some(entry)));
     raw.entry_max = Some(entry.get("max_count").and_then(int_like));
-    let start = idx(entry, "offset")? + idx(entry, "width")? * idx(entry, "max_count")?;
+    let start = add(
+        idx(entry, "offset")?,
+        mul(idx(entry, "width")?, idx(entry, "max_count")?),
+    );
     let mut ext = 0;
     for f in &flds {
         if geti(f, "offset", -1)? >= start {
-            ext += idx(f, "width")?;
+            ext = add(ext, idx(f, "width")?);
         }
     }
     raw.ext = Some(ext.div_euclid(8));
@@ -327,12 +314,13 @@ pub(crate) fn components(d: &Doc, c: &Consts, r: &mut Report) -> Flow<Comp> {
     raw.transport = transport_m.map(size_of);
     raw.sp_entry = sp_entry_m.map(size_of);
     if let (Some(sm), Some(sef), Some(sp_m)) = (sparse_m, sparse_entry_f, sp_entry_m)
-        && sp_m.get("max_size").is_some_and(|v| *v != Value::None) {
-            let (Some(max), Some(sp)) = (size_of(sm), size_of(sp_m)) else {
-                return crash("TypeError in max_size - sp_entry * max_count");
-            };
-            raw.sp_hdr = Some(max - sp * geti(sef, "max_count", 0)?);
-        }
+        && sp_m.get("max_size").is_some_and(|v| *v != Value::None)
+    {
+        let (Some(max), Some(sp)) = (size_of(sm), size_of(sp_m)) else {
+            return crash("TypeError in max_size - sp_entry * max_count");
+        };
+        raw.sp_hdr = Some(sub(max, mul(sp, geti(sef, "max_count", 0)?)));
+    }
     raw.sample_bytes = audio_m.and(sample_f).map(|f| fbytes(Some(f)));
     finish(raw, mp, c, r)
 }
@@ -365,8 +353,10 @@ fn finish(raw: Raw, mp: Option<&Table>, c: &Consts, r: &mut Report) -> Flow<Comp
     }
     let need =
         |v: Option<Option<i128>>| v.flatten().map_or_else(|| crash("None in arithmetic"), Ok);
-    if need(raw.entry_max)? > WORK_LIMIT / 1_000_000 {
-        return crash("range(ENTRY_MAX + 1) does not finish");
+    if need(raw.entry_max)? > 100_000_000 {
+        return crash(
+            "range(ENTRY_MAX + 1) does not finish (the script runs out of time or memory)",
+        );
     }
     let comp = Comp {
         pkt: raw.pkt.unwrap_or_default(),
@@ -398,14 +388,25 @@ fn finish(raw: Raw, mp: Option<&Table>, c: &Consts, r: &mut Report) -> Flow<Comp
         r.fail("AC5", "wire.toml announcement count is not one byte");
     }
     let start = raw.ext_start.unwrap_or_default();
-    let want = comp.pkt * 8 + comp.slice * 8 + comp.ann_count * 8 + comp.entry * 8 * comp.entry_max;
+    let want = sum([
+        mul(comp.pkt, 8),
+        mul(comp.slice, 8),
+        mul(comp.ann_count, 8),
+        mul(mul(comp.entry, 8), comp.entry_max),
+    ]);
     if start != want {
         r.fail(
             "AC5",
             "the measurement extension does not start where the maximal container ends",
         );
     }
-    let total = comp.pkt + comp.slice + comp.ann_count + comp.entry * comp.entry_max + comp.ext;
+    let total = sum([
+        comp.pkt,
+        comp.slice,
+        comp.ann_count,
+        mul(comp.entry, comp.entry_max),
+        comp.ext,
+    ]);
     if mp.and_then(size_of) != Some(total) {
         r.fail(
             "AC5",

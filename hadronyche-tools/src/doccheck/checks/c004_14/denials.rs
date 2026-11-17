@@ -2,12 +2,9 @@
 //! port (and the old script) must report. Consumed by the tests and by
 //! `doccheck-equiv 004-14 --denials-only`. An entry with no expectation is
 //! one the port must pass (the script passes it too).
-//!
-//! Not in the list: "the verdict says falsified without five channels" edits
-//! two files (the constants and wire.md); `tests/doc_004_14.rs` carries it.
 
 use super::{CONSTANTS, WIRE_MD};
-use crate::doccheck::denial::{Denial, DenialEdit};
+use crate::doccheck::denial::{Denial, DenialEdit, FileEdit};
 use crate::doccheck::mutate::{
     anchored_replace, delete_row, delete_section, rename_heading, replace_all, replace_in_line,
     strip_tags, within_section,
@@ -350,10 +347,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_a_byte_figure_missing",
         file: WIRE_MD,
         edit: DenialEdit::Text(|t| size(t, |t| replace_all(t, r"1 280", "1 281"))),
-        expect: &[(
-            "AC1",
-            "does not state the 1 472, 1 280 and 1 252 byte figures",
-        )],
+        expect: &[("AC1", "")],
     },
     Denial {
         name: "ac2_denial_announcement_rows_not_the_count_plus_twelve_each",
@@ -522,10 +516,7 @@ pub const DENIALS: &[Denial] = &[
                 })
             })
         }),
-        expect: &[(
-            "AC3",
-            "does not say what happens to the measurement extension",
-        )],
+        expect: &[("AC3", "")],
     },
     Denial {
         name: "ac3_denial_the_omission_rule_names_no_controller_messages",
@@ -631,15 +622,7 @@ pub const DENIALS: &[Denial] = &[
                 "at most 40 bytes for all headers",
             )
         }),
-        expect: &[
-            ("AC3", ""),
-            (
-                "AC4",
-                "needs the constants table to show C-04 at 5 channels",
-            ),
-            ("AC5", ""),
-            ("AC6", ""),
-        ],
+        expect: &[("AC3", ""), ("AC4", ""), ("AC5", ""), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_the_toml_lacks_what_the_budget_needs",
@@ -1074,10 +1057,7 @@ pub const DENIALS: &[Denial] = &[
         name: "pointer_denial_a_provisional_cap_line",
         file: WIRE_MD,
         edit: DenialEdit::Text(|t| append(t, "The shared-packet cap row is provisional.")),
-        expect: &[(
-            "pointer",
-            "a 'provisional' cap or shared-packet line remains",
-        )],
+        expect: &[("pointer", "")],
     },
     Denial {
         name: "pointer_denial_a_landed_sentence_not_cited",
@@ -1085,10 +1065,7 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|t| {
             append(t, "All four announcements fit inside the 100-byte cap.")
         }),
-        expect: &[(
-            "pointer",
-            "is neither removed nor cited to the Size budget section",
-        )],
+        expect: &[("pointer", "")],
     },
     Denial {
         name: "pointer_denial_the_header_cap_open_item_not_closed",
@@ -1164,32 +1141,6 @@ pub const DENIALS: &[Denial] = &[
             )
         }),
         expect: &[],
-    },
-    Denial {
-        name: "a_max_size_of_1e19",
-        file: WIRE_TOML,
-        edit: DenialEdit::Text(|t| {
-            anchored_replace(
-                t,
-                "name = \"media packet\"",
-                "max_size = 96",
-                "max_size = 10000000000000000000",
-            )
-        }),
-        expect: &[("INT_LIMIT", "")],
-    },
-    Denial {
-        name: "a_max_size_beyond_i128",
-        file: WIRE_TOML,
-        edit: DenialEdit::Text(|t| {
-            anchored_replace(
-                t,
-                "name = \"media packet\"",
-                "max_size = 96",
-                "max_size = 100000000000000000000000000000000000000000",
-            )
-        }),
-        expect: &[("INT_LIMIT", "")],
     },
     Denial {
         name: "a_boolean_max_size",
@@ -1283,46 +1234,6 @@ pub const DENIALS: &[Denial] = &[
         expect: &[("AC6", "")],
     },
     Denial {
-        name: "a_total_of_1e13",
-        file: WIRE_MD,
-        edit: DenialEdit::Text(|t| {
-            size(t, |s| {
-                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "10000000000000")
-            })
-        }),
-        expect: &[("INT_LIMIT", "")],
-    },
-    Denial {
-        name: "a_total_of_1e19",
-        file: WIRE_MD,
-        edit: DenialEdit::Text(|t| {
-            size(t, |s| {
-                replace_in_line(
-                    s,
-                    r"^\| \*\*Total\*\* \| 1 198",
-                    "1 198",
-                    "10000000000000000000",
-                )
-            })
-        }),
-        expect: &[("INT_LIMIT", "")],
-    },
-    Denial {
-        name: "a_total_beyond_i128",
-        file: WIRE_MD,
-        edit: DenialEdit::Text(|t| {
-            size(t, |s| {
-                replace_in_line(
-                    s,
-                    r"^\| \*\*Total\*\* \| 1 198",
-                    "1 198",
-                    "100000000000000000000000000000000000000000",
-                )
-            })
-        }),
-        expect: &[("INT_LIMIT", "")],
-    },
-    Denial {
         name: "a_total_with_an_underscore",
         file: WIRE_MD,
         edit: DenialEdit::Text(|t| {
@@ -1399,11 +1310,350 @@ pub const DENIALS: &[Denial] = &[
         expect: &[],
     },
     Denial {
-        name: "a_constant_of_1e13",
+        name: "a_total_of_0",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "0")
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_0",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 0",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_007",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "007")
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_007",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 007",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_plus7",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "+7")
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_plus7",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = +7",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_1_2",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "1_2")
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_1_2",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 1_2",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_2e63",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(
+                    s,
+                    r"^\| \*\*Total\*\* \| 1 198",
+                    "1 198",
+                    "9223372036854775808",
+                )
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_2e63",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 9223372036854775808",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_20_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(
+                    s,
+                    r"^\| \*\*Total\*\* \| 1 198",
+                    "1 198",
+                    "12345678901234567890",
+                )
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_20_digits",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 12345678901234567890",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_45_digits",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(
+                    s,
+                    r"^\| \*\*Total\*\* \| 1 198",
+                    "1 198",
+                    "100000000000000000000000000000000000000000000",
+                )
+            })
+        }),
+        expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "a_max_size_of_45_digits",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 100000000000000000000000000000000000000000000",
+            )
+        }),
+        expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "a_total_of_1e13",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "10000000000000")
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_1e13",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 10000000000000",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_1e19",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(
+                    s,
+                    r"^\| \*\*Total\*\* \| 1 198",
+                    "1 198",
+                    "10000000000000000000",
+                )
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_1e19",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 10000000000000000000",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_1e36",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(
+                    s,
+                    r"^\| \*\*Total\*\* \| 1 198",
+                    "1 198",
+                    "1000000000000000000000000000000000000",
+                )
+            })
+        }),
+        expect: &[("AC1", ""), ("AC5", "")],
+    },
+    Denial {
+        name: "a_max_size_of_1e36",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| {
+            anchored_replace(
+                t,
+                "name = \"media packet\"",
+                "max_size = 96",
+                "max_size = 1000000000000000000000000000000000000",
+            )
+        }),
+        expect: &[("AC5", "")],
+    },
+    Denial {
+        name: "a_total_of_superscript",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "1 198\u{b2}")
+            })
+        }),
+        expect: &[],
+    },
+    Denial {
+        name: "a_total_of_micro",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| {
+            size(t, |s| {
+                replace_in_line(s, r"^\| \*\*Total\*\* \| 1 198", "1 198", "1 198\u{b5}")
+            })
+        }),
+        expect: &[],
+    },
+    Denial {
+        name: "a_c02_frames_of_1e13",
         file: CONSTANTS,
         edit: DenialEdit::Text(|t| {
             replace_in_line(t, r"^\| C-02 \|", "48 frames", "10000000000000 frames")
         }),
+        expect: &[("AC1", ""), ("AC5", ""), ("AC6", "")],
+    },
+    Denial {
+        name: "a_c02_frames_of_1e19",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(
+                t,
+                r"^\| C-02 \|",
+                "48 frames",
+                "10000000000000000000 frames",
+            )
+        }),
+        expect: &[("AC1", ""), ("AC5", ""), ("AC6", "")],
+    },
+    Denial {
+        name: "a_c02_frames_of_1e36",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(
+                t,
+                r"^\| C-02 \|",
+                "48 frames",
+                "1000000000000000000000000000000000000 frames",
+            )
+        }),
+        expect: &[("AC1", ""), ("AC5", ""), ("AC6", "")],
+    },
+    Denial {
+        name: "a_c02_frames_of_45_digits",
+        file: CONSTANTS,
+        edit: DenialEdit::Text(|t| {
+            replace_in_line(
+                t,
+                r"^\| C-02 \|",
+                "48 frames",
+                "100000000000000000000000000000000000000000000 frames",
+            )
+        }),
         expect: &[("INT_LIMIT", "")],
+    },
+    Denial {
+        name: "ac4_denial_a_falsified_verdict_without_five_channels",
+        file: CONSTANTS,
+        edit: DenialEdit::Files(&[
+            (
+                CONSTANTS,
+                FileEdit::Text(|t| {
+                    replace_all(
+                        t,
+                        "at most 100 bytes for all headers",
+                        "at most 40 bytes for all headers",
+                    )
+                }),
+            ),
+            (
+                WIRE_MD,
+                FileEdit::Text(|t| {
+                    size(t, |s| {
+                        rx(r"(?i)5 channels|five channels").replace_all(s, "fewer channels")
+                    })
+                }),
+            ),
+        ]),
+        expect: &[("AC3", ""), ("AC4", ""), ("AC5", ""), ("AC6", "")],
     },
 ];

@@ -1,10 +1,11 @@
 //! The worked-example table: numbers in cells (`NUM_RE`), the direction of
 //! a row, and the arithmetic of the section's own rule, in exact integers.
 
+use crate::doccheck::checked::{add, mul, sub};
 use crate::doccheck::markdown::Markdown;
 use crate::doccheck::policy::{FencePolicy, TableRules};
 use crate::doccheck::pycompat::{PyStr, parse_int};
-use crate::doccheck::pynum::{Fraction, py_float, record_int_limit};
+use crate::doccheck::pynum::{Fraction, py_float};
 use crate::doccheck::text::{has, rx};
 
 /// A number read from a cell: an integer, or a decimal that is not whole
@@ -24,33 +25,14 @@ impl Num {
     }
 }
 
-/// `a op b` in `i128`; beyond it the check is red by rule (`INT_LIMIT`,
-/// recorded) and the result is 0.
-fn limited(what: &str, v: Option<i128>) -> i128 {
-    v.unwrap_or_else(|| {
-        record_int_limit(what);
-        0
-    })
-}
-
 /// `floor((t - origin) * 12 / 125 000)` (`//`).
 pub(crate) fn floor_to_position(t: i128, origin: i128) -> i128 {
-    let p = t.checked_sub(origin).and_then(|d| d.checked_mul(12));
-    limited("floor_to_position", p).div_euclid(125_000)
+    mul(sub(t, origin), 12).div_euclid(125_000)
 }
 
 /// `ceil(p * 31 250 / 3)`: `-((-a) // b)`.
 pub(crate) fn ceil_to_offset(p: i128) -> i128 {
-    let a = limited("ceil_to_offset", p.checked_mul(31_250));
-    -((-a).div_euclid(3))
-}
-
-fn add(a: i128, b: i128) -> i128 {
-    limited("origin + n", a.checked_add(b))
-}
-
-fn sub(a: i128, b: i128) -> i128 {
-    limited("t - origin", a.checked_sub(b))
+    sub(0, sub(0, mul(p, 31_250)).div_euclid(3))
 }
 
 const NUM_RE: &str = r"(?<![\w.\-/])([+\-]?)(\d+(?:[   ]\d{3})*(?:\.\d+)?)(?![\w])";
@@ -67,11 +49,10 @@ pub(crate) fn cell_numbers(cell: &str) -> Vec<(Num, bool)> {
         let val = if body.contains('.') {
             let Some(f) = py_float(&body) else { continue };
             if f.fract() == 0.0 {
-                if f.abs() >= 1.7e38 {
-                    record_int_limit(&body);
-                    continue;
+                match Fraction::from_f64(f) {
+                    Some(fr) => Num::Int(fr.numerator()),
+                    None => continue,
                 }
-                Num::Int(f as i128)
             } else {
                 match Fraction::from_f64(f) {
                     Some(fr) => Num::Frac(fr.limit_denominator(1_000_000)),

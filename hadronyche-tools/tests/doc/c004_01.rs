@@ -15,9 +15,8 @@
 //! note, which is not an assertion and is not ported.
 
 use hadronyche_tools::doccheck::checks::c004_01::SPEC;
-use hadronyche_tools::doccheck::mutate::within_section;
-use hadronyche_tools::doccheck::testing::{red_phase, repo};
-use hadronyche_tools::doccheck::{assert_criterion, assert_fails};
+use hadronyche_tools::doccheck::testing::red_phase;
+use hadronyche_tools::doccheck::assert_criterion;
 
 use hadronyche_tools::doccheck::testing::report_of;
 
@@ -69,39 +68,6 @@ fn ac7_the_constants_subsection() {
     assert_criterion(&report_of(&SPEC), "AC7");
 }
 
-/// "C-22 has no value in the Constants subsection" needs the constants
-/// table and wire.md edited together (a denial edits one file): C-22's
-/// value without a number there, a three-character cell here.
-#[test]
-fn ac7_denial_an_id_without_a_value() {
-    let cell = |t: &str, text: &str| {
-        let mut done = false;
-        t.split('\n')
-            .map(|l| {
-                if !done && l.starts_with("| C-22 |") {
-                    done = true;
-                    let mut c: Vec<String> = l.split('|').map(String::from).collect();
-                    c[3] = format!(" {text} ");
-                    c.join("|")
-                } else {
-                    l.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let docs = repo()
-        .mutate("doc/design/02-constants.md", |t| cell(t, "tbd"))
-        .mutate("doc/design/spec/wire.md", |t| {
-            within_section(t, "^Constants$", |s| cell(s, "n/a"))
-        });
-    assert_fails(
-        &SPEC.evaluate(&docs),
-        "AC7",
-        "C-22 has no value in the Constants subsection",
-    );
-}
-
 /// The tree at the commit that added the script fails every criterion.
 #[test]
 fn red_phase_tree_fails_every_criterion() {
@@ -114,6 +80,7 @@ fn red_phase_tree_fails_every_criterion() {
 
 hadronyche_tools::denial_tests!(
     SPEC;
+    ac7_denial_an_id_without_a_value,
     denial_wire_md_missing,
     ac1_denial_no_byte_order_heading,
     ac1_denial_no_single_order,

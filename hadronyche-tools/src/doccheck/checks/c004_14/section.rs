@@ -145,7 +145,6 @@ pub(crate) fn cell_num(row: &[String], c: usize) -> Option<i128> {
     cell_number_004_14(row.get(c).map_or("", String::as_str))
         .ok()
         .flatten()
-        .map(super::comp::limited)
 }
 
 /// `re.split(r"(?<=[.;])\s+", text)`.

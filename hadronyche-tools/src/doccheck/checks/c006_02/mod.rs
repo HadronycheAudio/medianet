@@ -27,9 +27,10 @@ mod prose;
 mod rows;
 
 use super::{CheckSpec, Target};
+use crate::doccheck::family006::{norm_lines, norm_text};
 use crate::doccheck::markdown::Markdown;
 use crate::doccheck::policy::{FencePolicy, HeadingMatch, TomlReader};
-use crate::doccheck::pycompat::{PyStr, nfkc, parse_int, splitlines, universal_newlines};
+use crate::doccheck::pycompat::{parse_int, universal_newlines};
 use crate::doccheck::text::{has_i, rx};
 use crate::doccheck::{Docs, Report};
 
@@ -55,22 +56,6 @@ pub const SPEC: CheckSpec = CheckSpec {
     fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
-/// `norm_text`: NFKC, the figure and thin spaces as spaces, zero-width
-/// characters dropped, typographic dashes and quotes plain, blanks squashed
-/// (the script's copy of 006-01's).
-fn norm_text(s: &str) -> String {
-    let mut t = nfkc(s);
-    for ch in ['\u{a0}', '\u{2007}', '\u{202f}', '\u{2009}', '\u{200a}'] {
-        t = t.replace(ch, " ");
-    }
-    t = t.replace(['\u{200b}', '\u{feff}'], "");
-    let t = rx(r"[\u2010-\u2015\u2212]").replace_all(&t, "-");
-    let t = t
-        .replace(['\u{2018}', '\u{2019}'], "'")
-        .replace(['\u{201c}', '\u{201d}'], "\"");
-    rx(r"\s+").replace_all(&t, " ").py_strip().to_string()
-}
-
 /// `declared_origin`: `int(raw)` of the number after `origin =`; a failed
 /// `int` is the script's `(0, False)`.
 fn declared_origin(text: &str) -> i128 {
@@ -88,7 +73,7 @@ pub fn run(docs: &Docs) -> Report {
         return r;
     };
     let raw = universal_newlines(&raw);
-    let lines: Vec<String> = splitlines(&raw).into_iter().map(norm_text).collect();
+    let lines: Vec<String> = norm_lines(&raw);
     let md = Markdown::parse_with(&lines.join("\n"), FencePolicy::NoFences);
     let found = md
         .find_by(HeadingMatch::Exact, HEADING)

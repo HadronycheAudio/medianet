@@ -1,9 +1,10 @@
 //! AC 1: the on-wire size of one default packet, the Ethernet framing, the
 //! bit rates per stream, channel and source, and the wire-size table.
 
-use super::num::{Fails, close, close_n, floats, ints, mbit_list, to_int, tol_of};
+use super::num::{Fails, close, close_n, fl, floats, ints, mbit_list, to_int, tol_of};
 use super::setup::Calc;
 use super::units::{Eq, Sub, Unit, equations, mbits};
+use crate::doccheck::checked::add;
 use crate::doccheck::numwin::window;
 use crate::doccheck::pynum::PyNum;
 use crate::doccheck::report::Flow;
@@ -128,7 +129,7 @@ pub(crate) fn rates(sub: &Sub, k: &Calc, f: &mut Fails) -> Flow<()> {
         );
     }
     for &(ch, streams, c22_rate, pps) in &k.c22 {
-        let expect = streams as f64 * k.rate_stream;
+        let expect = fl(streams) * k.rate_stream;
         let mut ok = false;
         for u in &sub.units {
             let n = ints(&u.text);
@@ -206,7 +207,7 @@ fn size_row(u: &Unit, k: &Calc, f: &mut Fails) -> Flow<()> {
             ),
         );
     }
-    if !wire_row.eq_int(payload + k.ovh) {
+    if !wire_row.eq_int(add(payload, k.ovh)) {
         f.fail(
             "AC1",
             format!(
@@ -230,7 +231,7 @@ fn size_rates(u: &Unit, cols: [usize; 2], wire_row: PyNum, k: &Calc, f: &mut Fai
                 return crate::doccheck::report::crash("beyond i128");
             }
         },
-        PyNum::Float(x) => PyNum::Float(x * 8.0 * k.slice_rate as f64),
+        PyNum::Float(x) => PyNum::Float(x * 8.0 * fl(k.slice_rate)),
     };
     let rate_mbit = bits.as_f64() / 1e6;
     let vals = mbit_list(&cells[cols[0]]);
@@ -257,14 +258,14 @@ fn size_rates(u: &Unit, cols: [usize; 2], wire_row: PyNum, k: &Calc, f: &mut Fai
             );
         }
     }
-    let fl = floats(&cells[cols[1]]);
-    match fl.first() {
+    let fls = floats(&cells[cols[1]]);
+    match fls.first() {
         None => f.fail(
             "AC1",
             format!("wire-size row {name:?} states no per-channel rate"),
         ),
-        Some(&(v, d)) if !close(v, rate_mbit / k.ch as f64, tol_of(d)) => {
-            f.fail("AC1", format!("wire-size row {name:?}: per-channel {v} Mbit/s is not {rate_mbit:.3} / {} = {:.3} Mbit/s (C-04)", k.ch, rate_mbit / k.ch as f64));
+        Some(&(v, d)) if !close(v, rate_mbit / fl(k.ch), tol_of(d)) => {
+            f.fail("AC1", format!("wire-size row {name:?}: per-channel {v} Mbit/s is not {rate_mbit:.3} / {} = {:.3} Mbit/s (C-04)", k.ch, rate_mbit / fl(k.ch)));
         }
         Some(_) => {}
     }

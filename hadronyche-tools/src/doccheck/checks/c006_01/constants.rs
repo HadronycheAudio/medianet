@@ -2,8 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::scan::{Block as Table, Head, Scan, Source, norm_status, norm_text, norm_value};
+use super::scan::{Block as Table, Head, Scan, Source, norm_status, norm_value};
 use crate::doccheck::Report;
+use crate::doccheck::family006::norm_text;
 use crate::doccheck::pycompat::PyStr;
 use crate::doccheck::text::{full, has, rx};
 

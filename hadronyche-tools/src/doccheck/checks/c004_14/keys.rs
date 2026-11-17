@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use super::allow::AllowRow;
 use super::cases::Case;
 use super::comp::{Comp, Consts};
+use crate::doccheck::checked::sub;
 use crate::doccheck::pynum::record_int_limit;
 use crate::doccheck::report::Report;
 use crate::doccheck::text::rx;
@@ -102,7 +103,7 @@ fn case_groups(c: &Case, k: &Comp) -> (Vec<Set>, Set) {
         ),
         _ => {
             let n = if k.entry != 0 {
-                (c.ann - k.ann_count).div_euclid(k.entry)
+                sub(c.ann, k.ann_count).div_euclid(k.entry)
             } else {
                 -1
             };

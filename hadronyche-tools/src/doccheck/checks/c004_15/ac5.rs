@@ -3,8 +3,9 @@
 
 use std::collections::BTreeSet;
 
-use super::num::Fails;
+use super::num::{Fails, fl};
 use super::setup::Calc;
+use crate::doccheck::pynum::Fraction;
 use crate::doccheck::pynum::record_int_limit;
 use crate::doccheck::text::rx;
 use crate::doccheck::tomlline::{Table, Value};
@@ -47,7 +48,8 @@ fn wanted(toks: &BTreeSet<String>, k: &Calc) -> Option<(Vec<i128>, String)> {
             format!("the format maximum on-wire size of {} bytes", k.wire_max),
         ))
     } else if has("rate") && has("default") && has("stream") {
-        let kbit = (k.bits_stream as f64 / 1000.0).round_ties_even() as i128;
+        let kbit = Fraction::from_f64((fl(k.bits_stream) / 1000.0).round_ties_even())
+            .map_or(0, |f| f.numerator());
         Some((
             vec![k.bits_stream, kbit],
             format!("the default per-stream rate of {} bit/s", k.bits_stream),
