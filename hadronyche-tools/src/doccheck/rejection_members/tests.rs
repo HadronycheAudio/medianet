@@ -145,6 +145,10 @@ fn cases() -> Vec<(&'static str, String)> {
             ),
         ),
         (
+            "value-beyond-i64-on-the-zero-member",
+            e("| 0 | TooShort |", "| 99999999999999999999 | TooShort |"),
+        ),
+        (
             "three-cells",
             e(
                 &r("BadPacketIndex"),
@@ -159,6 +163,16 @@ fn cases() -> Vec<(&'static str, String)> {
             "hyphen-name",
             e("| 8 | BadChecksum |", "| 8 | Bad-Checksum |"),
         ),
+    ]
+    .into_iter()
+    .chain(more_cases(w))
+    .collect()
+}
+
+/// The second half of [`cases`] (split for the function-length gate).
+fn more_cases(w: &str) -> Vec<(&'static str, String)> {
+    let e = |old: &str, new: &str| section_edit(w, old, new);
+    vec![
         ("one-letter-name", e("| 8 | BadChecksum |", "| 8 | B |")),
         (
             "value-with-superscript",
@@ -190,17 +204,6 @@ fn cases() -> Vec<(&'static str, String)> {
                 "a control message exceeds the 1 252-byte UDP-payload bound (C-17) | Control |",
             ),
         ),
-    ]
-    .into_iter()
-    .chain(more_cases(w))
-    .collect()
-}
-
-/// The second half of [`cases`] (split for the function-length gate).
-fn more_cases(w: &str) -> Vec<(&'static str, String)> {
-    let e = |old: &str, new: &str| section_edit(w, old, new);
-    let first = w.find("\n## ").expect("a level-2 heading");
-    vec![
         (
             "separator-removed",
             e("|---|---|---|---|\n| 0 | TooShort", "| 0 | TooShort"),
@@ -234,6 +237,17 @@ fn more_cases(w: &str) -> Vec<(&'static str, String)> {
             "header-renamed-code",
             e("| Value (u8) | Name |", "| Code | Name |"),
         ),
+    ]
+    .into_iter()
+    .chain(last_cases(w))
+    .collect()
+}
+
+/// The last part of [`cases`] (split for the function-length gate).
+fn last_cases(w: &str) -> Vec<(&'static str, String)> {
+    let e = |old: &str, new: &str| section_edit(w, old, new);
+    let first = w.find("\n## ").expect("a level-2 heading");
+    vec![
         (
             "header-name-first",
             e("| Value (u8) | Name |", "| Value | Label |"),
