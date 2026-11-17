@@ -41,16 +41,18 @@
 mod allow;
 mod cases;
 mod comp;
+mod denials;
 mod keys;
-pub(crate) mod pytoml;
-pub(crate) mod section;
+mod section;
 mod tail;
-pub(crate) mod util;
 
 use super::{CheckSpec, Target};
+use crate::doccheck::Docs;
+use crate::doccheck::policy::TomlReader;
+use crate::doccheck::pycompat::universal_newlines;
+use crate::doccheck::report::{Earlier, Flow, Report, exit};
+use crate::doccheck::tomlline::{Variant, parse};
 use crate::doccheck::wire_toml::WIRE_TOML;
-use crate::doccheck::{Docs, Report};
-use util::{Fails, R, Stop};
 
 /// The specification.
 pub const WIRE_MD: &str = "doc/design/spec/wire.md";
@@ -93,14 +95,21 @@ pub const SPEC: CheckSpec = CheckSpec {
     ],
     keywords: &["holds", "falsified", "omitted", "upper bound"],
     known_differences: &[],
+    denials: denials::DENIALS,
+    toml: TomlReader::Line004_14,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
-/// The three documents, or the script's `FAIL setup` exit.
-fn read_all(docs: &Docs) -> R<(String, String, String)> {
-    let read = |path: &str, label: &str| {
-        docs.read(path).map(|t| t.to_string()).ok_or_else(|| {
-            Stop::Exit("setup", format!("cannot read {label} at {path}"))
-        })
+/// The three documents (read as `open()` reads them), or the script's
+/// `FAIL setup` exit.
+fn read_all(docs: &Docs) -> Flow<(String, String, String)> {
+    let read = |path: &str, label: &str| match docs.read(path) {
+        Some(t) => Ok(universal_newlines(&t)),
+        None => exit(
+            "setup",
+            format!("cannot read {label} at {path}"),
+            Earlier::Kept,
+        ),
     };
     Ok((
         read(WIRE_MD, "wire.md")?,
@@ -109,45 +118,42 @@ fn read_all(docs: &Docs) -> R<(String, String, String)> {
     ))
 }
 
-fn body(docs: &Docs) -> R<Fails> {
+fn body(docs: &Docs, r: &mut Report) -> Flow<()> {
     let (wire, toml_src, const_src) = read_all(docs)?;
     let c = comp::consts(&const_src)?;
-    let parsed = pytoml::parse(&toml_src, pytoml::Flavor::Budget)
-        .map_err(|_| Stop::Exit("setup", "wire.toml does not parse".into()))?;
-    let mut f = Fails::default();
-    let k = comp::components(&parsed, &c, &mut f)?;
+    let parsed = match parse(&toml_src, Variant::V004_14) {
+        Ok(p) => p,
+        Err(e) if e.caught_by(Variant::V004_14) => {
+            return exit(
+                "setup",
+                format!("wire.toml does not parse: {}", e.message),
+                Earlier::Kept,
+            );
+        }
+        Err(e) => return crate::doccheck::report::crash(format!("{}: {}", e.kind, e.message)),
+    };
+    let k = comp::components(&parsed, &c, r)?;
     let sec = section::Sec::read(&wire);
     if !sec.found {
-        f.add("AC1", "wire.md has no level-2 heading 'Size budget'");
+        r.fail("AC1", "wire.md has no level-2 heading 'Size budget'");
     }
-    let found = cases::cases(&sec, &k, &c, &mut f);
-    cases::coverage(&found, &k, &c, &sec, &mut f);
-    cases::omission(&sec, &found, &k, &mut f);
-    allow::verdict(&sec, &k, &c, &mut f);
+    let found = cases::cases(&sec, &k, &c, r);
+    cases::coverage(&found, &k, &c, &sec, r);
+    cases::omission(&sec, &found, &k, r);
+    allow::verdict(&sec, &k, &c, r);
     let flat = keys::budget_flat(&parsed);
-    let rows = allow::allowance(&sec, &k, &c, &mut f)?;
+    let rows = allow::allowance(&sec, &k, &c, r)?;
     if let Some(flat) = &flat {
-        keys::budget_keys(flat, &found, &rows, &k, &c, &mut f);
+        keys::budget_keys(flat, &found, &rows, &k, &c, r);
     }
-    tail::dod(&sec, &mut f);
-    tail::pointers(&wire, &sec, &mut f);
-    Ok(f)
+    tail::dod(&sec, r);
+    tail::pointers(&wire, &sec, r);
+    Ok(())
 }
 
 /// The check.
 pub fn run(docs: &Docs) -> Report {
-    let mut report = Report::default();
-    match body(docs) {
-        Ok(f) => {
-            for (ac, msg) in f.0 {
-                report.fail(ac, msg);
-            }
-            if report.passed() {
-                report.check("OK", true, "6/6 acceptance criteria for 004-14");
-            }
-        }
-        Err(Stop::Exit(ac, msg)) => report.fail(ac, msg),
-        Err(Stop::Crash(why)) => report.fail("CRASH", format!("the script raises: {why}")),
-    }
-    report
+    let mut r = Report::default();
+    let flow = body(docs, &mut r);
+    r.finish(flow)
 }

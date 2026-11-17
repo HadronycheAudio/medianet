@@ -1,10 +1,12 @@
 //! The Size budget section of wire.md: its lines, its tables with their
 //! captions, and the lines outside it.
 
-use super::util::{label_of, norm, parse_num};
-use crate::doccheck::markdown::Markdown;
-use crate::doccheck::tables::split_row;
-use crate::doccheck::text::{rx, splitlines};
+use crate::doccheck::family004::heading_index;
+use crate::doccheck::markdown::code_mask;
+use crate::doccheck::policy::{FencePolicy, TableRules};
+use crate::doccheck::pycompat::splitlines;
+use crate::doccheck::tables::{caption_above, cell_label, cell_number_004_14, parse_tables};
+use crate::doccheck::text::{full, has, rx};
 
 /// One Markdown table of the section, with the caption lines above it.
 #[derive(Debug, Clone)]
@@ -25,67 +27,20 @@ pub(crate) struct Sec {
     pub tables: Vec<STable>,
 }
 
-fn is_table_line(line: &str) -> bool {
-    line.trim_start().starts_with('|')
-}
-
-/// `caption_above`: up to two non-table lines within five lines above.
-fn caption_above(ls: &[&str], fm: &[bool], i: usize) -> String {
-    let mut got: Vec<String> = Vec::new();
-    let mut k = i as isize - 1;
-    while k >= 0 && i as isize - k <= 5 {
-        let line = ls[k as usize];
-        let s = line.trim();
-        if !s.is_empty() && !is_table_line(line) && !fm[k as usize] {
-            got.push(s.trim_start_matches(['#', '*', ' ']).trim().to_string());
-            if got.len() == 2 {
-                break;
-            }
-        }
-        k -= 1;
-    }
-    got.reverse();
-    got.join(" ")
-}
-
-/// `section_tables`.
-fn section_tables(ls: &[&str], fm: &[bool]) -> Vec<STable> {
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < ls.len() {
-        if fm[i] || !is_table_line(ls[i]) {
-            i += 1;
-            continue;
-        }
-        let mut j = i;
-        while j < ls.len() && !fm[j] && is_table_line(ls[j]) {
-            j += 1;
-        }
-        let block = &ls[i..j];
-        if block.len() >= 2
-            && block[1].contains('-')
-            && rx(r"^\s*\|?[\s:|-]+\|?\s*$").is_match(block[1])
-        {
-            out.push(STable {
-                header: split_row(block[0]),
-                rows: block[2..].iter().map(|r| split_row(r)).collect(),
-                caption: caption_above(ls, fm, i),
-            });
-        }
-        i = j;
-    }
-    out
+/// `norm`: whitespace runs squashed to one space (not trimmed).
+pub(crate) fn norm(s: &str) -> String {
+    rx(r"\s+").replace_all(s, " ")
 }
 
 impl Sec {
     /// Reads the section from the text of wire.md.
     pub fn read(wire: &str) -> Sec {
         let lines: Vec<&str> = splitlines(wire);
-        let md = Markdown::parse(&lines.join("\n"));
-        let at = md.heads.iter().position(|h| {
-            h.level == 2 && rx(r"(?i)^(?:size budget)$").is_match(&h.text)
-        });
-        let Some(k) = at else {
+        let heads = heading_index(&lines);
+        let Some(k) = heads
+            .iter()
+            .position(|h| h.1 == 2 && full(r"(?i)size budget", &h.2))
+        else {
             return Sec {
                 found: false,
                 sec_lines: Vec::new(),
@@ -95,30 +50,40 @@ impl Sec {
                 tables: Vec::new(),
             };
         };
-        let start = md.heads[k].line;
-        let end = md.heads[k + 1..]
+        let start = heads[k].0;
+        let end = heads[k + 1..]
             .iter()
-            .find(|h| h.level <= 2)
-            .map_or(lines.len(), |h| h.line);
-        let sec: Vec<&str> = lines[start..end].to_vec();
-        let fence = fence_mask(&sec);
+            .find(|h| h.1 <= 2)
+            .map_or(lines.len(), |h| h.0);
+        let sec: Vec<String> = lines[start..end].iter().map(|l| l.to_string()).collect();
+        let fence = code_mask(&sec, FencePolicy::Backticks);
         let text = norm(
             &sec.iter()
                 .zip(&fence)
                 .filter(|(_, f)| !**f)
-                .map(|(l, _)| *l)
+                .map(|(l, _)| l.as_str())
                 .collect::<Vec<_>>()
                 .join(" "),
         );
-        let tables = section_tables(&sec, &fence);
-        let glob: Vec<String> = lines[..start]
+        let refs: Vec<&str> = sec.iter().map(String::as_str).collect();
+        let tables = parse_tables(&sec, &fence, 0, sec.len(), TableRules::FAMILY_004)
+            .into_iter()
+            .filter_map(|t| {
+                Some(STable {
+                    caption: caption_above(&refs, &fence, t.line),
+                    header: t.header?,
+                    rows: t.rows.into_iter().map(|r| r.cells).collect(),
+                })
+            })
+            .collect();
+        let glob = lines[..start]
             .iter()
             .chain(&lines[end..])
             .map(|l| l.to_string())
             .collect();
         Sec {
             found: true,
-            sec_lines: sec.iter().map(|l| l.to_string()).collect(),
+            sec_lines: sec,
             sec_fence: fence,
             glob_lines: glob,
             sec_text: text,
@@ -127,26 +92,12 @@ impl Sec {
     }
 }
 
-/// `fence_mask`: true on a fence line and inside a fence.
-pub(crate) fn fence_mask(ls: &[&str]) -> Vec<bool> {
-    let mut inside = false;
-    ls.iter()
-        .map(|line| {
-            if line.trim_start().starts_with("```") {
-                inside = !inside;
-                return true;
-            }
-            inside
-        })
-        .collect()
-}
-
 /// `row_kind`: what a budget row's label names.
 pub(crate) fn row_kind(lab: &str) -> &'static str {
-    let has = |p: &str| rx(p).is_match(lab);
+    let has_ = |p: &str| has(p, lab);
     if lab.starts_with("total") {
         "total"
-    } else if has(r"\b(spare|margin|headroom|slack|deficit)\b") {
+    } else if has_(r"\b(spare|margin|headroom|slack|deficit)\b") {
         "spare"
     } else if lab.contains("packet header") {
         "pkt"
@@ -154,15 +105,15 @@ pub(crate) fn row_kind(lab: &str) -> &'static str {
         "slice"
     } else if lab.contains("announce") {
         "ann"
-    } else if has(r"content[- ]message|content header") {
+    } else if has_(r"content[- ]message|content header") {
         "content"
     } else if lab.contains("audio") {
         "audio"
-    } else if lab.contains("checksum") || has(r"\bcrc\b") {
+    } else if lab.contains("checksum") || has_(r"\bcrc\b") {
         "cksum"
     } else if lab.contains("measurement") || lab.contains("extension") {
         "ext"
-    } else if has(r"controller|dense|sparse|transport") {
+    } else if has_(r"controller|dense|sparse|transport") {
         "ctrl"
     } else {
         "other"
@@ -171,24 +122,33 @@ pub(crate) fn row_kind(lab: &str) -> &'static str {
 
 /// `classify_case`.
 pub(crate) fn classify_case(text: &str) -> Option<&'static str> {
-    let has = |p: &str| rx(p).is_match(text);
-    if has(r"(?i)fallback|\b1\s?280\b|\b1\s?252\b") {
+    let has_ = |p: &str| has(p, text);
+    if has_(r"(?i)fallback|\b1\s?280\b|\b1\s?252\b") {
         Some("fb")
-    } else if has(r"(?i)worst|maximum|maximal|all optional") {
+    } else if has_(r"(?i)worst|maximum|maximal|all optional") {
         Some("worst")
-    } else if has(r"(?i)default|mandatory|\b1\s?472\b") {
+    } else if has_(r"(?i)default|mandatory|\b1\s?472\b") {
         Some("default")
     } else {
         None
     }
 }
 
-/// The number in column `c` of a row (a short row reads 0).
-pub(crate) fn cell_num(row: &[String], c: usize) -> Option<i64> {
-    parse_num(row.get(c).map(String::as_str))
-}
-
 /// The label of a row's first cell.
 pub(crate) fn row_label(row: &[String]) -> String {
-    label_of(row.first().map_or("", String::as_str))
+    cell_label(row.first().map_or("", String::as_str))
+}
+
+/// The number in column `c` of a row (a short row reads 0, `parse_num(None)`);
+/// `None` when the cell holds no number.
+pub(crate) fn cell_num(row: &[String], c: usize) -> Option<i128> {
+    cell_number_004_14(row.get(c).map_or("", String::as_str))
+        .ok()
+        .flatten()
+        .map(super::comp::limited)
+}
+
+/// `re.split(r"(?<=[.;])\s+", text)`.
+pub(crate) fn sentences(text: &str) -> Vec<String> {
+    rx(r"(?<=[.;])\s+").split(text).map(String::from).collect()
 }
