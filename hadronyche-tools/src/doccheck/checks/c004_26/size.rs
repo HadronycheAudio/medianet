@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 use super::fields::{Man, Model};
 use super::landed::Landed;
 use super::{NUM, to_int};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
-use crate::doccheck::pynum::record_int_limit;
 use crate::doccheck::text::{has_i, rx};
 
 /// The top-level table: its size in bytes and its index.
@@ -26,15 +26,6 @@ pub(crate) fn candidates(man: &Man) -> Vec<usize> {
 }
 
 
-/// A sum Python computes exactly: beyond `i128` it is recorded as
-/// `INT_LIMIT` (the verdict is red by rule; the value then returned is
-/// never compared).
-fn exact(v: Option<i128>, what: &str) -> i128 {
-    v.unwrap_or_else(|| {
-        record_int_limit(what);
-        i128::MAX
-    })
-}
 
 fn bytes(m: &Model) -> i128 {
     m.total.div_euclid(8)
@@ -54,7 +45,7 @@ pub(crate) fn ac3(man: &Man, landed: &Landed, report: &mut Report) -> Option<Top
     report.check("AC3", top.is_some(), format!("the maximum manifest size is stated in bytes and equals the computed size of a manifest table that no counted row references (candidates {sizes:?} bytes; claimed {claims:?})"));
     let top = top.map(|b| Top { bytes: b, model: *cands.iter().find(|&&k| bytes(&man.models[k]) == b).expect("matched") })?;
     if let (Some(l), Some(s)) = (landed.length_max.filter(|&x| x != 0), landed.section_max.filter(|&x| x != 0)) {
-        let sections = exact(top.bytes.checked_add(l - 1), "TOP_BYTES + L - 1").div_euclid(l);
+        let sections = checked::add(top.bytes, checked::sub(l, 1)).div_euclid(l);
         report.check("AC3", sections <= s, format!("the manifest needs {sections} section(s) of {l} bytes, within the landed count maximum {s}"));
     }
     Some(top)
@@ -75,7 +66,7 @@ fn report_paragraph(r: &str, top: i128, landed: &Landed, report: &mut Report) {
     report.check("AC3", has_i("design owner", r), "the same paragraph says the report goes to the design owner");
     // `ENV["manifest_max"] or 0`
     let cap = landed.manifest_max.unwrap_or_default();
-    let need = (cap != 0).then(|| exact(top.checked_add(cap - 1), "TOP_BYTES + cap - 1").div_euclid(cap));
+    let need = (cap != 0).then(|| checked::add(top, checked::sub(cap, 1)).div_euclid(cap));
     let claimed: BTreeSet<i128> = rx(&format!(r"(?i)({NUM})\s+(?:manifest\s+)?sections?")).captures_iter(r).filter_map(|c| to_int(&c[1])).collect();
     let ok = need.is_some_and(|n| claimed.contains(&n) && landed.section_max.map_or(n <= 0, |m| n <= m)) && has_i("split", r);
     report.check("AC3", ok, format!("the same paragraph proposes the split: ceil({top} / {cap}) = {need:?} sections, within the landed count maximum {:?} (claimed section counts {claimed:?})", landed.section_max));

@@ -21,7 +21,7 @@ pub(crate) fn ac4(man: &Man, report: &mut Report) -> Vec<String> {
     join
 }
 
-fn is_repeat_row(f: &str) -> bool {
+pub(super) fn is_repeat_row(f: &str) -> bool {
     has_i("section index", f) && has_i("identical|same|repeat|duplicate", f)
 }
 

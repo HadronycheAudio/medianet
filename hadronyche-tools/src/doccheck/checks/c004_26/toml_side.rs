@@ -10,6 +10,7 @@ use super::fields::Man;
 use super::landed::Landed;
 use super::size::Top;
 use super::tile;
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::pyvalue::{Dict, PyValue};
 use crate::doccheck::report::{Flow, crash};
@@ -209,7 +210,7 @@ pub(crate) fn fixed(man: &Man, top: Option<&Top>, toml: &mut Toml, report: &mut 
     let model = top.map(|t| &man.models[t.model]);
     toml.fixed_md = model.map(|m| m.rows.iter().take_while(|r| r.maxc.is_none()).cloned().collect()).unwrap_or_default();
     toml.fixed_offs = if toml.fixed_md.is_empty() { Vec::new() } else { tile(&toml.fixed_md).0 };
-    let fixed_bytes = toml.fixed_md.iter().map(|r| r.bits).fold(0i128, i128::saturating_add).div_euclid(8);
+    let fixed_bytes = checked::sum(toml.fixed_md.iter().map(|r| r.bits)).div_euclid(8);
     let sig: Sig = toml.fixed_md.iter().zip(&toml.fixed_offs).map(|(r, o)| (*o, r.bits, None)).collect();
     toml.fixed_msgs = if sig.is_empty() { Vec::new() } else { toml.matching(&sig)? };
     report.check("AC6", !toml.fixed_msgs.is_empty(), format!("wire.toml declares the manifest fixed part as a [[message]] whose rows agree with the markdown fixed part row for row ({} found)", toml.fixed_msgs.len()));

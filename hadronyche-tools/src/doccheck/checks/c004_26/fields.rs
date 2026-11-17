@@ -6,6 +6,7 @@
 
 use super::toml_side::Toml;
 use super::{MRow, NUM, Wire, cells, is_field_table, is_validity_table, model_rows, tile, to_int};
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::report::Flow;
 use crate::doccheck::family004::tables;
@@ -176,7 +177,7 @@ pub(crate) fn t3a(man: &Man, wire: &Wire, report: &mut Report) {
     let sat = rx(&format!("Saturates at ({NUM}) samples")).captures(&wire.raw).and_then(|c| to_int(&c[1]));
     let l_hi = l_rows.first().and_then(|r| numeric_range(&r.valid)).map(|r| r.1);
     match (l_hi, hop, sat) {
-        (Some(l), Some(h), Some(s)) => report.check("AC1", h.checked_mul(l).is_some_and(|p| p <= s), format!("the largest L ({l} samples) times the landed maximum hop count ({h}) is within the landed declared-delay saturation value {s}, so the sum cannot saturate (Measurement extension, Open item)")),
+        (Some(l), Some(h), Some(s)) => report.check("AC1", checked::mul(h, l) <= s, format!("the largest L ({l} samples) times the landed maximum hop count ({h}) is within the landed declared-delay saturation value {s}, so the sum cannot saturate (Measurement extension, Open item)")),
         _ => report.check("AC1", false, "the L range, the landed maximum hop count and the landed saturation value are all readable"),
     };
 }
