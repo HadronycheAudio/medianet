@@ -72,7 +72,7 @@ pub(crate) fn scan(lines: &[&str]) -> Scan {
         let at = (0..lines.len())
             .rev()
             .find(|&k| mask[k] && (k == 0 || !mask[k - 1]))
-            .map_or(0, |k| k);
+            .unwrap_or_default();
         errors.push(format!(
             "line {}: unclosed code fence opened with {}",
             at + 1,
