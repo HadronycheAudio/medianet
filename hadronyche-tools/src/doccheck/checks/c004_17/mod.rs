@@ -2,30 +2,26 @@
 //! 004-17).
 //!
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
-//! in `tests/doc_004_17.rs`. Like the 004-16 port it is a transcription
-//! with Python semantics, on the shared WP7 helpers of `doccheck::wp7` ([`py`],
-//! [`md`], [`pytoml`]). 004-17's own variants: an election message is a
-//! `###` subsection of "Election messages" holding a field table; the
-//! hello's header and layout rows are read under the label `H`; the
-//! election block of the type-code table defaults to 2 to 15; invalid forms
-//! are the shared tables plus each message's own (at least 6 per message),
-//! whose header has a cell containing "form" or "invalid" and one
-//! containing "outcome", columns chosen by the same lowercase test; the
-//! categories of `classify` (with `epoch`, `eligibility`, `timestate`); the
-//! reason tokens `\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b` negated by
+//! in `tests/doc/c004_17.rs`. Like the 004-16 port it is a transcription
+//! with Python semantics on the library's named variants ([`family004`],
+//! `REJECTION_004_16`, `LOOKBACK_004_16`, `FormRows::AnyCell004_17`, the DoD
+//! of 004-16, [`crate::doccheck::tomlsubset`]). 004-17's own variants, private
+//! to this port: an election message is a `###` subsection of "Election
+//! messages" holding a field table; the hello's header and layout rows are
+//! read under the label `H`; the election block of the type-code table
+//! defaults to 2 to 15; at least 6 invalid forms per message (the shared
+//! tables plus its own); the categories of `classify` (with `epoch`,
+//! `eligibility`, `timestate`); the reason tokens negated by
 //! `not|never|nor|no` anywhere before them in the clause; "count under X"
-//! names; the 24-character negation look-back for `named_reasons`; the
-//! open item owned by 005 (`owner[^.;]*?\b005\b`); durations of C-32, C-33
-//! and C-37 restated with `(?<![\d.])`; no field named like a timer; toml
-//! messages matched by name with a trailing "message(s)" dropped.
+//! names; the open item owned by 005 (`owner[^.;]*?\b005\b`); durations of
+//! C-32, C-33 and C-37 restated with `(?<![\d.])`; no field named like a
+//! timer; toml messages matched by name with a trailing "message(s)"
+//! dropped. A Python exception stops the check (`Stop::Crash`); an integer
+//! beyond `i128` is red by rule (`INT_LIMIT`).
 //!
 //! [`REJECTION_PIN`] is the 13-member pin of line 373. The repository-level
 //! assertions (wire-check "checks clean"; wire_tables exactly 12/0/0) are
 //! in `scripts/repo-state.d/004-17.sh`.
-//!
-//! [`py`]: crate::doccheck::wp7::py
-//! [`md`]: crate::doccheck::wp7::md
-//! [`pytoml`]: crate::doccheck::wp7::pytoml
 
 mod ac1;
 mod ac3;
@@ -34,16 +30,72 @@ mod ac5;
 pub(crate) mod ac6;
 
 pub mod denials;
-use crate::doccheck::wp7::common::form_rows;
-use crate::doccheck::wp7::md::{self, Field, Head, fields_of, find_sub, first_table, is_field_table, parse_tables, prose_blocks};
-use crate::doccheck::wp7::common::{NUM, const_int, const_val};
-use crate::doccheck::wp7::py;
-use super::{CheckSpec, DiffClass, KnownDifference, Target};
+use super::{CheckSpec, KnownDifference, Target};
+use crate::doccheck::blocks::{FormRows, form_rows};
+use crate::doccheck::equiv::script::DEFAULT_READER;
+use crate::doccheck::evidence::{TableTagRule, TagPolicy, untagged, untagged_tables};
+use crate::doccheck::family004::{self, ConstInt, Field, Head, IntRule, NUM_004_16, SpanRule, fields_of, find_sub, first_field_table, tables};
+use crate::doccheck::items::{OpenItemPolicy, unowned_items};
 use crate::doccheck::policy::TomlReader;
-use crate::doccheck::wp7::rejection_members::Enumeration;
+use crate::doccheck::pycompat::{IntError, parse_int, splitlines, universal_newlines};
+use crate::doccheck::pynum::record_int_limit;
+use crate::doccheck::rejection_members::{Enumeration, REJECTION_004_16};
+use crate::doccheck::report::{Flow, crash};
+use crate::doccheck::text::{has_i, head, rx, starts};
 use crate::doccheck::ticket::CONSTANTS_MD;
+use crate::doccheck::units::{BlockKind, prose_blocks, strip_fences};
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
+
+/// `NUM` (004-16's digit groups).
+pub(crate) const NUM: &str = NUM_004_16;
+
+/// `to_int(s)`; a Python `ValueError` is a crash, beyond `i128` is
+/// `INT_LIMIT` (recorded by the library).
+pub(crate) fn to_int(s: &str) -> Flow<Option<i128>> {
+    match family004::to_int(s, IntRule::Spaces004_16) {
+        Ok(v) => Ok(Some(v)),
+        Err(IntError::Overflow(_)) => Ok(None),
+        Err(e) => crash(format!("ValueError: {e}")),
+    }
+}
+
+/// `const_int(cid, pattern)`; a Python `ValueError` is a crash.
+fn const_int(text: &str, cid: &str, pattern: &str) -> Flow<Option<i128>> {
+    match family004::const_int(text, cid, pattern, ConstInt::AnyCase004_16) {
+        Ok(v) => Ok(v),
+        Err(IntError::Overflow(_)) => Ok(None),
+        Err(e) => crash(format!("ValueError: {e}")),
+    }
+}
+
+/// Python's `a + b` on ints. Beyond `i128` the value is recorded
+/// (`INT_LIMIT`: the verdict is red by rule) and 0 stands in for it.
+pub(crate) fn int_add(a: i128, b: i128) -> i128 {
+    a.checked_add(b).unwrap_or_else(|| {
+        record_int_limit(&format!("{a} + {b}"));
+        0
+    })
+}
+
+/// Python's `a * b` on ints; beyond `i128` as [`int_add`].
+pub(crate) fn int_mul(a: i128, b: i128) -> i128 {
+    a.checked_mul(b).unwrap_or_else(|| {
+        record_int_limit(&format!("{a} * {b}"));
+        0
+    })
+}
+
+/// `size_bits(f)`: `f["bits"] * (f["maxc"] if f["maxc"] else 1)`.
+pub(crate) fn size_bits(f: &Field) -> i128 {
+    int_mul(f.bits, f.maxc.filter(|&m| m != 0).unwrap_or(1))
+}
+
+/// `[int(x) for x in re.findall(r"\d+", text)]` (beyond `i128`: `INT_LIMIT`,
+/// left out).
+fn ints(text: &str) -> Vec<i128> {
+    rx(r"\d+").find_iter(text).filter_map(|m| parse_int(m.as_str()).ok()).collect()
+}
 
 /// The specification.
 pub const WIRE_MD: &str = "doc/design/spec/wire.md";
@@ -83,15 +135,11 @@ pub const SPEC: CheckSpec = CheckSpec {
     known_differences: KNOWN,
     denials: denials::DENIALS,
     toml: TomlReader::Subset004_18,
-    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
+    fail_reader: DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.
-const KNOWN: &[KnownDifference] = &[KnownDifference {
-    label: r"^denial py_denial_(rejection_reasons_a_number|a_width_as_a_string)$",
-    class: DiffClass::ScriptCrashed,
-    reason: "the script dies with a Python TypeError (iterating an int; adding a str to the size); the port reports the same cause under CRASH",
-}];
+const KNOWN: &[KnownDifference] = &[];
 
 /// One election message: a `###` subsection with a field table.
 #[derive(Debug, Clone)]
@@ -108,7 +156,8 @@ pub(crate) type Dur = (&'static str, &'static str, Option<(String, String)>);
 
 /// What the script reads, as it reads it.
 pub(crate) struct Ctx {
-    pub bound: i128,
+    /// `K["bound"]` (None when unreadable; falsy like 0).
+    pub bound: Option<i128>,
     pub dscp_control: Option<i128>,
     pub peers_max: Option<i128>,
     /// (number, unit) of C-32, C-33, C-37.
@@ -131,21 +180,23 @@ pub(crate) struct Ctx {
 impl Ctx {
     /// `el_para(*pats)`.
     pub fn el_para(&self, pats: &[&str]) -> Option<&String> {
-        self.el_paras.iter().find(|t| pats.iter().all(|p| py::has_i(p, t)))
+        self.el_paras.iter().find(|t| pats.iter().all(|p| has_i(p, t)))
     }
 }
 
 /// `const_dur(cid)`.
 fn const_dur(text: &str, cid: &str) -> Option<(String, String)> {
-    let v = const_val(text, cid);
-    py::search(r"(\d+(?:\.\d+)?)\s*(ms|s)\b", &v, false).map(|m| (m.g(1).to_string(), m.g(2).to_string()))
+    let v = family004::const_cell(text, cid);
+    rx(r"(\d+(?:\.\d+)?)\s*(ms|s)\b").captures(&v).map(|m| (m.get(1).map_or("", |m| m.as_str()).to_string(), m.get(2).map_or("", |m| m.as_str()).to_string()))
 }
 
-fn constants(docs: &Docs, report: &mut Report) -> (i128, Option<i128>, Option<i128>, [Dur; 3]) {
-    let text = docs.read(CONSTANTS_MD).map(|t| py::universal(&t)).unwrap_or_default();
-    let bound = const_int(&text, "C-17", &format!(r"at\s+most\s+({NUM})\s*bytes"));
-    let dscp = const_int(&text, "C-13", r"control\s+CS5\s*\((\d+)\)");
-    let peers = const_int(&text, "C-34", r"at\s+most\s+(\d+)");
+type Consts = (Option<i128>, Option<i128>, Option<i128>, [Dur; 3]);
+
+fn constants(docs: &Docs, report: &mut Report) -> Flow<Consts> {
+    let text = docs.read(CONSTANTS_MD).map(|t| universal_newlines(&t)).unwrap_or_default();
+    let bound = const_int(&text, "C-17", &format!(r"at\s+most\s+({NUM})\s*bytes"))?;
+    let dscp = const_int(&text, "C-13", r"control\s+CS5\s*\((\d+)\)")?;
+    let peers = const_int(&text, "C-34", r"at\s+most\s+(\d+)")?;
     for (key, v) in [("bound", bound), ("dscp_control", dscp), ("peers_max", peers)] {
         if v.is_none() {
             report.fail("DoD", format!("constant for {key} could not be read from {CONSTANTS_MD}"));
@@ -161,30 +212,30 @@ fn constants(docs: &Docs, report: &mut Report) -> (i128, Option<i128>, Option<i1
             report.fail("Behaviour", format!("constant for {key} could not be read from {CONSTANTS_MD}"));
         }
     }
-    (bound.unwrap_or(0), dscp, peers, dur)
+    Ok((bound, dscp, peers, dur))
 }
 
 fn span(lines: &[String], heads: &[Head], pattern: &str, level: Option<usize>) -> Vec<String> {
-    md::section_span(lines.len(), heads, pattern, level).map_or_else(Vec::new, |(a, b)| lines[a.min(b)..b].to_vec())
+    family004::section_span(lines.len(), heads, pattern, level, SpanRule::AfterHeading004_16).map_or_else(Vec::new, |(a, b)| lines[a.min(b)..b].to_vec())
 }
 
 /// The landed Hello section: its header, layout, type code, election epoch
 /// width and the election block of the type codes.
 fn hello(ctx: &mut Ctx, lines: &[String], heads: &[Head], report: &mut Report) {
-    if md::section_span(lines.len(), heads, r"^hello$", Some(2)).is_none() {
+    if family004::section_span(lines.len(), heads, r"^hello$", Some(2), SpanRule::AfterHeading004_16).is_none() {
         report.fail("AC1", "wire.md has no '## Hello' section");
     }
-    let subs = md::subsections(&span(lines, heads, r"^hello$", Some(2)));
-    let hdr_t = find_sub(&subs, r"common\s+control\s+header").first().and_then(|(_, x)| first_table(x, is_field_table));
+    let subs = family004::subsections(&span(lines, heads, r"^hello$", Some(2)).join("\n"));
+    let hdr_t = find_sub(&subs, r"common\s+control\s+header").first().and_then(|(_, x)| first_field_table(x));
     ctx.hdr = fields_of(hdr_t.as_ref(), "H", "the hello's common control header", report);
-    ctx.hdr_keys = ctx.hdr.iter().map(|f| md::key_of(&f.meaning)).collect();
-    let lay_t = find_sub(&subs, "layout").first().and_then(|(_, x)| first_table(x, is_field_table));
+    ctx.hdr_keys = ctx.hdr.iter().map(|f| family004::key_of(&f.meaning)).collect();
+    let lay_t = find_sub(&subs, "layout").first().and_then(|(_, x)| first_field_table(x));
     let lay = fields_of(lay_t.as_ref(), "H", "the hello layout", report);
     for f in &lay {
-        if md::key_of(&f.meaning) == Some("type") && ctx.hello_type.is_none() {
-            ctx.hello_type = py::search(r"\d+", &f.valid, false).and_then(|m| py::int(m.all()));
+        if family004::key_of(&f.meaning) == Some("type") && ctx.hello_type.is_none() {
+            ctx.hello_type = rx(r"\d+").find(&f.valid).and_then(|m| parse_int(m.as_str()).ok());
         }
-        if py::matches(r"\s*election\s+epoch\b", &f.meaning, true).is_some() {
+        if rx(r"(?i)^(?:\s*election\s+epoch\b)").is_match(&f.meaning) {
             ctx.hello_epoch_bits = Some(f.bits);
         }
     }
@@ -193,10 +244,10 @@ fn hello(ctx: &mut Ctx, lines: &[String], heads: &[Head], report: &mut Report) {
     }
     let mut found = false;
     for (_, text) in find_sub(&subs, r"type\s+codes") {
-        for t in parse_tables(text) {
-            for row in &t.rows {
-                if row.len() > 1 && py::has_i("election", &row[1]) {
-                    let nums: Vec<i128> = py::finditer(r"\d+", &row[0], false).iter().filter_map(|m| py::int(m.all())).collect();
+        for t in tables(text) {
+            for row in t.rows.iter().map(|r| &r.cells) {
+                if row.len() > 1 && has_i("election", &row[1]) {
+                    let nums = ints(&row[0]);
                     if let (Some(a), Some(b)) = (nums.first(), nums.last()) {
                         ctx.elec = (*a, *b);
                         found = true;
@@ -211,25 +262,26 @@ fn hello(ctx: &mut Ctx, lines: &[String], heads: &[Head], report: &mut Report) {
 }
 
 fn election(ctx: &mut Ctx, lines: &[String], heads: &[Head], report: &mut Report) {
-    if md::section_span(lines.len(), heads, r"^election\s+messages?$", Some(2)).is_none() {
+    if family004::section_span(lines.len(), heads, r"^election\s+messages?$", Some(2), SpanRule::AfterHeading004_16).is_none() {
         report.fail("AC1", "wire.md has no '## Election messages' section");
     }
     let el_lines = span(lines, heads, r"^election\s+messages?$", Some(2));
     let el = el_lines.join("\n");
-    ctx.el_plain = md::strip_fences(&el);
-    ctx.el_subs = md::subsections(&el_lines);
-    ctx.el_top = el_lines.iter().take_while(|l| py::matches(r"###\s", l, false).is_none()).cloned().collect::<Vec<_>>().join("\n");
-    ctx.el_paras = prose_blocks(&el).into_iter().filter(|(k, _)| *k == 'p').map(|(_, t)| t).collect();
+    ctx.el_plain = strip_fences(&el);
+    ctx.el_subs = family004::subsections(&el);
+    ctx.el_top = el_lines.iter().take_while(|l| !starts(r"###\s", l)).cloned().collect::<Vec<_>>().join("\n");
+    ctx.el_paras = prose_blocks(&el).into_iter().filter(|b| b.kind == BlockKind::Prose).map(|b| b.text).collect();
+    let pairs = |text: &str| -> Vec<(String, String)> { form_rows(text, FormRows::AnyCell004_17).into_iter().map(|r| (r[0].clone(), r[1].clone())).collect() };
     for (title, text) in &ctx.el_subs {
-        match first_table(text, is_field_table) {
+        match first_field_table(text) {
             Some(tb) => ctx.msgs.push(Msg {
                 title: title.clone(),
                 text: text.clone(),
                 fields: fields_of(Some(&tb), "AC1", &format!("'{title}'"), report),
-                forms: form_rows(text),
+                forms: pairs(text),
                 total: 0,
             }),
-            None => ctx.shared.extend(form_rows(text)),
+            None => ctx.shared.extend(pairs(text)),
         }
     }
     if ctx.msgs.is_empty() {
@@ -237,18 +289,18 @@ fn election(ctx: &mut Ctx, lines: &[String], heads: &[Head], report: &mut Report
     }
 }
 
-fn context(docs: &Docs, report: &mut Report) -> Ctx {
-    let (bound, dscp_control, peers_max, dur) = constants(docs, report);
+fn context(docs: &Docs, report: &mut Report) -> Flow<Ctx> {
+    let (bound, dscp_control, peers_max, dur) = constants(docs, report)?;
     let wire = match docs.read(WIRE_MD) {
-        Some(t) => py::universal(&t),
+        Some(t) => universal_newlines(&t),
         None => {
             report.fail("AC1", format!("{WIRE_MD} does not exist"));
             String::new()
         }
     };
-    let lines: Vec<String> = py::splitlines(&wire).into_iter().map(String::from).collect();
-    let heads = md::heading_index(&lines);
-    let members = Enumeration::parse(&wire);
+    let lines: Vec<String> = splitlines(&wire).into_iter().map(String::from).collect();
+    let heads = family004::heading_index(&lines);
+    let members = Enumeration::parse(&wire, REJECTION_004_16);
     if !members.section_found {
         report.fail("AC4", "no 'Rejection reasons' section in wire.md: the closed enumeration cannot be read");
     } else if !members.has_exactly(REJECTION_PIN) {
@@ -271,32 +323,27 @@ fn context(docs: &Docs, report: &mut Report) -> Ctx {
         el_paras: Vec::new(),
         msgs: Vec::new(),
         shared: Vec::new(),
-        toml_text: docs.read(WIRE_TOML).map(|t| py::universal(&t)),
+        toml_text: docs.read(WIRE_TOML).map(|t| universal_newlines(&t)),
     };
     hello(&mut ctx, &lines, &heads, report);
     election(&mut ctx, &lines, &heads, report);
-    ctx
+    Ok(ctx)
 }
 
 /// The DoD tag and open-item rules over the section's top text and every
 /// `###` subsection (as 004-16's).
 fn dod(ctx: &Ctx, report: &mut Report) {
-    use crate::doccheck::wp7::common::{is_open_item, words};
+    let first_line = |text: &str| head(splitlines(text).first().copied().unwrap_or(""), 80);
     let parts = std::iter::once(("(section)", ctx.el_top.as_str())).chain(ctx.el_subs.iter().map(|(t, x)| (t.as_str(), x.as_str())));
     for (title, text) in parts {
-        let tagged = md::has_evidence(text);
-        for (kind, body) in prose_blocks(text) {
-            let first = py::head(py::splitlines(&body).first().copied().unwrap_or(""), 80);
-            if kind == 'p' {
-                if words(&body) >= 5 && !md::has_evidence(&body) {
-                    report.fail("DoD", format!("a prose paragraph of '{title}' carries no evidence tag: {first}"));
-                }
-                if is_open_item(&body) && (!py::has_i("owner", &body) || !py::has_i("falsifier", &body)) {
-                    report.fail("DoD", format!("an open item in '{title}' names no owner or no falsifier: {first}"));
-                }
-            } else if !tagged {
-                report.fail("DoD", format!("a table of '{title}' follows no evidence-tagged paragraph"));
-            }
+        for u in untagged(text, &TagPolicy::ALPHA_004_16) {
+            report.fail("DoD", format!("a prose paragraph of '{title}' carries no evidence tag: {}", first_line(&u.text)));
+        }
+        for item in unowned_items(text, OpenItemPolicy::LeadingClean) {
+            report.fail("DoD", format!("an open item in '{title}' names no owner or no falsifier: {}", first_line(&item.text)));
+        }
+        for _ in untagged_tables(text, TableTagRule::SectionTagged004_16) {
+            report.fail("DoD", format!("a table of '{title}' follows no evidence-tagged paragraph"));
         }
     }
 }
@@ -304,12 +351,17 @@ fn dod(ctx: &Ctx, report: &mut Report) {
 /// The check.
 pub fn run(docs: &Docs) -> Report {
     let mut report = Report::default();
-    let mut ctx = context(docs, &mut report);
-    ac1::messages(&mut ctx, &mut report);
-    ac3::fields(&ctx, &mut report);
-    ac4::forms(&ctx, &mut report);
-    ac5::open_item_and_behaviour(&ctx, &mut report);
-    dod(&ctx, &mut report);
-    ac6::toml(&ctx, &mut report);
-    report
+    let flow = body(docs, &mut report);
+    report.finish(flow)
+}
+
+/// The script, in its order; a Python exception stops it.
+fn body(docs: &Docs, report: &mut Report) -> Flow<()> {
+    let mut ctx = context(docs, report)?;
+    ac1::messages(&mut ctx, report)?;
+    ac3::fields(&ctx, report);
+    ac4::forms(&ctx, report);
+    ac5::open_item_and_behaviour(&ctx, report);
+    dod(&ctx, report);
+    ac6::toml(&ctx, report)
 }

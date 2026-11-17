@@ -4,11 +4,13 @@
 
 use std::collections::BTreeMap;
 
-use crate::doccheck::wp7::md::{Field, key_of, strip_fences};
-use crate::doccheck::wp7::common::{NUM, to_int};
-use crate::doccheck::wp7::py;
-use super::{Ctx, Msg};
+use super::{Ctx, Msg, NUM, int_add, size_bits, to_int};
 use crate::doccheck::Report;
+use crate::doccheck::family004::{Field, key_of};
+use crate::doccheck::pycompat::parse_int;
+use crate::doccheck::report::Flow;
+use crate::doccheck::text::{has, has_i, head, rx};
+use crate::doccheck::units::strip_fences;
 
 fn header(m: &Msg, ctx: &Ctx, report: &mut Report) {
     let (t, fl) = (&m.title, &m.fields);
@@ -19,7 +21,7 @@ fn header(m: &Msg, ctx: &Ctx, report: &mut Report) {
     }
     for (a, b) in fl.iter().take(7).zip(&ctx.hdr) {
         if (a.off, a.bits, &a.ty) != (b.off, b.bits, &b.ty) {
-            report.fail("AC1", format!("'{t}': header row '{}' differs from the common control header in offset, width or type", py::head(&b.meaning, 30)));
+            report.fail("AC1", format!("'{t}': header row '{}' differs from the common control header in offset, width or type", head(&b.meaning, 30)));
         }
     }
 }
@@ -28,12 +30,12 @@ fn tiling(m: &Msg, report: &mut Report) -> i128 {
     let mut cur: i128 = 0;
     for f in &m.fields {
         if f.off != cur {
-            report.fail("AC1", format!("'{}': '{}' at byte {}, expected {cur} (rows must tile)", m.title, py::head(&f.meaning, 40), f.off));
+            report.fail("AC1", format!("'{}': '{}' at byte {}, expected {cur} (rows must tile)", m.title, head(&f.meaning, 40), f.off));
         }
-        if f.size_bits().rem_euclid(8) != 0 {
-            report.fail("AC1", format!("'{}': '{}' is not a whole number of bytes", m.title, py::head(&f.meaning, 40)));
+        if size_bits(f).rem_euclid(8) != 0 {
+            report.fail("AC1", format!("'{}': '{}' is not a whole number of bytes", m.title, head(&f.meaning, 40)));
         }
-        cur = f.off.saturating_add(f.size_bits().div_euclid(8));
+        cur = int_add(f.off, size_bits(f).div_euclid(8));
     }
     cur
 }
@@ -41,7 +43,8 @@ fn tiling(m: &Msg, report: &mut Report) -> i128 {
 fn code(m: &Msg, ctx: &Ctx, seen: &mut BTreeMap<i128, String>, report: &mut Report) {
     let t = &m.title;
     let row = m.fields.iter().find(|f| key_of(&f.meaning) == Some("type"));
-    let code = row.and_then(|f| py::search(r"\d+", &f.valid, false)).and_then(|h| py::int(h.all()));
+    // beyond i128: INT_LIMIT (recorded), and the check goes on without it
+    let code = row.and_then(|f| rx(r"\d+").find(&f.valid)).and_then(|h| parse_int(h.as_str()).ok());
     let Some(code) = code else {
         report.fail("AC1", format!("'{t}': the Message type row's valid range does not state the message's type code"));
         return;
@@ -60,20 +63,20 @@ fn reservation(fl: &[Field], t: &str, report: &mut Report) {
     if fl.len() < 7 {
         return;
     }
-    let zero = |v: &str| py::has(r"\b0\b", v) && py::has_i(r"only|zero|=\s*0", v);
+    let zero = |v: &str| has(r"\b0\b", v) && has_i(r"only|zero|=\s*0", v);
     if !zero(&fl[4].valid) {
         report.fail("AC2", format!("'{t}': the authentication scheme row does not fix the v1 value 0 (C-115)"));
     }
     if !zero(&fl[6].valid) {
         report.fail("AC2", format!("'{t}': the authentication tag row does not fix the v1 value of 128 zero bits (C-115)"));
     }
-    if !py::has_i(r"\blive\b|liveness", &fl[5].meaning) {
+    if !has_i(r"\blive\b|liveness", &fl[5].meaning) {
         report.fail("AC2", format!("'{t}': the message counter row does not say it is live (C-115)"));
     }
 }
 
 /// AC1 and AC2 for every message; records each message's total.
-pub(crate) fn messages(ctx: &mut Ctx, report: &mut Report) {
+pub(crate) fn messages(ctx: &mut Ctx, report: &mut Report) -> Flow<()> {
     let mut seen = BTreeMap::new();
     let mut totals = Vec::new();
     for m in &ctx.msgs {
@@ -81,14 +84,23 @@ pub(crate) fn messages(ctx: &mut Ctx, report: &mut Report) {
         header(m, ctx, report);
         let cur = tiling(m, report);
         totals.push(cur);
-        let stated = py::search(&format!(r"maximum\s+size[^.;\n]*?({NUM})\s*bytes"), &strip_fences(&m.text), true).map(|h| to_int(h.g(1)));
-        match stated {
+        let plain = strip_fences(&m.text);
+        let caps = rx(&format!(r"(?i)maximum\s+size[^.;\n]*?({NUM})\s*bytes")).captures(&plain);
+        match caps {
             None => report.fail("AC1", format!("'{t}': no sentence states its maximum size in bytes ('maximum size ... N bytes')")),
-            Some(s) if s != Some(cur) => report.fail("AC1", format!("'{t}': states a maximum size of {} bytes; its table sums to {cur}", s.unwrap_or_default())),
-            Some(_) => {}
+            Some(h) => {
+                // None: beyond i128 (INT_LIMIT, red by rule)
+                if let Some(s) = to_int(h.get(1).map_or("", |m| m.as_str()))?
+                    && s != cur
+                {
+                    report.fail("AC1", format!("'{t}': states a maximum size of {s} bytes; its table sums to {cur}"));
+                }
+            }
         }
-        if ctx.bound != 0 && cur > ctx.bound {
-            report.fail("AC1", format!("'{t}': its maximum size {cur} bytes is above the {}-byte control bound (C-17)", ctx.bound));
+        if let Some(b) = ctx.bound.filter(|&b| b != 0)
+            && cur > b
+        {
+            report.fail("AC1", format!("'{t}': its maximum size {cur} bytes is above the {b}-byte control bound (C-17)"));
         }
         code(m, ctx, &mut seen, report);
         reservation(&m.fields, t, report);
@@ -99,4 +111,5 @@ pub(crate) fn messages(ctx: &mut Ctx, report: &mut Report) {
     if !ctx.msgs.is_empty() && ctx.el_para(&["C-115", "scheme|tag|reservation"]).is_none() {
         report.fail("AC2", "no sentence in the Election messages section cites C-115 for the v1 values of the reservation");
     }
+    Ok(())
 }

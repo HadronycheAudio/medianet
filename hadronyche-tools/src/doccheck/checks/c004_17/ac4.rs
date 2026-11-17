@@ -4,24 +4,18 @@
 
 use std::collections::BTreeSet;
 
-use crate::doccheck::wp7::common::named_reasons;
-use crate::doccheck::wp7::py;
 use super::Ctx;
 use crate::doccheck::Report;
-use crate::doccheck::wp7::rejection_members::Enumeration;
-
-/// 004-17's `NON_REJECTION` (textually the same as 004-16's).
-pub(crate) const NON_REJECTION: &str = r"not\s+a\s+(?:parse\s+)?rejection|never\s+a\s+rejection|is\s+not\s+counted|cannot\s+occur|ignored";
-
-/// 004-17's reason tokens (`CAMEL`).
-const CAMEL: &str = r"\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b";
+use crate::doccheck::rejection_members::Enumeration;
+use crate::doccheck::rejection_members::reasons::{CAMEL_LETTERS, LOOKBACK_004_16, NON_REJECTION_004_16, named_reasons};
+use crate::doccheck::text::{has, has_i, head, rx};
 
 const ELECTION_CATS: [&str; 3] = ["epoch", "eligibility", "timestate"];
 
 /// `classify(form)` (004-17's categories).
 pub(crate) fn classify(form: &str) -> Option<&'static str> {
     let f = form.to_lowercase();
-    let has = |p: &str| py::has(p, &f);
+    let has = |p: &str| has(p, &f);
     Some(if has(r"too\s+short|shorter|fewer\s+than") {
         "short"
     } else if f.contains("magic") {
@@ -65,14 +59,14 @@ fn exact(cat: &str) -> Option<&'static str> {
 
 /// `check_form(form, outcome, where)`.
 fn check_form(form: &str, outcome: &str, place: &str, members: &Enumeration, seen: &mut BTreeSet<&'static str>, report: &mut Report) {
-    for h in py::finditer(r"count\s+under\s+`?([A-Za-z]+)`?", outcome, false) {
-        if !members.contains(h.g(1)) {
-            report.fail("AC4", format!("{place}: the form '{}' counts under '{}', which is not in the closed enumeration", py::head(form, 50), h.g(1)));
+    for h in rx(r"count\s+under\s+`?([A-Za-z]+)`?").captures_iter(outcome) {
+        if !members.contains(h.get(1).map_or("", |m| m.as_str())) {
+            report.fail("AC4", format!("{place}: the form '{}' counts under '{}', which is not in the closed enumeration", head(form, 50), h.get(1).map_or("", |m| m.as_str())));
         }
     }
-    for h in py::finditer(CAMEL, outcome, false) {
-        let name = h.all();
-        if !members.contains(name) && !py::has(&format!(r"\b(not|never|nor|no)\b[^|;.]*{}", regex::escape(name)), outcome) {
+    for h in rx(CAMEL_LETTERS).find_iter(outcome) {
+        let name = h.as_str();
+        if !members.contains(name) && !has(&format!(r"\b(not|never|nor|no)\b[^|;.]*{}", regex::escape(name)), outcome) {
             report.fail("AC4", format!("{place}: the outcome names '{name}', which is not in the closed enumeration: no invented reason"));
         }
     }
@@ -80,28 +74,28 @@ fn check_form(form: &str, outcome: &str, place: &str, members: &Enumeration, see
     if let Some(c) = cat {
         seen.insert(c);
     }
-    let named = named_reasons(outcome, members);
-    let argued = !named.is_empty() || py::has_i(NON_REJECTION, outcome);
+    let named = named_reasons(outcome, |w| members.contains(w), LOOKBACK_004_16);
+    let argued = !named.is_empty() || NON_REJECTION_004_16.is_match(outcome);
     match cat.and_then(exact) {
         Some(reason) => {
-            if !py::has(&format!(r"\b{reason}\b"), outcome) {
-                report.fail("AC4", format!("{place}: the form '{}' must be counted under {reason}: {}", py::head(form, 50), py::head(outcome, 70)));
+            if !has(&format!(r"\b{reason}\b"), outcome) {
+                report.fail("AC4", format!("{place}: the form '{}' must be counted under {reason}: {}", head(form, 50), head(outcome, 70)));
             }
             if cat == Some("domain0") && named.iter().any(|n| n == "ForeignDomain") {
                 report.fail("AC4", format!("{place}: domain 0 is mapped to ForeignDomain; it is ignored and counted as UnconfiguredDomain"));
             }
-            if cat == Some("version") && !py::has_i(r"\bevent\b", outcome) {
+            if cat == Some("version") && !has_i(r"\bevent\b", outcome) {
                 report.fail("AC4", format!("{place}: the version mismatch row does not say that it raises a named event"));
             }
         }
         None if cat.is_some_and(|c| ELECTION_CATS.contains(&c)) => {
             if !argued {
-                report.fail("AC4", format!("{place}: the election form '{}' needs a member reason or an argued non-rejection", py::head(form, 50)));
+                report.fail("AC4", format!("{place}: the election form '{}' needs a member reason or an argued non-rejection", head(form, 50)));
             }
         }
         None => {
             if !argued {
-                report.fail("AC4", format!("{place}: the form '{}' names no member of the closed enumeration and argues no non-rejection", py::head(form, 50)));
+                report.fail("AC4", format!("{place}: the form '{}' names no member of the closed enumeration and argues no non-rejection", head(form, 50)));
             }
         }
     }

@@ -5,42 +5,20 @@
 
 use std::collections::BTreeSet;
 
-use crate::doccheck::wp7::md::Field;
-use crate::doccheck::wp7::py;
 use super::{Ctx, Msg};
 use crate::doccheck::Report;
+use crate::doccheck::family004::Field;
+use crate::doccheck::pycompat::parse_int;
+use crate::doccheck::text::{has_i, rx};
 
 /// `row_in(fl, pat, bits)`.
 fn row_in<'a>(fl: &'a [Field], pat: &str, bits: Option<i128>) -> Option<&'a Field> {
-    fl.iter().find(|f| py::matches(&format!(r"\s*{pat}"), &f.meaning, true).is_some() && bits.is_none_or(|b| f.bits == b))
+    fl.iter().find(|f| rx(&format!(r"(?i)^(?:\s*{pat})")).is_match(&f.meaning) && bits.is_none_or(|b| f.bits == b))
 }
 
 /// `{int(x) for x in re.findall(r"(?<![\w.])(\d{1,3})\s*=", text)}`.
 pub(crate) fn stated_values(text: &str) -> BTreeSet<i128> {
-    let chars: Vec<char> = text.chars().collect();
-    let digit = |c: char| crate::doccheck::wp7::rejection_members::digit_value(c).is_some();
-    let mut out = BTreeSet::new();
-    let mut p = 0;
-    while p < chars.len() {
-        let free = p == 0 || !(py::py_word(chars[p - 1]) || chars[p - 1] == '.');
-        if !digit(chars[p]) || !free {
-            p += 1;
-            continue;
-        }
-        let run = chars[p..].iter().take_while(|&&c| digit(c)).count();
-        let mut q = p + run;
-        while q < chars.len() && py::is_space(chars[q]) {
-            q += 1;
-        }
-        if run <= 3 && chars.get(q) == Some(&'=') {
-            let s: String = chars[p..p + run].iter().collect();
-            out.extend(py::int(&s));
-            p = q + 1;
-        } else {
-            p += 1;
-        }
-    }
-    out
+    rx(r"(?<![\w.])(\d{1,3})\s*=").captures_iter(text).filter_map(|c| parse_int(&c[1]).ok()).collect()
 }
 
 fn per_message(ctx: &Ctx, report: &mut Report) {
@@ -65,7 +43,7 @@ fn rows_of(ctx: &Ctx, pred: impl Fn(&Field) -> bool) -> Vec<(&Msg, &Field)> {
 }
 
 fn time_state(ctx: &Ctx, report: &mut Report) {
-    let ts = rows_of(ctx, |f| py::matches(r"\s*time\s+state\b", &f.meaning, true).is_some());
+    let ts = rows_of(ctx, |f| rx(r"(?i)^(?:\s*time\s+state\b)").is_match(&f.meaning));
     if ts.is_empty() {
         report.fail("AC3", "no election message carries a time state: the candidate's usable time (C-213) cannot be decided");
     }
@@ -98,7 +76,7 @@ fn time_state(ctx: &Ctx, report: &mut Report) {
 }
 
 fn holder_rows(ctx: &Ctx, report: &mut Report) {
-    let elig = rows_of(ctx, |f| py::matches(r"\s*holder[\s-]*eligib", &f.meaning, true).is_some());
+    let elig = rows_of(ctx, |f| rx(r"(?i)^(?:\s*holder[\s-]*eligib)").is_match(&f.meaning));
     if elig.is_empty() {
         report.fail("AC3", "no election message carries holder eligibility (a bit consistent with the hello's capability bit 0)");
     }
@@ -110,10 +88,10 @@ fn holder_rows(ctx: &Ctx, report: &mut Report) {
             report.fail("AC3", format!("'{}': holder eligibility is {} bits; a bit or a one-byte field", m.title, f.bits));
         }
     }
-    if rows_of(ctx, |f| py::matches(r"\s*believed\s+holder\b", &f.meaning, true).is_some() && f.bits == 64).is_empty() {
+    if rows_of(ctx, |f| rx(r"(?i)^(?:\s*believed\s+holder\b)").is_match(&f.meaning) && f.bits == 64).is_empty() {
         report.fail("AC3", "no election message carries the believed holder (module id, 64 bits)");
     }
-    let winner = rows_of(ctx, |f| py::has_i(r"\bwinner", &f.meaning) && f.meaning.to_lowercase().contains("timeline epoch") && f.bits == 16);
+    let winner = rows_of(ctx, |f| has_i(r"\bwinner", &f.meaning) && f.meaning.to_lowercase().contains("timeline epoch") && f.bits == 16);
     if winner.is_empty() {
         report.fail("AC3", "no election message carries the winner's timeline epoch (16 bits, C-10)");
     }
@@ -126,8 +104,8 @@ fn sentences(ctx: &Ctx, report: &mut Report) {
     if ctx.el_para(&[r"election\s+epoch", "compared", "unsigned", "hello"]).is_none() {
         report.fail("AC3", "no sentence says that the election epoch is compared unsigned, as in the hello");
     }
-    let names_all = |p: &str| ctx.msgs.iter().all(|m| py::has_i(&regex::escape(&m.title), p));
-    if !ctx.el_paras.iter().any(|p| py::has_i("carr", p) && names_all(p)) {
+    let names_all = |p: &str| ctx.msgs.iter().all(|m| has_i(&regex::escape(&m.title), p));
+    if !ctx.el_paras.iter().any(|p| has_i("carr", p) && names_all(p)) {
         report.fail("AC3", "no sentence says which election message carries which field: a paragraph with 'carries' must name every election message");
     }
 }
