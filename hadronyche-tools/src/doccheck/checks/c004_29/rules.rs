@@ -7,7 +7,9 @@ use super::Section;
 use crate::doccheck::Report;
 use crate::doccheck::evidence::has_tag;
 use crate::doccheck::items::{OpenItemPolicy, open_items};
-use crate::doccheck::text::{has, has_i, rx, splitlines};
+use crate::doccheck::pycompat::{PyStr, splitlines};
+use crate::doccheck::sentences::first_sentence_004_29;
+use crate::doccheck::text::{has, has_i, rx};
 use crate::doccheck::units::{BlockKind, prose_blocks};
 
 /// `parse_rules`: each numbered (`1. `) or `**Rule N` item with its
@@ -19,7 +21,7 @@ fn parse_rules(text: &str) -> Vec<String> {
         if rx(r"^\s*(\d+\.\s|\*\*Rule \d+)").is_match(line) {
             rules.push(vec![line]);
             open = true;
-        } else if line.trim().is_empty() {
+        } else if line.py_strip().is_empty() {
             open = false;
         } else if open {
             rules.last_mut().expect("a rule is open").push(line);
@@ -30,17 +32,10 @@ fn parse_rules(text: &str) -> Vec<String> {
 
 /// `rule_parts`: (bold label, lowered first sentence of the rest).
 fn rule_parts(rule: &str) -> (String, String) {
-    let label = rx(r"\*\*([^*]+)\*\*").captures(rule).map(|c| c[1].trim().trim_end_matches('.').to_lowercase()).unwrap_or_default();
-    let rest = rx(r"^\s*(\d+\.|\*\*Rule \d+\*\*)\s*").replace(rule, "").into_owned();
-    let rest = rx(r"\*\*[^*]+\*\*").replace(&rest, "").trim().to_string();
-    let mut first = rest.as_str();
-    for m in rx(r"\s").find_iter(&rest) {
-        if rest[..m.start()].ends_with('.') {
-            first = &rest[..m.start()];
-            break;
-        }
-    }
-    (label, first.to_lowercase())
+    let label = rx(r"\*\*([^*]+)\*\*").captures(rule).map(|c| c[1].py_strip().trim_end_matches('.').to_lowercase()).unwrap_or_default();
+    let rest = rx(r"^\s*(\d+\.|\*\*Rule \d+\*\*)\s*").replace(rule, "");
+    let rest = rx(r"\*\*[^*]+\*\*").replace(&rest, "");
+    (label, first_sentence_004_29(rest.py_strip()).to_lowercase())
 }
 
 const CLOSE_VERB: &str = r"closes (?:its |the |it\b)|window closes|closes it\b|ends the window";

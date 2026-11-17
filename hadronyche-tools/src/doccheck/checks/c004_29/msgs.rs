@@ -5,47 +5,51 @@
 use super::clock::clock_terms;
 use super::{Merged29, Section};
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::first_table;
-use crate::doccheck::checks::c004_25::types::stated_sizes;
-use crate::doccheck::checks::c004_27::{Field, fields_of, is_field_table};
+use crate::doccheck::family004::{Field, fields_of, first_field_table};
+use crate::doccheck::pycompat::parse_int;
+use crate::doccheck::report::{Flow, crash};
 use crate::doccheck::evidence::has_tag;
 use crate::doccheck::text::{has, has_i, rx, starts};
 use crate::doccheck::units::{BlockKind, prose_blocks};
 
+/// `SIZE_MAX_RE`: every "maximum … N bytes" figure (`int()` of each).
+fn stated_sizes(text: &str) -> Vec<i128> {
+    rx(r"(?i)maximum[^.;]{0,120}?(\d+)\s*bytes").captures_iter(text).filter_map(|c| parse_int(&c[1]).ok()).collect()
+}
+
 /// What `msg_analysis` returns.
 pub(crate) struct Msg {
     pub fl: Vec<Field>,
-    pub end: i64,
-    pub code: Option<i64>,
+    pub end: i128,
+    pub code: Option<i128>,
 }
 
 /// `msg_analysis(text, title, label)`; `Err` where the script stops.
-pub(crate) fn msg_analysis(text: &str, title: &str, label: &str, m: &Merged29, report: &mut Report) -> Result<Option<Msg>, Stop> {
-    let Some(tb) = first_table(text, is_field_table) else {
+pub(crate) fn msg_analysis(text: &str, title: &str, label: &str, m: &Merged29, report: &mut Report) -> Flow<Option<Msg>> {
+    let Some(tb) = first_field_table(text) else {
         report.fail(label, format!("the {title} has no field table (Offset, Width, Type, Meaning, Valid range)"));
         return Ok(None);
     };
     let fl = fields_of(Some(&tb), label, title, report);
-    let hdr: Vec<(i64, i64)> = fl.iter().take(7).map(|f| (f.off, f.bits)).collect();
+    let hdr: Vec<(i128, i128)> = fl.iter().take(7).map(|f| (f.off, f.bits)).collect();
     report.check(label, fl.len() >= 7 && hdr == m.cch_rows, format!("the {title} starts with the seven rows of the common control header of the Hello section (read {hdr:?})"));
     let (mut pos, mut tiles) = (0, true);
     for f in &fl {
-        if f.bits % 8 != 0 || f.off != pos {
+        if f.bits.rem_euclid(8) != 0 || f.off != pos {
             tiles = false;
         }
-        pos = f.off + f.bits.div_euclid(8);
+        pos = f.off.saturating_add(f.bits.div_euclid(8));
     }
     report.check(label, tiles, format!("the {title} table tiles from byte 0 with no gap or overlap (its rows end at byte {pos})"));
     let stated = stated_sizes(text);
     let within = match (stated.contains(&pos), m.ctrl_bound) {
-        (true, None) => return Err(Stop("TypeError: int <= None (C-17 unread)".into())),
+        (true, None) => return crash("TypeError: '<=' not supported between instances of 'int' and 'NoneType'"),
         (s, b) => s && b.is_some_and(|b| pos <= b),
     };
     report.check(label, within, format!("the {title} states its maximum size as its table sum, {pos} bytes, within the control bound (C-17) of {:?} bytes (stated {stated:?})", m.ctrl_bound));
     let mut code = None;
     for f in fl.iter().filter(|f| f.off == 6) {
-        code = rx(r"^\s*(\d+)\s+only").captures(&f.valid).and_then(|c| c[1].parse().ok());
+        code = rx(r"^\s*(\d+)\s+only").captures(&f.valid).and_then(|c| parse_int(&c[1]).ok());
     }
     let inside = matches!((code, m.block), (Some(c), Some((lo, hi))) if lo <= c && c <= hi);
     report.check(label, inside, format!("the {title} has a type code, in its Message type row, inside the block the Hello section gives this ticket ({:?}) (found {code:?})", m.block));
