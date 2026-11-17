@@ -431,19 +431,26 @@ pub fn parse_int(s: &str) -> Result<i128, IntError> {
     {
         return Err(bad());
     }
+    // accumulated with the sign, so i128::MIN itself is read
     let mut value: i128 = 0;
     for c in digits.chars().filter(|c| *c != '_') {
-        let d = decimal_value(c).ok_or_else(bad)?;
+        let d = i128::from(decimal_value(c).ok_or_else(bad)?);
         value = value
             .checked_mul(10)
-            .and_then(|v| v.checked_add(i128::from(d)))
+            .and_then(|v| {
+                if neg {
+                    v.checked_sub(d)
+                } else {
+                    v.checked_add(d)
+                }
+            })
             .ok_or_else(|| {
                 // beyond i128: red by rule (INT_LIMIT), never wrapped
                 super::pynum::record_int_limit(t);
                 IntError::Overflow(t.to_string())
             })?;
     }
-    Ok(if neg { -value } else { value })
+    Ok(value)
 }
 
 fn decimal_value(c: char) -> Option<u32> {

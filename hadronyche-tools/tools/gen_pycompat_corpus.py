@@ -104,6 +104,19 @@ for p in LOOK:
             emit("split", [p, h], re.split(p, h))
             emit("sub", [p, "<>", h], [re.sub(p, "<>", h)])
 
+# the number readers of 004-15 and 004-24 on seeded random text (with ², µ,
+# minus signs and units), where private emulations of their look-behinds
+# were found to differ
+import random
+rnd = random.Random(7)
+ALPHA = list("0123456789 .-_aZ²µ%,;x") + [" Mbit/s", " bytes", "bytes", "−", "+"]
+NUM = [r"(?<![\w.\-])(\d{1,3}(?: \d{3})+|\d+)(?![\w]|\.\d)", r"(?<![\w.\-])(\d+)\.(\d+)(?!\w)",
+       r"(?<![\w.])(\d+)(?:\.(\d+))?\s*%", r"(?<![\w.])(\d+)(?:\.(\d+))?\s*Mbit/s", r"(?<![\d.])(\d+)\s*bytes"]
+for _ in range(400):
+    h = "".join(rnd.choice(ALPHA) for _ in range(rnd.randint(1, 14)))
+    for p in NUM:
+        emit("iter", [p, h], [m.group(0) for m in re.finditer(p, h)])
+
 for t in ["1", "1.5", " 2.50 ", "1e3", "1E-7", "inf", "-inf", "nan", "1_0.5", "0.1", "1.", ".5", "-0",
           "1e400", "x", "", "1,5", "12345678901234567890.5", "3.5", "1.1", "2.675", "0.000001", "1e16", "١٢"]:
     try:

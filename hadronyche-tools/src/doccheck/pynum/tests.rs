@@ -38,12 +38,17 @@ fn bound(f: &str) -> Option<i64> {
     dec(f).map(|b| i64::try_from(parse_int(&b).expect("a corpus bound")).expect("small"))
 }
 
-fn fits(n: &str) -> bool {
-    parse_int(n).is_ok()
-        || !n
-            .trim_start_matches('-')
+/// True when Python's integer `n` is inside `i128` (for `eval`, whose
+/// every intermediate value must be: `-2**127` passes through 2**127).
+fn fits(n: &str, op: &str) -> bool {
+    let digits = !n.is_empty()
+        && n.trim_start_matches('-')
             .chars()
-            .all(|c| c.is_ascii_digit())
+            .all(|c| c.is_ascii_digit());
+    match parse_int(n) {
+        Ok(v) => op != "eval" || v != i128::MIN,
+        Err(_) => !digits,
+    }
 }
 
 /// The library's answer for one case, in the corpus's field form.
@@ -128,7 +133,7 @@ fn expected(op: &str, res: &[&str]) -> Vec<Option<String>> {
     let mut want: Vec<Option<String>> = res.iter().map(|f| dec(f)).collect();
     if matches!(op, "eval" | "int")
         && let Some(Some(v)) = want.first()
-        && !fits(v)
+        && !fits(v, op)
     {
         want = vec![Some("INT_LIMIT".into())];
     }
