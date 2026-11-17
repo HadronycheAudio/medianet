@@ -2,7 +2,7 @@
 //! and reply, their exemption and their validity rules (ticket 004-27).
 //!
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
-//! in `tests/doc_004_27.rs`; the denial list is `denials.rs`. The script's
+//! in `tests/doc/c004_27.rs`; the denial list is `denials.rs`. The script's
 //! variants, named where used:
 //!
 //! * text read as `open()` does, digit groups joined ("1 280" reads 1280,

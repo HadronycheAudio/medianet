@@ -2,7 +2,7 @@
 //! against the architecture specification (ticket 004-22).
 //!
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
-//! in `tests/doc_004_22.rs`; the denial list is `denials.rs`. This module
+//! in `tests/doc/c004_22.rs`; the denial list is `denials.rs`. This module
 //! reproduces the script's variant of every shared rule, named where it is
 //! used:
 //!
