@@ -377,8 +377,8 @@ fn denials(
 ) -> Result<Vec<Row>, String> {
     let mut out = Vec::new();
     for d in spec.denials {
-        let edited = d.edited(docs)?;
-        let v = timed(timer, || sb.run_edited(d.file, edited.as_deref()))?;
+        let edits = d.edits(docs)?;
+        let v = timed(timer, || sb.run_edited_many(&edits))?;
         let mutated = d.apply(docs)?;
         let mut r = row(spec, format!("denial {}", d.name), v, &mutated, timer);
         let unmet = d.unmet(&spec.evaluate(&mutated));
