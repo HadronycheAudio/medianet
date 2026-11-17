@@ -423,6 +423,8 @@ the same words occur in an earlier section.
 | `sentences` | `split` (`SentenceSplit`: `PERIOD_SEMI`, `LINES_004_12`, `NEWLINES_004_20`, `PARAGRAPHS_004_29`, `BLOCKS_004_25`, `COLON_004_24`, `TERMINAL_004_04`), `split_raw` with the `RAW_*` cuts, `first_sentence_004_29` |
 | `negation` | `negated` (`Lookback`: `WINDOW_24_004_16`, `WINDOW_25_004_19`, `ANYWHERE_004_16`; character windows, as Python slices) |
 | `numwin` | `window(text, start, end, before, after)`: `text[max(0, s-b):e+a]` in characters |
+| `family006` | `norm_text` (006-01/006-02: NFKC, spaces, dashes, quotes, whitespace runs), `norm_lines` |
+| `checked` | `add`, `sub`, `mul`, `sum`, `product`: arithmetic on document numbers that records `INT_LIMIT` on overflow (R21) |
 | `denial` | `Denial`, `DenialEdit`, `CRASH` |
 | `testing` | `repo`, `report_of`, `red_phase`, `check_denial`, `denial_tests!` |
 

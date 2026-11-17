@@ -211,6 +211,12 @@ fn canon(kind: &str, text: &str) -> String {
                     .collect(),
             ))
         }
+        "norm_006_01" | "norm_006_02" => q(&strs(
+            &splitlines(text)
+                .iter()
+                .map(|l| super::family006::norm_text(l))
+                .collect::<Vec<_>>(),
+        )),
         "fence_004_14" => mask_str(text, FencePolicy::Backticks),
         "fence_006_01" => mask_str(text, FencePolicy::Matching),
         "fence_006_02" => mask_str(text, FencePolicy::SameChar),
@@ -265,12 +271,15 @@ fn document(path: &str, hash: &str) -> Option<String> {
 
 #[test]
 fn markdown_helpers_equal_the_scripts_python() {
-    let (mut checked, mut skipped, mut overflow, mut bad) = (0, 0, 0, Vec::new());
+    let (mut checked, mut overflow, mut bad, mut stale) = (0, 0, Vec::new(), Vec::new());
     for (kind, id, input, expected) in records(MARKDOWN) {
         let input_s = unesc(input);
         let got = match kind {
             "row_family" | "row_004_14" => q(&strs(&split_row(&input_s))),
             "row_006" => q(&split_row_char_walk(&input_s).map_or(Q::None, |c| strs(&c))),
+            "norm_006_01" | "norm_006_02" if id == "-" => {
+                q(&Q::Str(super::family006::norm_text(&input_s)))
+            }
             "stem_006_01" => q(&Q::List(
                 stem_tokens(&input_s, STOPWORDS_006_01)
                     .into_iter()
@@ -302,7 +311,7 @@ fn markdown_helpers_equal_the_scripts_python() {
             }
             k if k.starts_with("doc:") => {
                 let Some(text) = document(id, input) else {
-                    skipped += 1;
+                    stale.push(id.to_string());
                     continue;
                 };
                 format!("fnv:{}", fnv(&canon(&k[4..], &text)))
@@ -322,10 +331,14 @@ fn markdown_helpers_equal_the_scripts_python() {
         bad.len(),
         bad.join("\n")
     );
+    stale.sort();
+    stale.dedup();
     assert!(
-        checked > 1000 && skipped * 10 < checked,
-        "checked {checked}, skipped {skipped}"
+        stale.is_empty(),
+        "documents changed since data/markdown_corpus.txt was generated: {stale:?}; regenerate it: \
+         python3 hadronyche-tools/tools/gen_markdown_corpus.py markdown > hadronyche-tools/data/markdown_corpus.txt"
     );
+    assert!(checked > 1000, "checked {checked}");
     assert_eq!(
         overflow, 1,
         "the one cell beyond i128 (Python: an int; here IntError::Overflow)"
@@ -383,9 +396,12 @@ fn lookaround_patterns_equal_the_scripts_python() {
                 ))
             }
             "doc:look" => {
-                if format!("fnv:{}", fnv(&joined)) != input {
-                    continue;
-                }
+                assert!(
+                    format!("fnv:{}", fnv(&joined)) == input,
+                    "the look-around documents changed since data/lookaround_corpus.txt was generated; \
+                     regenerate it: python3 hadronyche-tools/tools/gen_markdown_corpus.py lookaround > \
+                     hadronyche-tools/data/lookaround_corpus.txt"
+                );
                 let body: Vec<String> = all_lines.iter().map(|l| look(&pattern, l)).collect();
                 format!("fnv:{}", fnv(&body.join("\n")))
             }

@@ -241,6 +241,7 @@ Not taken:
 | 006 tables | `tables_with(span, TableRules::T006_01 / T006_02)` (006-01: the header line is `Table::line`, the separator the line after it) |
 | `heading_tokens`, `matching_heading` | `markdown::{stem_tokens, stem_match}`, `STOPWORDS_006_01` |
 | `c006_01::text::nfkc` | `pycompat::nfkc` |
+| `norm_text` (006-01 and 006-02, identical copies), 006-02 `norm_lines` | `family006::{norm_text, norm_lines}` (proven: `norm_006_01`/`norm_006_02` in `data/markdown_corpus.txt`) |
 | `c006_02::rows::Num::{Int, Frac}` | `i128` + `pynum::Fraction` (the script's "is it a Fraction" test is a non-integer float) |
 | `tests/wp9_support` | `testing::{report_of, check_denial, denial_tests!}` plus `doccheck-equiv --denials`. It used `repo_root` and `Sandbox`, which clippy bans in test files. |
 | the `equiv/script.rs` edit | drop it: the library's label reader reads the grouped form, now with any upper-case group header |
