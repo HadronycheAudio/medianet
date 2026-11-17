@@ -2,9 +2,15 @@
 //! 004-19).
 //!
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
-//! in `tests/doc_004_19.rs`. A transcription with Python semantics on the
-//! shared WP7 helpers of `doccheck::wp7` ([`py`], [`md`], [`pytoml`]). 004-19's
-//! own variants: the section is the first heading of any level matching
+//! in `tests/doc/c004_19.rs`. A transcription with Python semantics on the
+//! library's named variants ([`family004`]: `heading_index`, `tables`,
+//! `is_field_table`, `const_line`, `width_to_bits` under
+//! `WidthRule::DigitGroups004_06`; `section_blocks` and `block_role`;
+//! `REJECTION_004_16`; `negated_at` with `LOOKBACK_004_19`; the DoD under
+//! `TagPolicy::BLOCKS_004_19`, `TableTagRule::AfterProse004_19` and
+//! `OpenItemPolicy::Window3`; [`crate::doccheck::tomlsubset`]). A Python
+//! exception stops the check (`Stop::Crash`); an integer beyond `i128` is
+//! red by rule (`INT_LIMIT`). 004-19's own variants, private to this port: the section is the first heading of any level matching
 //! `sync\s+requests?\b`, with a placeholder rule (`to be filled` and no
 //! `|`); its blocks are runs of non-blank lines with fenced code kept inside
 //! and each heading its own block; the request and reply tables are told
@@ -23,10 +29,6 @@
 //! assertions (wire-check "checks clean"; wire_tables exactly 12/0/0 with a
 //! result line; the design checker printing OK) are in
 //! `scripts/repo-state.d/004-19.sh`.
-//!
-//! [`py`]: crate::doccheck::wp7::py
-//! [`md`]: crate::doccheck::wp7::md
-//! [`pytoml`]: crate::doccheck::wp7::pytoml
 
 pub(crate) mod ac1;
 mod ac5;
@@ -34,15 +36,37 @@ mod ac6;
 mod works;
 
 pub mod denials;
-use crate::doccheck::wp7::common::{block_kind, section_blocks};
-use crate::doccheck::wp7::md::{self, PyTable, is_field_table, parse_tables};
-use crate::doccheck::wp7::py;
-use super::{CheckSpec, DiffClass, KnownDifference, Target};
+use super::{CheckSpec, KnownDifference, Target};
+use crate::doccheck::blocks::{block_role, section_blocks};
+use crate::doccheck::equiv::script::DEFAULT_READER;
+use crate::doccheck::family004::{self, WidthRule, is_field_table};
 use crate::doccheck::policy::TomlReader;
-use crate::doccheck::wp7::rejection_members::Enumeration;
+use crate::doccheck::pycompat::{PyStr, parse_int, splitlines, universal_newlines};
+use crate::doccheck::pynum::record_int_limit;
+use crate::doccheck::rejection_members::{Enumeration, REJECTION_004_16};
+use crate::doccheck::report::Flow;
+use crate::doccheck::tables::Table;
+use crate::doccheck::text::{has, has_i, rx};
 use crate::doccheck::ticket::CONSTANTS_MD;
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
+
+/// Python's `a + b` on ints. Beyond `i128` the value is recorded
+/// (`INT_LIMIT`: the verdict is red by rule) and 0 stands in for it.
+pub(crate) fn int_add(a: i128, b: i128) -> i128 {
+    a.checked_add(b).unwrap_or_else(|| {
+        record_int_limit(&format!("{a} + {b}"));
+        0
+    })
+}
+
+/// Python's `a * b` on ints; beyond `i128` as [`int_add`].
+pub(crate) fn int_mul(a: i128, b: i128) -> i128 {
+    a.checked_mul(b).unwrap_or_else(|| {
+        record_int_limit(&format!("{a} * {b}"));
+        0
+    })
+}
 
 /// The specification.
 pub const WIRE_MD: &str = "doc/design/spec/wire.md";
@@ -78,15 +102,11 @@ pub const SPEC: CheckSpec = CheckSpec {
     known_differences: KNOWN,
     denials: denials::DENIALS,
     toml: TomlReader::Subset004_18,
-    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
+    fail_reader: DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.
-const KNOWN: &[KnownDifference] = &[KnownDifference {
-    label: r"^denial py_denial_(an_offset_as_a_string|a_reason_as_a_list)$",
-    class: DiffClass::ScriptCrashed,
-    reason: "the script dies with a Python TypeError (sorting a str offset beside ints; hashing a list); the port reports the same cause under CRASH",
-}];
+const KNOWN: &[KnownDifference] = &[];
 
 /// The constants the script reads.
 #[derive(Debug, Default)]
@@ -128,27 +148,23 @@ pub(crate) struct Ctx {
     pub rep_f: Vec<Row>,
     pub req_size: Option<i128>,
     pub rep_size: Option<i128>,
-    pub tables: Vec<PyTable>,
+    pub tables: Vec<Table>,
     pub toml_text: Option<String>,
 }
 
+/// `first_int(pattern, text)` (beyond `i128`: `INT_LIMIT`, recorded).
 fn first_int(pattern: &str, text: &str) -> Option<i128> {
-    py::search(pattern, text, true).and_then(|m| py::int(m.g(1)))
-}
-
-fn const_row(text: &str, cid: &str) -> String {
-    let lead = format!("| {cid} |");
-    py::splitlines(text).into_iter().find(|l| l.starts_with(&lead)).unwrap_or("").to_string()
+    rx(&format!("(?i){pattern}")).captures(text).and_then(|m| parse_int(&m[1]).ok())
 }
 
 fn konst(docs: &Docs, report: &mut Report) -> Konst {
-    let text = docs.read(CONSTANTS_MD).map(|t| py::universal(&t)).unwrap_or_default();
-    let row = |cid: &str| const_row(&text, cid);
-    let triple = |cid: &str| py::search(r"(\d+)\s*/\s*(\d+)\s*/\s*(\d+)\s*bits", &row(cid), false).map(|m| (py::int(m.g(1)), py::int(m.g(3))));
+    let text = docs.read(CONSTANTS_MD).map(|t| universal_newlines(&t)).unwrap_or_default();
+    let row = |cid: &str| family004::const_line(&text, cid);
+    let triple = |cid: &str| rx(r"(\d+)\s*/\s*(\d+)\s*/\s*(\d+)\s*bits").captures(&row(cid)).map(|m| (parse_int(&m[1]).ok(), parse_int(&m[3]).ok()));
     let k = Konst {
         dscp: first_int(r"CS6\s*\((\d+)\)", &row("C-13")),
         req_rate: first_int(r"(\d+)\s+per\s+second", &row("C-36")),
-        acc: py::search(r"(\d+)\s+to\s+(\d+)\s+per\s+second", &row("C-112"), true).and_then(|m| Some((py::int(m.g(1))?, py::int(m.g(2))?))),
+        acc: rx(r"(?i)(\d+)\s+to\s+(\d+)\s+per\s+second").captures(&row("C-112")).and_then(|m| Some((parse_int(&m[1]).ok()?, parse_int(&m[2]).ok()?))),
         epoch_bits: triple("C-10").and_then(|t| t.1),
         module_bits: triple("C-11").and_then(|t| t.0),
         domain_bits: triple("C-11").and_then(|t| t.1),
@@ -176,20 +192,16 @@ fn konst(docs: &Docs, report: &mut Report) -> Konst {
     k
 }
 
-/// `width_to_bits(cell)`.
+/// `width_to_bits(cell)` (`WidthRule::DigitGroups004_06`); beyond `i128`
+/// `INT_LIMIT` (recorded by the library) and no width.
 pub(crate) fn width_to_bits(cell: &str) -> Option<i128> {
-    let s = cell.to_lowercase();
-    let num = |g: &str| py::int(&g.replace([' ', '_'], ""));
-    if let Some(m) = py::search(r"(\d[\d _]*)\s*bits?", &s, false) {
-        return num(m.g(1));
-    }
-    py::search(r"(\d[\d _]*)", &s, false).and_then(|m| num(m.g(1))).map(|v| v.saturating_mul(8))
+    family004::width_to_bits(cell, WidthRule::DigitGroups004_06).ok().flatten()
 }
 
 /// `classify(text)`: "request", "reply" or None.
 fn classify(text: &str) -> Option<&'static str> {
     let t = text.to_lowercase();
-    let (req, rep) = (t.contains("request"), py::has(r"\brepl(y|ies)\b", &t));
+    let (req, rep) = (t.contains("request"), has(r"\brepl(y|ies)\b", &t));
     match (req, rep) {
         (false, true) => Some("reply"),
         (true, false) => Some("request"),
@@ -201,7 +213,7 @@ fn classify(text: &str) -> Option<&'static str> {
 fn table_label(lines: &[String], start: usize) -> (Option<String>, Option<String>) {
     let (mut heading, mut para) = (None, None);
     for k in (0..start.min(lines.len())).rev() {
-        let ln = py::strip(&lines[k]);
+        let ln = lines[k].py_strip();
         if ln.is_empty() {
             continue;
         }
@@ -220,17 +232,18 @@ fn table_label(lines: &[String], start: usize) -> (Option<String>, Option<String
 }
 
 /// `table_fields(tab)`.
-fn table_fields(t: Option<&PyTable>) -> Vec<Row> {
+fn table_fields(t: Option<&Table>) -> Vec<Row> {
     let Some(t) = t else { return Vec::new() };
     let mut out = Vec::new();
-    for row in &t.rows {
+    for row in t.rows.iter().map(|r| &r.cells) {
         if row.len() < 5 {
             continue;
         }
-        let off = py::matches(r"\s*(\d+)\s*$", &row[0], false).and_then(|m| py::int(m.g(1)));
+        // beyond i128: INT_LIMIT (recorded), the row left out
+        let off = rx(r"^\s*(\d+)\s*$").captures(&row[0]).and_then(|m| parse_int(&m[1]).ok());
         let (Some(off), Some(w)) = (off, width_to_bits(&row[1])) else { continue };
         out.push(Row {
-            off: off.saturating_mul(8),
+            off: int_mul(off, 8),
             w,
             ty: row[2].chars().filter(|c| !"`*_ ".contains(*c)).collect::<String>().to_lowercase(),
             meaning: row[3].clone(),
@@ -249,7 +262,7 @@ fn size_of(fields: &[Row], name: &str, report: &mut Report) -> Option<i128> {
             report.fail("AC1", format!("{name} table: field at byte {} does not start where the previous field ends (byte {}); the fields must tile with no gap and no overlap", f.off.div_euclid(8), pos.div_euclid(8)));
             ok = false;
         }
-        pos = f.off.saturating_add(f.w);
+        pos = int_add(f.off, f.w);
     }
     if pos.rem_euclid(8) != 0 {
         report.fail("AC1", format!("{name} table: the fields sum to {pos} bits, not whole bytes"));
@@ -260,9 +273,9 @@ fn size_of(fields: &[Row], name: &str, report: &mut Report) -> Option<i128> {
 const ALL: [&str; 10] = ["AC1", "AC2", "AC3", "AC4", "AC5", "W1", "W2", "W4", "W5", "DoD"];
 
 fn section(ctx: &mut Ctx, wire: &str, report: &mut Report) {
-    let lines = py::splitlines(wire);
-    let heads = md::heading_index(&lines);
-    let Some(k) = heads.iter().position(|h| py::has_i(r"sync\s+requests?\b", &h.2)) else {
+    let lines = splitlines(wire);
+    let heads = family004::heading_index(&lines);
+    let Some(k) = heads.iter().position(|h| has_i(r"sync\s+requests?\b", &h.2)) else {
         ctx.placeholder = true;
         for ac in ALL {
             report.fail(ac, "no 'Sync request' section heading in wire.md");
@@ -272,8 +285,8 @@ fn section(ctx: &mut Ctx, wire: &str, report: &mut Report) {
     let (start, level) = (heads[k].0 + 1, heads[k].1);
     let end = heads[k + 1..].iter().find(|h| h.1 <= level).map_or(lines.len(), |h| h.0);
     ctx.section = lines[start.min(end)..end].join("\n");
-    ctx.sec_lines = py::splitlines(&ctx.section).into_iter().map(String::from).collect();
-    if py::strip(&ctx.section).is_empty() || (py::has_i(r"to\s+be\s+filled", &ctx.section) && !ctx.section.contains('|')) {
+    ctx.sec_lines = splitlines(&ctx.section).into_iter().map(String::from).collect();
+    if ctx.section.py_strip().is_empty() || (has_i(r"to\s+be\s+filled", &ctx.section) && !ctx.section.contains('|')) {
         ctx.placeholder = true;
         for ac in ALL {
             report.fail(ac, "the Sync request section is still the 004-19 placeholder");
@@ -282,13 +295,13 @@ fn section(ctx: &mut Ctx, wire: &str, report: &mut Report) {
 }
 
 fn tables(ctx: &mut Ctx, report: &mut Report) {
-    ctx.tables = parse_tables(&ctx.section);
-    let mut fts: Vec<(Option<&'static str>, &PyTable)> = Vec::new();
+    ctx.tables = family004::tables(&ctx.section);
+    let mut fts: Vec<(Option<&'static str>, &Table)> = Vec::new();
     for t in &ctx.tables {
-        if !is_field_table(&t.header) {
+        if !is_field_table(t.head()) {
             continue;
         }
-        let (h, p) = table_label(&ctx.sec_lines, t.start);
+        let (h, p) = table_label(&ctx.sec_lines, t.line);
         fts.push((classify(h.as_deref().unwrap_or("")).or_else(|| classify(p.as_deref().unwrap_or(""))), t));
     }
     if fts.len() == 2 && fts.iter().all(|t| t.0.is_none()) {
@@ -310,7 +323,7 @@ fn tables(ctx: &mut Ctx, report: &mut Report) {
 fn context(docs: &Docs, report: &mut Report) -> Ctx {
     let k = konst(docs, report);
     let wire = match docs.read(WIRE_MD) {
-        Some(t) => py::universal(&t),
+        Some(t) => universal_newlines(&t),
         None => {
             report.fail("AC1", format!("{WIRE_MD} does not exist"));
             for ac in ["AC2", "AC3", "AC4", "AC5", "DoD"] {
@@ -319,7 +332,7 @@ fn context(docs: &Docs, report: &mut Report) -> Ctx {
             String::new()
         }
     };
-    let members = Enumeration::parse(&wire);
+    let members = Enumeration::parse(&wire, REJECTION_004_16);
     if !members.section_found {
         report.fail("AC5", "no 'Rejection reasons' section in wire.md: the closed enumeration cannot be read");
     } else if !members.has_exactly(REJECTION_PIN) {
@@ -339,11 +352,11 @@ fn context(docs: &Docs, report: &mut Report) -> Ctx {
         req_size: None,
         rep_size: None,
         tables: Vec::new(),
-        toml_text: docs.read(WIRE_TOML).map(|t| py::universal(&t)),
+        toml_text: docs.read(WIRE_TOML).map(|t| universal_newlines(&t)),
     };
     section(&mut ctx, &wire, report);
     ctx.blocks = section_blocks(&ctx.sec_lines);
-    ctx.prose = ctx.blocks.iter().filter(|b| block_kind(b) == "prose").map(|b| b.join("\n")).collect();
+    ctx.prose = ctx.blocks.iter().filter(|b| block_role(b).name() == "prose").map(|b| b.join("\n")).collect();
     ctx.prose_all = ctx.prose.join("\n");
     tables(&mut ctx, report);
     ctx
@@ -352,10 +365,16 @@ fn context(docs: &Docs, report: &mut Report) -> Ctx {
 /// The check.
 pub fn run(docs: &Docs) -> Report {
     let mut report = Report::default();
-    let ctx = context(docs, &mut report);
-    ac1::ac1_to_ac4(&ctx, &mut report);
-    let form_table = ac5::forms(&ctx, &mut report);
-    ac6::toml(&ctx, form_table.as_ref(), &mut report);
-    works::works_and_dod(&ctx, &mut report);
-    report
+    let flow = body(docs, &mut report);
+    report.finish(flow)
+}
+
+/// The script, in its order; a Python exception stops it.
+fn body(docs: &Docs, report: &mut Report) -> Flow<()> {
+    let ctx = context(docs, report);
+    ac1::ac1_to_ac4(&ctx, report);
+    let form_table = ac5::forms(&ctx, report);
+    ac6::toml(&ctx, form_table.as_ref(), report)?;
+    works::works_and_dod(&ctx, report);
+    Ok(())
 }

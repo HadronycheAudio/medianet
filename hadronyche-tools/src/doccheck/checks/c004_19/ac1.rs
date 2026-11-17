@@ -4,44 +4,14 @@
 
 use std::collections::BTreeSet;
 
-use crate::doccheck::wp7::common::split_sentences;
-use crate::doccheck::wp7::py;
 use super::{Ctx, Row};
 use crate::doccheck::Report;
+use crate::doccheck::pycompat::{PyStr, parse_int};
+use crate::doccheck::text::{has_i, head, rx};
 
 /// `re.split(r"(?<=[.;:])\s+|\n+", text)`.
 pub(crate) fn split_size_sentences(text: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let (mut start, mut prev) = (0, None::<char>);
-    let mut it = text.char_indices().peekable();
-    while let Some((i, c)) = it.next() {
-        let run: Option<fn(char) -> bool> = if py::is_space(c) && matches!(prev, Some('.' | ';' | ':')) {
-            Some(py::is_space)
-        } else if c == '\n' {
-            Some(|x| x == '\n')
-        } else {
-            None
-        };
-        let Some(take) = run else {
-            prev = Some(c);
-            continue;
-        };
-        out.push(&text[start..i]);
-        let mut end = i + c.len_utf8();
-        let mut last = c;
-        while let Some(&(j, d)) = it.peek() {
-            if !take(d) {
-                break;
-            }
-            end = j + d.len_utf8();
-            last = d;
-            it.next();
-        }
-        start = end;
-        prev = Some(last);
-    }
-    out.push(&text[start..]);
-    out
+    rx(r"(?<=[.;:])\s+|\n+").split(text).collect()
 }
 
 fn ac1(ctx: &Ctx, report: &mut Report) {
@@ -51,12 +21,12 @@ fn ac1(ctx: &Ctx, report: &mut Report) {
     }
     let mut stated = BTreeSet::new();
     for s in split_size_sentences(&ctx.prose_all) {
-        if !py::has_i("size|long|length", s) || !py::has_i("request|reply|both|each|fixed|every|sync", s) {
+        if !has_i("size|long|length", s) || !has_i("request|reply|both|each|fixed|every|sync", s) {
             continue;
         }
-        for h in py::finditer("(\\d[\\d ,_\u{a0}\u{202f}]*\\d|\\d)\\s*-?\\s*bytes?\\b", s, false) {
-            let digits: String = h.g(1).chars().filter(|c| !" ,_\u{a0}\u{202f}".contains(*c)).collect();
-            stated.extend(py::int(&digits));
+        for h in rx("(\\d[\\d ,_\u{a0}\u{202f}]*\\d|\\d)\\s*-?\\s*bytes?\\b").captures_iter(s) {
+            let digits: String = h.get(1).map_or("", |m| m.as_str()).chars().filter(|c| !" ,_\u{a0}\u{202f}".contains(*c)).collect();
+            stated.extend(parse_int(&digits).ok());
         }
     }
     if stated.is_empty() {
@@ -64,10 +34,10 @@ fn ac1(ctx: &Ctx, report: &mut Report) {
     } else if stated != BTreeSet::from([rq]) {
         report.fail("AC1", format!("the stated byte size {stated:?} does not equal the sum of the field widths of each table, {rq} bytes"));
     }
-    let pads: Vec<&Row> = ctx.req_f.iter().filter(|f| f.w > 0 && (f.ty == "pad" || py::has_i(r"\bpad|reserved", &format!("{} {}", f.meaning, f.valid)))).collect();
+    let pads: Vec<&Row> = ctx.req_f.iter().filter(|f| f.w > 0 && (f.ty == "pad" || has_i(r"\bpad|reserved", &format!("{} {}", f.meaning, f.valid)))).collect();
     if pads.is_empty() {
         report.fail("AC1", "the request table has no explicit padding or reserved field that reaches the fixed size");
-    } else if !pads.iter().any(|f| py::has_i(r"\b0\b|zero", &format!("{} {}", f.valid, f.meaning))) {
+    } else if !pads.iter().any(|f| has_i(r"\b0\b|zero", &format!("{} {}", f.valid, f.meaning))) {
         report.fail("AC1", "the request padding has no required value of zero in its valid range");
     }
 }
@@ -78,7 +48,7 @@ pub(crate) fn opt(v: Option<i128>) -> String {
 }
 
 fn rows<'a>(fields: &'a [Row], pat: &str) -> Vec<&'a Row> {
-    fields.iter().filter(|f| py::has_i(pat, &f.meaning)).collect()
+    fields.iter().filter(|f| has_i(pat, &f.meaning)).collect()
 }
 
 fn ac2(ctx: &Ctx, report: &mut Report) {
@@ -86,7 +56,7 @@ fn ac2(ctx: &Ctx, report: &mut Report) {
         return;
     }
     let k = &ctx.k;
-    let echo: Vec<&Row> = rows(&ctx.rep_f, r"send\s+timestamp").into_iter().filter(|f| py::has_i("echo", &f.text)).collect();
+    let echo: Vec<&Row> = rows(&ctx.rep_f, r"send\s+timestamp").into_iter().filter(|f| has_i("echo", &f.text)).collect();
     if echo.is_empty() {
         report.fail("AC2", "the reply table has no row that echoes the request's send timestamp");
     } else if !echo.iter().any(|f| f.w == 64) {
@@ -110,7 +80,7 @@ fn ac2(ctx: &Ctx, report: &mut Report) {
             report.fail("AC2", format!("the {name} table has no domain id row"));
         } else if !dom.iter().any(|f| Some(f.w) == k.domain_bits) {
             report.fail("AC2", format!("the {name} domain id must be {} bits (C-11)", opt(k.domain_bits)));
-        } else if !dom.iter().any(|f| py::has_i(r"unconfigured|0\s*=|zero", &f.text)) {
+        } else if !dom.iter().any(|f| has_i(r"unconfigured|0\s*=|zero", &f.text)) {
             report.fail("AC2", format!("the {name} domain id row does not state that 0 is the unconfigured domain"));
         }
     }
@@ -119,30 +89,30 @@ fn ac2(ctx: &Ctx, report: &mut Report) {
 const NEG: &str = r"\bsequence\b|\bseq\b|exchange\s+(?:id|number|identifier)|transaction|correlat|cookie|per[- ]request|request\s+(?:id|number|identifier|counter)|\bpending\b|\bhandle\b|\btoken\b";
 
 fn ac3(ctx: &Ctx, report: &mut Report) {
-    if !ctx.prose.iter().any(|b| py::has_i("stateless", b)) {
+    if !ctx.prose.iter().any(|b| has_i("stateless", b)) {
         report.fail("AC3", "the section does not state that the exchange is stateless");
     }
-    if !ctx.prose.iter().any(|b| py::has_i(r"\becho", b)) {
+    if !ctx.prose.iter().any(|b| has_i(r"\becho", b)) {
         report.fail("AC3", "the section does not state that the reply echoes the request's own send timestamp");
     }
     for (name, tab) in [("request", &ctx.req_f), ("reply", &ctx.rep_f)] {
         for f in tab.iter() {
-            if let Some(h) = py::search(NEG, &format!("{} {}", f.meaning, f.valid), true) {
-                report.fail("AC3", format!("the {name} table has a field that only per-request holder state could fill ('{}'): {}", h.all(), py::head(&f.meaning, 90)));
+            if let Some(h) = rx(&format!("(?i){}", NEG)).captures(&format!("{} {}", f.meaning, f.valid)) {
+                report.fail("AC3", format!("the {name} table has a field that only per-request holder state could fill ('{}'): {}", h.get(0).map_or("", |m| m.as_str()), head(&f.meaning, 90)));
             }
         }
     }
 }
 
 fn decision_of(para: &str) -> Option<&'static str> {
-    for s in split_sentences(para) {
-        if !py::has_i("authentication|reservation", s) {
+    for s in rx(r"(?<=[.;])\s+").split(para) {
+        if !has_i("authentication|reservation", s) {
             continue;
         }
-        if py::has_i(r"\b(?:not|no|without|never)\b|n't", s) {
+        if has_i(r"\b(?:not|no|without|never)\b|n't", s) {
             return Some("not carried");
         }
-        if py::has_i(r"\b(?:carr(?:y|ies)|includ\w*|bears?|has)\b", s) {
+        if has_i(r"\b(?:carr(?:y|ies)|includ\w*|bears?|has)\b", s) {
             return Some("carried");
         }
     }
@@ -152,14 +122,14 @@ fn decision_of(para: &str) -> Option<&'static str> {
 fn carried(ctx: &Ctx, report: &mut Report) {
     let k = &ctx.k;
     for (name, fields) in [("request", &ctx.req_f), ("reply", &ctx.rep_f)] {
-        let scheme = fields.iter().any(|f| Some(f.w) == k.scheme_bits && py::has_i("scheme|authentication", &f.meaning) && py::has_i(r"\b0\b|none|zero", &format!("{}{}", f.valid, f.meaning)));
+        let scheme = fields.iter().any(|f| Some(f.w) == k.scheme_bits && has_i("scheme|authentication", &f.meaning) && has_i(r"\b0\b|none|zero", &format!("{}{}", f.valid, f.meaning)));
         if !scheme {
             report.fail("AC4", format!("the {name} table carries the reservation but has no {}-bit scheme field with value 0 (C-115)", opt(k.scheme_bits)));
         }
-        if !fields.iter().any(|f| Some(f.w) == k.counter_bits && py::has_i("counter", &f.meaning) && py::has_i("live", &f.text)) {
+        if !fields.iter().any(|f| Some(f.w) == k.counter_bits && has_i("counter", &f.meaning) && has_i("live", &f.text)) {
             report.fail("AC4", format!("the {name} table carries the reservation but has no {}-bit live message counter (C-115)", opt(k.counter_bits)));
         }
-        let tag = fields.iter().any(|f| Some(f.w) == k.tag_bits && py::has_i(r"\btag\b", &f.meaning) && py::has_i(r"zero|\b0\b", &format!("{}{}", f.valid, f.meaning)));
+        let tag = fields.iter().any(|f| Some(f.w) == k.tag_bits && has_i(r"\btag\b", &f.meaning) && has_i(r"zero|\b0\b", &format!("{}{}", f.valid, f.meaning)));
         if !tag {
             report.fail("AC4", format!("the {name} table carries the reservation but has no {}-bit zero tag field (C-115)", opt(k.tag_bits)));
         }
@@ -167,7 +137,7 @@ fn carried(ctx: &Ctx, report: &mut Report) {
 }
 
 fn ac4(ctx: &Ctx, report: &mut Report) {
-    let Some(i) = ctx.prose.iter().position(|b| py::has_i("authentication|reservation", b) && py::has_i(r"\[decision\]", b)) else {
+    let Some(i) = ctx.prose.iter().position(|b| has_i("authentication|reservation", b) && has_i(r"\[decision\]", b)) else {
         report.fail("AC4", "no [decision]-tagged paragraph states the authentication-reservation choice");
         return;
     };
@@ -175,8 +145,8 @@ fn ac4(ctx: &Ctx, report: &mut Report) {
     if decision.is_none() {
         report.fail("AC4", "the decision paragraph does not say whether sync messages carry the authentication reservation");
     }
-    let window = ctx.prose[i.saturating_sub(1)..(i + 2).min(ctx.prose.len())].join("\n");
-    let ok = py::search(r"(?s)falsifier\s*[:\-—]?\s*(.*)", &window, true).is_some_and(|m| m.g(1).split(py::is_space).filter(|w| !w.is_empty()).count() >= 4);
+    let window = ctx.prose[i.max(1) - 1..(i + 2).min(ctx.prose.len())].join("\n");
+    let ok = rx(r"(?i)(?s)falsifier\s*[:\-—]?\s*(.*)").captures(&window).is_some_and(|m| m.get(1).map_or("", |m| m.as_str()).py_split().count() >= 4);
     if !ok {
         report.fail("AC4", "the authentication decision has no falsifier (the word 'falsifier' followed by the condition that would overturn it)");
     }
@@ -185,8 +155,8 @@ fn ac4(ctx: &Ctx, report: &mut Report) {
         Some(_) => {
             for (name, fields) in [("request", &ctx.req_f), ("reply", &ctx.rep_f)] {
                 for f in fields.iter() {
-                    if py::has_i(r"authentication|scheme|\btag\b|counter|reservation", &f.meaning) {
-                        report.fail("AC4", format!("the decision says sync messages do not carry the reservation, but the {name} table has the field: {}", py::head(&f.meaning, 80)));
+                    if has_i(r"authentication|scheme|\btag\b|counter|reservation", &f.meaning) {
+                        report.fail("AC4", format!("the decision says sync messages do not carry the reservation, but the {name} table has the field: {}", head(&f.meaning, 80)));
                     }
                 }
             }

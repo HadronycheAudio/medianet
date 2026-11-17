@@ -96,13 +96,13 @@ pub const DENIALS: &[Denial] = &[
         name: "denial_wire_md_missing",
         file: WIRE_MD,
         edit: DenialEdit::Delete,
-        expect: &[("AC1", "does not exist")],
+        expect: &[("AC1", "does not exist"), ("AC2", ""), ("AC3", ""), ("AC4", ""), ("AC5", ""), ("AC6", ""), ("DoD", ""), ("W1", ""), ("W2", ""), ("W4", ""), ("W5", "")],
     },
     Denial {
         name: "ac5_denial_no_rejection_reasons_section",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| wire(b, |t| rename_heading(t, "^Rejection reasons$", "Refusals"))),
-        expect: &[("AC5", "no 'Rejection reasons' section")],
+        expect: &[("AC5", "no 'Rejection reasons' section"), ("AC6", "")],
     },
     Denial {
         name: "ac5_denial_the_enumeration_not_thirteen",
@@ -114,7 +114,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_no_sync_section",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| wire(b, |t| rename_heading(t, "^Sync request and reply$", "Sync exchange"))),
-        expect: &[("AC1", "no 'Sync request' section heading")],
+        expect: &[("AC1", "no 'Sync request' section heading"), ("AC2", ""), ("AC3", ""), ("AC4", ""), ("AC5", ""), ("DoD", ""), ("W1", ""), ("W2", ""), ("W4", ""), ("W5", "")],
     },
     Denial {
         name: "ac1_denial_the_placeholder",
@@ -123,31 +123,31 @@ pub const DENIALS: &[Denial] = &[
         let head = t.split('\n').next().expect("heading").to_string();
         format!("{head}\n\nTo be filled by 004-19.\n")
     })),
-        expect: &[("AC1", "still the 004-19 placeholder")],
+        expect: &[("AC1", "still the 004-19 placeholder"), ("AC2", ""), ("AC3", ""), ("AC4", ""), ("AC5", ""), ("DoD", ""), ("W1", ""), ("W2", ""), ("W4", ""), ("W5", "")],
     },
     Denial {
         name: "ac1_denial_no_reply_table",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Reply$", |t| lit(t, "| Offset (bytes) |", "| Position |"))),
-        expect: &[("AC1", "needs a request field table and a reply field table")],
+        expect: &[("AC1", "needs a request field table and a reply field table"), ("AC4", "")],
     },
     Denial {
         name: "ac1_denial_fields_that_do_not_tile",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| rep(b, "| 40 | 8 | u64 | Receive timestamp", "| 41 | 8 | u64 | Receive timestamp")),
-        expect: &[("AC1", "does not start where the previous field ends")],
+        expect: &[("AC1", "does not start where the previous field ends"), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_fields_not_whole_bytes",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| rep(b, "| 72 | 2 | u16 | Timeline epoch", "| 72 | 12 bits | u16 | Timeline epoch")),
-        expect: &[("AC1", "not whole bytes")],
+        expect: &[("AC1", "not whole bytes"), ("AC2", ""), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_sizes_that_differ",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| req(b, "| 40 | 34 | pad |", "| 40 | 33 | pad |")),
-        expect: &[("AC1", "do not have the same byte size")],
+        expect: &[("AC1", "do not have the same byte size"), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_no_stated_size",
@@ -165,7 +165,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_no_padding_row",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| req(b, "| 40 | 34 | pad | Padding: brings the request to the reply's size, the room the reply's receive and send timestamps, holder module id, epoch origin and timeline epoch take; senders write zero (Reserved fields, general rule) | 0 only |", "| 40 | 34 | u8 | Filler: brings the request to the reply's size | any value |")),
-        expect: &[("AC1", "no explicit padding or reserved field")],
+        expect: &[("AC1", "no explicit padding or reserved field"), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_padding_without_zero",
@@ -186,7 +186,7 @@ pub const DENIALS: &[Denial] = &[
         let t = lit(t, "| 32 | 8 | u64 | Echoed send timestamp", "| 32 | 4 | u64 | Echoed send timestamp");
         lit(&t, "| 40 | 8 | u64 | Receive timestamp", "| 36 | 12 | u64 | Receive timestamp")
     })),
-        expect: &[("AC2", "must be 64 bits")],
+        expect: &[("AC2", "must be 64 bits"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_no_epoch_row",
@@ -201,7 +201,7 @@ pub const DENIALS: &[Denial] = &[
         let t = lit(t, "| 72 | 2 | u16 | Timeline epoch", "| 72 | 4 | u16 | Timeline epoch");
         lit(&t, "| 64 | 8 | i64 | Epoch origin", "| 64 | 8 | i64 | Origin")
     })),
-        expect: &[("AC2", "the reply's timeline epoch must be")],
+        expect: &[("AC2", "the reply's timeline epoch must be"), ("AC1", ""), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_no_module_id_row",
@@ -213,7 +213,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac2_denial_a_module_id_not_64_bits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Reply$", |t| lit(&lit(t, "| 56 | 8 | u64 | Holder module id", "| 56 | 4 | u64 | Holder module id"), "| 64 | 8 | i64 | Epoch origin", "| 60 | 12 | i64 | Epoch origin"))),
-        expect: &[("AC2", "the holder module id must be")],
+        expect: &[("AC2", "the holder module id must be"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_no_domain_row",
@@ -225,7 +225,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac2_denial_a_domain_not_16_bits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sub(b, "^Request$", |t| lit(&lit(t, "| 4 | 2 | u16 | Domain id", "| 4 | 1 | u16 | Domain id"), "| 6 | 1 | u8 | Message type", "| 5 | 2 | u8 | Message type"))),
-        expect: &[("AC2", "the request domain id must be")],
+        expect: &[("AC2", "the request domain id must be"), ("AC6", "")],
     },
     Denial {
         name: "ac2_denial_a_domain_without_unconfigured",
@@ -271,7 +271,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac4_denial_no_falsifier",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sync(b, |t| replace_all(t, "(?i)falsifier", "test"))),
-        expect: &[("AC4", "has no falsifier")],
+        expect: &[("AC4", "has no falsifier"), ("DoD", "")],
     },
     Denial {
         name: "ac4_denial_carried_without_a_zero_scheme",
@@ -409,7 +409,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_toml_fields_not_contiguous",
         file: WIRE_TOML,
         edit: DenialEdit::Text(|b| req_toml(b, "offset = 32\n", "offset = 33\n")),
-        expect: &[("AC1", "is not contiguous")],
+        expect: &[("AC1", "is not contiguous"), ("AC6", "")],
     },
     Denial {
         name: "ac1_denial_toml_fields_not_summing",
@@ -433,13 +433,13 @@ pub const DENIALS: &[Denial] = &[
         name: "ac6_denial_a_field_count_that_differs",
         file: WIRE_TOML,
         edit: DenialEdit::Text(|b| req_toml(b, "[[message.field]]\nname = \"magic\"", "[[message.gone]]\nname = \"magic\"")),
-        expect: &[("AC6", "the markdown table has 9 fields, wire.toml 8")],
+        expect: &[("AC6", "the markdown table has 9 fields, wire.toml 8"), ("AC1", "")],
     },
     Denial {
         name: "ac6_denial_a_field_width_that_differs",
         file: WIRE_TOML,
         edit: DenialEdit::Text(|b| req_toml(b, "name = \"magic\"\noffset = 0\nwidth = 16", "name = \"magic\"\noffset = 0\nwidth = 8")),
-        expect: &[("AC6", "does not match wire.toml field")],
+        expect: &[("AC6", "does not match wire.toml field"), ("AC1", "")],
     },
     Denial {
         name: "ac6_denial_a_field_type_that_differs",
@@ -451,7 +451,7 @@ pub const DENIALS: &[Denial] = &[
         name: "ac1_denial_no_toml_pad_field",
         file: WIRE_TOML,
         edit: DenialEdit::Text(|b| toml(b, |t| { let i = t.find("name = \"sync request\"").expect("request"); let j = i + t[i..].find("type = \"pad\"").expect("pad"); format!("{}type = \"blob\"{}", &t[..j], &t[j + 12..]) })),
-        expect: &[("AC1", "has no pad field of width > 0")],
+        expect: &[("AC1", "has no pad field of width > 0"), ("AC6", "")],
     },
     Denial {
         name: "w4_denial_a_toml_rate_field",
@@ -473,7 +473,7 @@ pub const DENIALS: &[Denial] = &[
         let end = t[start..].find("\n\n").map_or(t.len(), |k| start + k);
         format!("{}{}", &t[..start], &t[end..])
     })),
-        expect: &[("W1", "the request table has fewer than three header fields")],
+        expect: &[("W1", "the request table has fewer than three header fields"), ("AC1", ""), ("AC2", ""), ("AC4", ""), ("AC6", "")],
     },
     Denial {
         name: "w1_denial_no_magic",
@@ -608,28 +608,28 @@ pub const DENIALS: &[Denial] = &[
         name: "py_denial_a_line_separator_inside_the_validity_table",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| valid(b, r"^\| bad magic", r"\| drop and count under BadMagic", "|\u{2028}drop and count under BadMagic")),
-        expect: &[("AC5", "at least 6 are required")],
+        expect: &[("REPERTOIRE", "")],
     },
     // `str.splitlines()`: a form feed too.
     Denial {
         name: "py_denial_a_form_feed_inside_the_validity_table",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| valid(b, r"^\| bad magic", r"\| drop and count under BadMagic", "|\u{c}drop and count under BadMagic")),
-        expect: &[("AC5", "at least 6 are required")],
+        expect: &[("REPERTOIRE", "")],
     },
     // `int()` is unbounded: a 21-digit offset is read and does not tile.
     Denial {
         name: "py_denial_an_offset_beyond_64_bits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| rep(b, "| 40 | 8 | u64 | Receive timestamp", "| 100000000000000000040 | 8 | u64 | Receive timestamp")),
-        expect: &[("AC1", "does not start where the previous field ends")],
+        expect: &[("AC1", "does not start where the previous field ends"), ("AC6", "")],
     },
     // `\d`/`int()` read Arabic-Indic digits: ٤١ is 41.
     Denial {
         name: "py_denial_an_offset_in_arabic_indic_digits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| rep(b, "| 40 | 8 | u64 | Receive timestamp", "| \u{664}\u{661} | 8 | u64 | Receive timestamp")),
-        expect: &[("AC1", "does not start where the previous field ends")],
+        expect: &[("REPERTOIRE", "")],
     },
     // The subset reader keeps `"74"` a str: no integer max_size.
     Denial {
@@ -678,14 +678,14 @@ pub const DENIALS: &[Denial] = &[
         name: "py_denial_an_open_item_with_a_dotless_i",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sync(b, |t| append(&replace_all(t, r"(?i)\bowner\b", "lead"), "This open \u{131}tem stays open `[decision]` here now."))),
-        expect: &[("DoD", "names no owner or no falsifier")],
+        expect: &[("REPERTOIRE", "")],
     },
     // `\d`/`int()`: ٤٠ is 40.
     Denial {
         name: "py_accepts_an_offset_in_arabic_indic_digits",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| rep(b, "| 40 | 8 | u64 | Receive timestamp", "| \u{664}\u{660} | 8 | u64 | Receive timestamp")),
-        expect: &[],
+        expect: &[("REPERTOIRE", "")],
     },
     // The 25-character look-back counts characters: "never" within 25
     // characters of wide dashes negates the name.
@@ -700,7 +700,7 @@ pub const DENIALS: &[Denial] = &[
         name: "py_accepts_a_dotless_i",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| sync(b, |t| replace_all(t, "monotonic", "monoton\u{131}c"))),
-        expect: &[],
+        expect: &[("REPERTOIRE", "")],
     },
     // The subset reader: 48.0 and 0x30 equal 48.
     Denial {
@@ -727,7 +727,7 @@ pub const DENIALS: &[Denial] = &[
         name: "py_accepts_a_unit_separator_in_a_cell",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| rep(b, "| 40 | 8 | u64 | Receive timestamp", "| 40\u{1f} | 8 | u64 | Receive timestamp")),
-        expect: &[],
+        expect: &[("REPERTOIRE", "")],
     },
     // A combining accent is no word character for Python: `\bBadMagic\b`
     // still finds it.
@@ -735,6 +735,328 @@ pub const DENIALS: &[Denial] = &[
         name: "py_accepts_a_combining_accent_after_a_reason",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| valid(b, r"^\| bad magic", "BadMagic", "BadMagic\u{301}")),
+        expect: &[("REPERTOIRE", "")],
+    },
+    // `pos != ms * 8` and `ms != size_md` on 10^19.
+    Denial {
+        name: "num_denial_max_size_of_10_19",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 10000000000000000000")),
+        expect: &[("AC1", "")],
+    },
+    // 10^40: INT_LIMIT.
+    Denial {
+        name: "num_denial_max_size_of_10_40",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 10000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 2^127: INT_LIMIT.
+    Denial {
+        name: "num_denial_max_size_just_beyond_i128",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 170141183460469231731687303715884105728")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 74.0 is not `isinstance(_, int)`: "no integer max_size".
+    Denial {
+        name: "num_denial_max_size_as_a_float",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 74.0")),
+        expect: &[("AC1", "")],
+    },
+    // True is an int (1): the sums differ.
+    Denial {
+        name: "num_denial_max_size_as_true",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = true")),
+        expect: &[("AC1", "")],
+    },
+    // Leading zeros.
+    Denial {
+        name: "num_denial_max_size_with_leading_zeros",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 074")),
         expect: &[],
+    },
+    // 0x4a = 74.
+    Denial {
+        name: "num_denial_max_size_in_hex",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 0x4a")),
+        expect: &[],
+    },
+    // An underscore.
+    Denial {
+        name: "num_denial_max_size_with_an_underscore",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74", "max_size = 7_4")),
+        expect: &[],
+    },
+    // No max_size.
+    Denial {
+        name: "num_denial_max_size_missing",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "max_size = 74\n", "")),
+        expect: &[("AC1", "")],
+    },
+    // A sort key beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_an_offset_of_10_40",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256", "name = \"send_timestamp\"\noffset = 10000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // A sort key of 10^19: sorted last; nothing tiles.
+    Denial {
+        name: "num_denial_an_offset_of_10_19",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256", "name = \"send_timestamp\"\noffset = 10000000000000000000")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // 256.0 sorts and compares equal to 256; the sum becomes a float.
+    Denial {
+        name: "num_denial_an_offset_as_a_float",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256", "name = \"send_timestamp\"\noffset = 256.0")),
+        expect: &[],
+    },
+    // A list key among ints: `sorted` raises TypeError.
+    Denial {
+        name: "num_denial_an_offset_as_a_list",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256", "name = \"send_timestamp\"\noffset = [256]")),
+        expect: &[("CRASH", "")],
+    },
+    // True sorts as 1.
+    Denial {
+        name: "num_denial_an_offset_as_true",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256", "name = \"send_timestamp\"\noffset = true")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // nan as a sort key: every comparison is False.
+    Denial {
+        name: "num_denial_an_offset_as_nan",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256", "name = \"send_timestamp\"\noffset = nan")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // No offset: the key is 0, the field sorts first.
+    Denial {
+        name: "num_denial_an_offset_missing",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256\n", "name = \"send_timestamp\"\n")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // Two fields at offset 0: the sort is stable.
+    Denial {
+        name: "num_denial_a_duplicate_offset",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "name = \"send_timestamp\"\noffset = 256", "name = \"send_timestamp\"\noffset = 0")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // `0 + "16"`: TypeError.
+    Denial {
+        name: "num_denial_a_width_as_a_string",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = \"16\"")),
+        expect: &[("CRASH", "")],
+    },
+    // A width beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_a_width_of_10_40",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = 10000000000000000000000000000000000000000")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // 16.0: the position becomes a float.
+    Denial {
+        name: "num_denial_a_width_as_a_float",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "offset = 0\nwidth = 16", "offset = 0\nwidth = 16.0")),
+        expect: &[],
+    },
+    // `"272" > 0`: TypeError (after `0 + ...` raised first).
+    Denial {
+        name: "num_denial_a_pad_width_as_a_string",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "offset = 320\nwidth = 272", "offset = 320\nwidth = \"272\"")),
+        expect: &[("CRASH", "")],
+    },
+    // A pad of width 0: no pad field of width > 0.
+    Denial {
+        name: "num_denial_a_pad_width_of_zero",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "offset = 320\nwidth = 272", "offset = 320\nwidth = 0")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // A negative pad width.
+    Denial {
+        name: "num_denial_a_pad_width_negative",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "offset = 320\nwidth = 272", "offset = 320\nwidth = -272")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // A pad of 10^19 bits.
+    Denial {
+        name: "num_denial_a_pad_width_of_10_19",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "offset = 320\nwidth = 272", "offset = 320\nwidth = 10000000000000000000")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // 48.0 == 48.
+    Denial {
+        name: "num_denial_the_dscp_as_a_float",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "dscp = 48", "dscp = 48.0")),
+        expect: &[],
+    },
+    // "48" != 48.
+    Denial {
+        name: "num_denial_the_dscp_as_a_string",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "dscp = 48", "dscp = \"48\"")),
+        expect: &[("AC6", "")],
+    },
+    // `set.update` of a list item: TypeError.
+    Denial {
+        name: "num_denial_rejection_reasons_with_a_list",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "rejection_reasons = [\"TooShort\", ", "rejection_reasons = [[1], \"TooShort\", ")),
+        expect: &[("CRASH", "")],
+    },
+    // An int reason: not a member.
+    Denial {
+        name: "num_denial_rejection_reasons_with_a_number",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|b| req_toml(b, "rejection_reasons = [\"TooShort\", ", "rejection_reasons = [7, \"TooShort\", ")),
+        expect: &[("AC6", "")],
+    },
+    // A markdown offset beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_an_md_offset_of_10_40",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 10000000000000000000000000000000000000000 | 8 | u64 | Send timestamp")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // int("032") is 32.
+    Denial {
+        name: "num_denial_an_md_offset_with_leading_zeros",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 032 | 8 | u64 | Send timestamp")),
+        expect: &[],
+    },
+    // `\s*(\d+)\s*$` refuses +32: the row is left out.
+    Denial {
+        name: "num_denial_an_md_offset_with_a_plus",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| +32 | 8 | u64 | Send timestamp")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // An empty offset: the row is left out.
+    Denial {
+        name: "num_denial_an_empty_md_offset",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "|  | 8 | u64 | Send timestamp")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // `8²`: width_to_bits reads 8 bytes.
+    Denial {
+        name: "num_denial_an_md_width_glued_to_a_superscript",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 32 | 8² | u64 | Send timestamp")),
+        expect: &[],
+    },
+    // Digit groups: `0 008` is 8.
+    Denial {
+        name: "num_denial_an_md_width_in_groups",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 32 | 0 008 | u64 | Send timestamp")),
+        expect: &[],
+    },
+    // `0_8`: the underscore is dropped, 8.
+    Denial {
+        name: "num_denial_an_md_width_with_an_underscore",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 32 | 0_8 | u64 | Send timestamp")),
+        expect: &[],
+    },
+    // 10^36 bytes, within i128 in bits.
+    Denial {
+        name: "num_denial_an_md_width_of_10_36_bytes",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 32 | 1000000000000000000000000000000000000 | u64 | Send timestamp")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // 10^38 bytes: × 8 is beyond i128.
+    Denial {
+        name: "num_denial_an_md_width_of_10_38_bytes",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 32 | 100000000000000000000000000000000000000 | u64 | Send timestamp")),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // A duplicate row: nothing tiles.
+    Denial {
+        name: "num_denial_a_duplicate_md_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| req(b, "| 32 | 8 | u64 | Send timestamp", "| 32 | 8 | u64 | Send timestamp | x |\n| 32 | 8 | u64 | Send timestamp")),
+        expect: &[("AC1", ""), ("AC6", "")],
+    },
+    // `(\d[\d ,_]*\d|\d)\s*-?\s*bytes?`: 1074.
+    Denial {
+        name: "num_denial_a_stated_size_in_groups",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sync(b, |t| lit(t, "both 74 bytes long", "both 1 074 bytes long"))),
+        expect: &[("AC1", "")],
+    },
+    // A stated size beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_a_stated_size_of_10_40",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sync(b, |t| lit(t, "both 74 bytes long", "both 10000000000000000000000000000000000000000 bytes long"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // `74²`: not a stated size.
+    Denial {
+        name: "num_denial_a_stated_size_glued_to_a_superscript",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| sync(b, |t| lit(t, "both 74 bytes long", "both 74² bytes long"))),
+        expect: &[("AC1", "")],
+    },
+    // int("048") is 48.
+    Denial {
+        name: "num_denial_the_cs6_value_with_leading_zeros",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "sync CS6 (48)", "sync CS6 (048)"))),
+        expect: &[],
+    },
+    // C-36 beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_the_request_rate_of_10_40",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "| 50 per second |", "| 10000000000000000000000000000000000000000 per second |"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // C-112 beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_the_accepted_rate_of_10_40",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "10 to 200 per second", "10 to 10000000000000000000000000000000000000000 per second"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // C-10 beyond i128: INT_LIMIT.
+    Denial {
+        name: "num_denial_the_epoch_width_of_10_40",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "16 / 32 / 16 bits", "16 / 32 / 10000000000000000000000000000000000000000 bits"))),
+        expect: &[("INT_LIMIT", "")],
+    },
+    // `16²`: the triple does not match.
+    Denial {
+        name: "num_denial_the_epoch_width_glued_to_a_superscript",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|b| consts(b, |t| lit(t, "16 / 32 / 16 bits", "16 / 32 / 16² bits"))),
+        expect: &[("AC2", ""), ("DoD", "")],
     },
 ];
