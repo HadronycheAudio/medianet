@@ -235,7 +235,7 @@ Not taken:
 | `c004_15::num::{is_word, to_int}` | `pycompat::is_word`, `parse_int` |
 | `util::sentences`, `num::sentences` | `text::rx(r"(?<=[.;])\s+").split(..)` or `sentences::split_raw(_, RAW_PERIOD_SEMI)` |
 | `c006_01::text::split_row` | `tables::split_row_char_walk` / `RowSplit::CharWalk` |
-| 006-01 fence scan | `markdown::code_mask(lines, FencePolicy::Matching)` |
+| 006-01 fence scan | `markdown::code_mask(lines, FencePolicy::Matching)`; its "unclosed code fence" error → `markdown::fence_scan(lines, FencePolicy::Matching).open_at_end` (0-based opener line, marker) |
 | 006-02 `visible_lines` | `FencePolicy::SameChar` |
 | 006-02 `find_section` | `Markdown::parse_with(text, FencePolicy::NoFences).find_by(HeadingMatch::Exact, HEADING)` |
 | 006 tables | `tables_with(span, TableRules::T006_01 / T006_02)` (006-01: the header line is `Table::line`, the separator the line after it) |

@@ -82,6 +82,7 @@ caption_004_14	case0	## A\n| h | i |\n|---|---|\n| 1 | 2 |\n	[[1, 4, ["h", "i"],
 caption_004_15	case0	## A\n| h | i |\n|---|---|\n| 1 | 2 |\n	[[1, 4, ["h", "i"], [["1", "2"]], "A"]]
 norm_006_01	case0	## A\n| h | i |\n|---|---|\n| 1 | 2 |\n	["## A", "| h | i |", "|---|---|", "| 1 | 2 |"]
 norm_006_02	case0	## A\n| h | i |\n|---|---|\n| 1 | 2 |\n	["## A", "| h | i |", "|---|---|", "| 1 | 2 |"]
+fence_end_006_01	case0	## A\n| h | i |\n|---|---|\n| 1 | 2 |\n	[]
 tables_a	case1	| h | i |\n|---|---|\n	[[0, ["h", "i"], []]]
 tables_b	case1	| h | i |\n|---|---|\n	[[0, ["h", "i"], []]]
 t006_01	case1	| h | i |\n|---|---|\n	[[[1, ["h", "i"]], [2, ["---", "---"]]]]
@@ -98,6 +99,7 @@ caption_004_14	case1	| h | i |\n|---|---|\n	[[0, 2, ["h", "i"], [], ""]]
 caption_004_15	case1	| h | i |\n|---|---|\n	[[0, 2, ["h", "i"], [], ""]]
 norm_006_01	case1	| h | i |\n|---|---|\n	["| h | i |", "|---|---|"]
 norm_006_02	case1	| h | i |\n|---|---|\n	["| h | i |", "|---|---|"]
+fence_end_006_01	case1	| h | i |\n|---|---|\n	[]
 tables_a	case2	| h | i |\n| 1 | 2 |\n	[]
 tables_b	case2	| h | i |\n| 1 | 2 |\n	[]
 t006_01	case2	| h | i |\n| 1 | 2 |\n	[]
@@ -114,6 +116,7 @@ caption_004_14	case2	| h | i |\n| 1 | 2 |\n	[]
 caption_004_15	case2	| h | i |\n| 1 | 2 |\n	[]
 norm_006_01	case2	| h | i |\n| 1 | 2 |\n	["| h | i |", "| 1 | 2 |"]
 norm_006_02	case2	| h | i |\n| 1 | 2 |\n	["| h | i |", "| 1 | 2 |"]
+fence_end_006_01	case2	| h | i |\n| 1 | 2 |\n	[]
 tables_a	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n| y |\n	[[0, ["h"], [["a"], ["b | c"]]], [6, ["x"], [["y"]]]]
 tables_b	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n| y |\n	[[0, ["h"], [["a"], ["b | c"]]], [6, ["x"], [["y"]]]]
 t006_01	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n| y |\n	[[[1, ["h"]], [2, [":-:"]], [3, ["a"]], [4, ["b | c"]]], [[7, ["x"]], [8, ["---"]], [9, ["y"]]]]
@@ -130,6 +133,7 @@ caption_004_14	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n|
 caption_004_15	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n| y |\n	[[0, 4, ["h"], [["a"], ["b | c"]], ""], [6, 9, ["x"], [["y"]], "text"]]
 norm_006_01	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n| y |\n	["| h |", "|:-:|", "| a |", "| b \\| c |", "", "text", "| x |", "| --- |", "| y |"]
 norm_006_02	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n| y |\n	["| h |", "|:-:|", "| a |", "| b \\| c |", "", "text", "| x |", "| --- |", "| y |"]
+fence_end_006_01	case3	| h |\n|:-:|\n| a |\n| b \\| c |\n\ntext\n| x |\n| --- |\n| y |\n	[]
 tables_a	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2 |\n	[[4, ["a", "b"], [["1", "2"]]]]
 tables_b	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2 |\n	[[4, ["a", "b"], [["1", "2"]]]]
 t006_01	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2 |\n	[[[5, ["a", "b"]], [6, ["--", "--"]], [7, ["1", "2"]]]]
@@ -146,6 +150,7 @@ caption_004_14	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2
 caption_004_15	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2 |\n	[[4, 7, ["a", "b"], [["1", "2"]], ""]]
 norm_006_01	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2 |\n	["```", "| h | i |", "|---|---|", "```", "| a | b |", "|--|--|", "| 1 | 2 |"]
 norm_006_02	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2 |\n	["```", "| h | i |", "|---|---|", "```", "| a | b |", "|--|--|", "| 1 | 2 |"]
+fence_end_006_01	case4	```\n| h | i |\n|---|---|\n```\n| a | b |\n|--|--|\n| 1 | 2 |\n	[]
 tables_a	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	[[2, ["h"], [["1"]]]]
 tables_b	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	[[2, ["h"], [["1"]]]]
 t006_01	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	[]
@@ -162,6 +167,7 @@ caption_004_14	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	[[2,
 caption_004_15	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	[[2, 5, ["h"], [["1"]], "~~~ in tilde"]]
 norm_006_01	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	["~~~", "## in tilde", "| h |", "|---|", "| 1 |", "~~~", "## after"]
 norm_006_02	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	["~~~", "## in tilde", "| h |", "|---|", "| 1 |", "~~~", "## after"]
+fence_end_006_01	case5	~~~\n## in tilde\n| h |\n|---|\n| 1 |\n~~~\n## after\n	[]
 tables_a	case6	````\n```\n## inner\n````\n## out\n	[]
 tables_b	case6	````\n```\n## inner\n````\n## out\n	[]
 t006_01	case6	````\n```\n## inner\n````\n## out\n	[]
@@ -178,6 +184,7 @@ caption_004_14	case6	````\n```\n## inner\n````\n## out\n	[]
 caption_004_15	case6	````\n```\n## inner\n````\n## out\n	[]
 norm_006_01	case6	````\n```\n## inner\n````\n## out\n	["````", "```", "## inner", "````", "## out"]
 norm_006_02	case6	````\n```\n## inner\n````\n## out\n	["````", "```", "## inner", "````", "## out"]
+fence_end_006_01	case6	````\n```\n## inner\n````\n## out\n	[]
 tables_a	case7	```python\n## code\n```\n## text\n	[]
 tables_b	case7	```python\n## code\n```\n## text\n	[]
 t006_01	case7	```python\n## code\n```\n## text\n	[]
@@ -194,6 +201,7 @@ caption_004_14	case7	```python\n## code\n```\n## text\n	[]
 caption_004_15	case7	```python\n## code\n```\n## text\n	[]
 norm_006_01	case7	```python\n## code\n```\n## text\n	["```python", "## code", "```", "## text"]
 norm_006_02	case7	```python\n## code\n```\n## text\n	["```python", "## code", "```", "## text"]
+fence_end_006_01	case7	```python\n## code\n```\n## text\n	[]
 tables_a	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	[]
 tables_b	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	[]
 t006_01	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	[]
@@ -210,6 +218,7 @@ caption_004_14	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	[
 caption_004_15	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	[]
 norm_006_01	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	["```", "## code", "``` trailing", "## still code?", "```", "## out"]
 norm_006_02	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	["```", "## code", "``` trailing", "## still code?", "```", "## out"]
+fence_end_006_01	case8	```\n## code\n``` trailing\n## still code?\n```\n## out\n	[]
 tables_a	case9	  ```\n## indented fence\n  ```\n## out\n	[]
 tables_b	case9	  ```\n## indented fence\n  ```\n## out\n	[]
 t006_01	case9	  ```\n## indented fence\n  ```\n## out\n	[]
@@ -226,6 +235,7 @@ caption_004_14	case9	  ```\n## indented fence\n  ```\n## out\n	[]
 caption_004_15	case9	  ```\n## indented fence\n  ```\n## out\n	[]
 norm_006_01	case9	  ```\n## indented fence\n  ```\n## out\n	["```", "## indented fence", "```", "## out"]
 norm_006_02	case9	  ```\n## indented fence\n  ```\n## out\n	["```", "## indented fence", "```", "## out"]
+fence_end_006_01	case9	  ```\n## indented fence\n  ```\n## out\n	[]
 tables_a	case10	\t```\n## tab fence\n\t```\n## out\n	[]
 tables_b	case10	\t```\n## tab fence\n\t```\n## out\n	[]
 t006_01	case10	\t```\n## tab fence\n\t```\n## out\n	[]
@@ -242,6 +252,7 @@ caption_004_14	case10	\t```\n## tab fence\n\t```\n## out\n	[]
 caption_004_15	case10	\t```\n## tab fence\n\t```\n## out\n	[]
 norm_006_01	case10	\t```\n## tab fence\n\t```\n## out\n	["```", "## tab fence", "```", "## out"]
 norm_006_02	case10	\t```\n## tab fence\n\t```\n## out\n	["```", "## tab fence", "```", "## out"]
+fence_end_006_01	case10	\t```\n## tab fence\n\t```\n## out\n	[]
 tables_a	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	[]
 tables_b	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	[]
 t006_01	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	[]
@@ -258,6 +269,7 @@ caption_004_14	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	[]
 caption_004_15	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	[]
 norm_006_01	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	["~~~~", "~~~", "## inside long tilde", "~~~~", "## out"]
 norm_006_02	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	["~~~~", "~~~", "## inside long tilde", "~~~~", "## out"]
+fence_end_006_01	case11	~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n	[]
 tables_a	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	[]
 tables_b	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	[]
 t006_01	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	[]
@@ -274,214 +286,296 @@ caption_004_14	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	[]
 caption_004_15	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	[]
 norm_006_01	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	["```", "~~~", "## mixed", "~~~", "```", "## out"]
 norm_006_02	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	["```", "~~~", "## mixed", "~~~", "```", "## out"]
-tables_a	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
-tables_b	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
-t006_01	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
-t006_02	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
-heads_a	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[0, 1, "One"], [1, 2, "Two"], [2, 3, "Three"], [5, 2, "Spaced  title"], [6, 2, ""], [7, 2, "Tab"]]
-heads_b	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[0, 1, "One"], [1, 2, "Two"], [2, 3, "Three"], [5, 2, "Spaced  title"], [6, 2, ""], [7, 2, "Tab"]]
-heads_c	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[0, 1, "One"], [1, 2, "Two"], [2, 3, "Three"], [5, 2, "Spaced  title"], [6, 2, ""], [7, 2, "Tab"]]
-fence_004_14	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	000000000
-fence_006_01	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	000000000
-fence_006_02	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	000000000
-heads_006_01	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[1, 1, "One"], [2, 2, "Two"], [3, 3, "Three"], [6, 2, "Spaced  title"], [7, 2, ""], [8, 2, "Tab"]]
-find_006_02	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[["One", [0, 9]], ["Two", [1, 5]], ["Three", [2, 5]], ["Spaced  title", [5, 6]], ["", [6, 7]], ["Tab", [7, 9]]]
-caption_004_14	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
-caption_004_15	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
-norm_006_01	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	["# One #", "## Two ##", "### Three#", "####### Seven", "#NoSpace", "## Spaced title", "## #", "## Tab", "## Indented"]
-norm_006_02	case13	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	["# One #", "## Two ##", "### Three#", "####### Seven", "#NoSpace", "## Spaced title", "## #", "## Tab", "## Indented"]
-tables_a	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]]], [21, ["far", "x"], [["a", "1"]]]]
-tables_b	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]]], [21, ["far", "x"], [["a", "1"]]]]
-t006_01	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[[7, ["Item", "Bytes"]], [8, ["---", "---"]], [9, ["packet header", "28"]], [10, ["total", "28"]]], [[22, ["far", "x"]], [23, ["---", "---"]], [24, ["a", "1"]]]]
-t006_02	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[["Item", "Bytes"], [[9, ["packet header", "28"]], [10, ["total", "28"]]]], [["far", "x"], [[24, ["a", "1"]]]]]
-heads_a	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[0, 2, "Size budget"]]
-heads_b	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[0, 2, "Size budget"]]
-heads_c	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[0, 2, "Size budget"]]
-fence_004_14	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	000000000001111000000000
-fence_006_01	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	000000000001111000000000
-fence_006_02	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	000000000001111000000000
-heads_006_01	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[1, 2, "Size budget"]]
-find_006_02	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[["Size budget", [0, 24]]]
-caption_004_14	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, 10, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]], "The budget. Table 1: default case**"], [21, 24, ["far", "x"], [["a", "1"]], ""]]
-caption_004_15	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, 10, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]], "The budget. Table 1: default case**"], [21, 24, ["far", "x"], [["a", "1"]], ""]]
-norm_006_01	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	["## Size budget", "", "The budget.", "", "**Table 1: default case**", "", "| Item | Bytes |", "|---|---|", "| packet header | 28 |", "| total | 28 |", "", "```", "| fenced | 1 |", "|---|---|", "```", "A caption", "", "", "", "", "", "| far | x |", "|---|---|", "| a | 1 |"]
-norm_006_02	case14	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	["## Size budget", "", "The budget.", "", "**Table 1: default case**", "", "| Item | Bytes |", "|---|---|", "| packet header | 28 |", "| total | 28 |", "", "```", "| fenced | 1 |", "|---|---|", "```", "A caption", "", "", "", "", "", "| far | x |", "|---|---|", "| a | 1 |"]
-tables_a	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, ["a", "b"], [["1", "2"]]]]
-tables_b	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, ["a", "b"], [["1", "2"]]]]
-t006_01	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[[4, ["a", "b"]], [5, ["-", "-"]], [6, ["1", "2"]]]]
-t006_02	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
-heads_a	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
-heads_b	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
-heads_c	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
-fence_004_14	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	000000
-fence_006_01	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	000000
-fence_006_02	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	000000
-heads_006_01	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
-find_006_02	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
-caption_004_14	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, 6, ["a", "b"], [["1", "2"]], "Caption two Caption three"]]
-caption_004_15	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, 6, ["a", "b"], [["1", "2"]], "Caption two Caption three"]]
-norm_006_01	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	["Caption one", "Caption two", "Caption three", "| a | b |", "| - | - |", "| 1 | 2 |"]
-norm_006_02	case15	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	["Caption one", "Caption two", "Caption three", "| a | b |", "| - | - |", "| 1 | 2 |"]
-tables_a	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]]]]
-tables_b	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]]]]
-t006_01	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[[2, ["a"]], [3, ["---", ""]], [4, ["1"]], [5, ["b"]], [6, ["-"]], [7, ["2"]], [8, ["c"]], [9, ["--"]], [10, ["3"]], [11, ["d"]], [12, [":"]]]]
-t006_02	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[]
-heads_a	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[0, 1, "T"]]
-heads_b	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[0, 1, "T"]]
-heads_c	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[0, 1, "T"]]
-fence_004_14	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	000000000000
-fence_006_01	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	000000000000
-fence_006_02	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	000000000000
-heads_006_01	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, 1, "T"]]
-find_006_02	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[["T", [0, 12]]]
-caption_004_14	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, 12, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]], "T"]]
-caption_004_15	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, 12, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]], "T"]]
-norm_006_01	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	["# T", "| a |", "| --- | |", "| 1 |", "| b |", "|-|", "| 2 |", "| c |", "| -- |", "| 3 |", "| d |", "| : |"]
-norm_006_02	case16	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	["# T", "| a |", "| --- | |", "| 1 |", "| b |", "|-|", "| 2 |", "| c |", "| -- |", "| 3 |", "| d |", "| : |"]
-tables_a	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]]]]
-tables_b	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]]]]
-t006_01	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[[1, ["a", "b"]], [2, ["---", "---"]], [3, ["1", "2"]], [4, ["---", "---"]], [5, ["3", "4"]]]]
-t006_02	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[["a", "b"], [[3, ["1", "2"]], [4, ["---", "---"]], [5, ["3", "4"]]]]]
-heads_a	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
-heads_b	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
-heads_c	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
-fence_004_14	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	00000
-fence_006_01	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	00000
-fence_006_02	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	00000
-heads_006_01	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
-find_006_02	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
-caption_004_14	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, 5, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]], ""]]
-caption_004_15	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, 5, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]], ""]]
-norm_006_01	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	["| a | b |", "|---|---|", "| 1 | 2 |", "|---|---|", "| 3 | 4 |"]
-norm_006_02	case17	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	["| a | b |", "|---|---|", "| 1 | 2 |", "|---|---|", "| 3 | 4 |"]
-tables_a	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
-tables_b	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
-t006_01	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
-t006_02	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
-heads_a	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[0, 2, "Domain line and position map"], [5, 3, "Sub"], [6, 2, "Next"]]
-heads_b	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[0, 2, "Domain line and position map"], [5, 3, "Sub"], [6, 2, "Next"]]
-heads_c	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[0, 2, "Domain line and position map"], [5, 3, "Sub"], [6, 2, "Next"]]
-fence_004_14	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	0011100
-fence_006_01	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	0011100
-fence_006_02	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	0011100
-heads_006_01	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[1, 2, "Domain line and position map"], [6, 3, "Sub"], [7, 2, "Next"]]
-find_006_02	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[["Domain line and position map", [0, 3]], ["Sub", [5, 6]], ["Next", [6, 7]]]
-caption_004_14	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
-caption_004_15	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
-norm_006_01	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	["## Domain line and position map", "text", "```", "## Domain line and position map", "```", "### Sub", "## Next"]
-norm_006_02	case18	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	["## Domain line and position map", "text", "```", "## Domain line and position map", "```", "### Sub", "## Next"]
-tables_a	case19	## Domain line and position map ##\n### x\n# Top\n	[]
-tables_b	case19	## Domain line and position map ##\n### x\n# Top\n	[]
-t006_01	case19	## Domain line and position map ##\n### x\n# Top\n	[]
-t006_02	case19	## Domain line and position map ##\n### x\n# Top\n	[]
-heads_a	case19	## Domain line and position map ##\n### x\n# Top\n	[[0, 2, "Domain line and position map"], [1, 3, "x"], [2, 1, "Top"]]
-heads_b	case19	## Domain line and position map ##\n### x\n# Top\n	[[0, 2, "Domain line and position map"], [1, 3, "x"], [2, 1, "Top"]]
-heads_c	case19	## Domain line and position map ##\n### x\n# Top\n	[[0, 2, "Domain line and position map"], [1, 3, "x"], [2, 1, "Top"]]
-fence_004_14	case19	## Domain line and position map ##\n### x\n# Top\n	000
-fence_006_01	case19	## Domain line and position map ##\n### x\n# Top\n	000
-fence_006_02	case19	## Domain line and position map ##\n### x\n# Top\n	000
-heads_006_01	case19	## Domain line and position map ##\n### x\n# Top\n	[[1, 2, "Domain line and position map"], [2, 3, "x"], [3, 1, "Top"]]
-find_006_02	case19	## Domain line and position map ##\n### x\n# Top\n	[["Domain line and position map", [0, 2]], ["x", [1, 2]], ["Top", [2, 3]]]
-caption_004_14	case19	## Domain line and position map ##\n### x\n# Top\n	[]
-caption_004_15	case19	## Domain line and position map ##\n### x\n# Top\n	[]
-norm_006_01	case19	## Domain line and position map ##\n### x\n# Top\n	["## Domain line and position map ##", "### x", "# Top"]
-norm_006_02	case19	## Domain line and position map ##\n### x\n# Top\n	["## Domain line and position map ##", "### x", "# Top"]
-tables_a	case20	| a |\n|---|\n```\n| b |\n```\n	[[0, ["a"], []]]
-tables_b	case20	| a |\n|---|\n```\n| b |\n```\n	[[0, ["a"], []]]
-t006_01	case20	| a |\n|---|\n```\n| b |\n```\n	[[[1, ["a"]], [2, ["---"]]]]
-t006_02	case20	| a |\n|---|\n```\n| b |\n```\n	[]
-heads_a	case20	| a |\n|---|\n```\n| b |\n```\n	[]
-heads_b	case20	| a |\n|---|\n```\n| b |\n```\n	[]
-heads_c	case20	| a |\n|---|\n```\n| b |\n```\n	[]
-fence_004_14	case20	| a |\n|---|\n```\n| b |\n```\n	00111
-fence_006_01	case20	| a |\n|---|\n```\n| b |\n```\n	00111
-fence_006_02	case20	| a |\n|---|\n```\n| b |\n```\n	00111
-heads_006_01	case20	| a |\n|---|\n```\n| b |\n```\n	[]
-find_006_02	case20	| a |\n|---|\n```\n| b |\n```\n	[]
-caption_004_14	case20	| a |\n|---|\n```\n| b |\n```\n	[[0, 2, ["a"], [], ""]]
-caption_004_15	case20	| a |\n|---|\n```\n| b |\n```\n	[[0, 2, ["a"], [], ""]]
-norm_006_01	case20	| a |\n|---|\n```\n| b |\n```\n	["| a |", "|---|", "```", "| b |", "```"]
-norm_006_02	case20	| a |\n|---|\n```\n| b |\n```\n	["| a |", "|---|", "```", "| b |", "```"]
-tables_a	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, ["a", "b"], [["1", "2"]]]]
-tables_b	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, ["a", "b"], [["1", "2"]]]]
-t006_01	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[[1, ["a", "b"]], [2, ["---", "---"]], [3, ["1", "2"]]]]
-t006_02	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[["a", "b"], [[3, ["1", "2"]]]]]
-heads_a	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
-heads_b	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
-heads_c	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
-fence_004_14	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	000
-fence_006_01	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	000
-fence_006_02	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	000
-heads_006_01	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
-find_006_02	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
-caption_004_14	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, 3, ["a", "b"], [["1", "2"]], ""]]
-caption_004_15	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, 3, ["a", "b"], [["1", "2"]], ""]]
-norm_006_01	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	["| a | b |", "|---|---|", "| 1 | 2 |"]
-norm_006_02	case21	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	["| a | b |", "|---|---|", "| 1 | 2 |"]
-tables_a	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, ["a"], [["b"]]], [4, ["c"], []]]
-tables_b	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, ["a"], [["b"]]], [4, ["c"], []]]
-t006_01	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[[1, ["a"]], [2, ["-"]], [3, ["b"]]], [[5, ["c"]], [6, [":--"]]]]
-t006_02	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
-heads_a	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
-heads_b	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
-heads_c	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
-fence_004_14	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	000000
-fence_006_01	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	000000
-fence_006_02	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	000000
-heads_006_01	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
-find_006_02	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
-caption_004_14	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, 3, ["a"], [["b"]], ""], [4, 6, ["c"], [], ""]]
-caption_004_15	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, 3, ["a"], [["b"]], ""], [4, 6, ["c"], [], ""]]
-norm_006_01	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	["|a|", "|-|", "|b|", "", "|c|", "|:--|"]
-norm_006_02	case22	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	["|a|", "|-|", "|b|", "", "|c|", "|:--|"]
-tables_a	case23		[]
-tables_b	case23		[]
-t006_01	case23		[]
-t006_02	case23		[]
-heads_a	case23		[]
-heads_b	case23		[]
-heads_c	case23		[]
-fence_004_14	case23		
-fence_006_01	case23		
-fence_006_02	case23		
-heads_006_01	case23		[]
-find_006_02	case23		[]
-caption_004_14	case23		[]
-caption_004_15	case23		[]
-norm_006_01	case23		[]
-norm_006_02	case23		[]
-tables_a	case24	\n\n	[]
-tables_b	case24	\n\n	[]
-t006_01	case24	\n\n	[]
-t006_02	case24	\n\n	[]
-heads_a	case24	\n\n	[]
-heads_b	case24	\n\n	[]
-heads_c	case24	\n\n	[]
-fence_004_14	case24	\n\n	00
-fence_006_01	case24	\n\n	00
-fence_006_02	case24	\n\n	00
-heads_006_01	case24	\n\n	[]
-find_006_02	case24	\n\n	[]
-caption_004_14	case24	\n\n	[]
-caption_004_15	case24	\n\n	[]
-norm_006_01	case24	\n\n	["", ""]
-norm_006_02	case24	\n\n	["", ""]
-tables_a	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
-tables_b	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
-t006_01	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
-t006_02	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
-heads_a	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[0, 2, "Heading with `code` and [link](#x)"], [1, 3, "Fences of the 006 family"]]
-heads_b	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[0, 2, "Heading with `code` and [link](#x)"], [1, 3, "Fences of the 006 family"]]
-heads_c	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[0, 2, "Heading with `code` and [link](#x)"], [1, 3, "Fences of the 006 family"]]
-fence_004_14	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	00111
-fence_006_01	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	00111
-fence_006_02	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	00111
-heads_006_01	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[1, 2, "Heading with `code` and [link](#x)"], [2, 3, "Fences of the 006 family"]]
-find_006_02	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[["Heading with `code` and [link](#x)", [0, 3]], ["Fences of the 006 family", [1, 3]], ["no", [3, 5]]]
-caption_004_14	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
-caption_004_15	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
-norm_006_01	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	["## Heading with `code` and [link](#x)", "### Fences of the 006 family", "```` js", "## no", "````"]
-norm_006_02	case25	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	["## Heading with `code` and [link](#x)", "### Fences of the 006 family", "```` js", "## no", "````"]
+fence_end_006_01	case12	```\n~~~\n## mixed\n~~~\n```\n## out\n	[]
+tables_a	case13	## a\n```\nnever closed\n	[]
+tables_b	case13	## a\n```\nnever closed\n	[]
+t006_01	case13	## a\n```\nnever closed\n	[]
+t006_02	case13	## a\n```\nnever closed\n	[]
+heads_a	case13	## a\n```\nnever closed\n	[[0, 2, "a"]]
+heads_b	case13	## a\n```\nnever closed\n	[[0, 2, "a"]]
+heads_c	case13	## a\n```\nnever closed\n	[[0, 2, "a"]]
+fence_004_14	case13	## a\n```\nnever closed\n	011
+fence_006_01	case13	## a\n```\nnever closed\n	011
+fence_006_02	case13	## a\n```\nnever closed\n	011
+heads_006_01	case13	## a\n```\nnever closed\n	[[1, 2, "a"]]
+find_006_02	case13	## a\n```\nnever closed\n	[["a", [0, 3]]]
+caption_004_14	case13	## a\n```\nnever closed\n	[]
+caption_004_15	case13	## a\n```\nnever closed\n	[]
+norm_006_01	case13	## a\n```\nnever closed\n	["## a", "```", "never closed"]
+norm_006_02	case13	## a\n```\nnever closed\n	["## a", "```", "never closed"]
+fence_end_006_01	case13	## a\n```\nnever closed\n	["line 2: unclosed code fence opened with ```"]
+tables_a	case14	~~~~\n~~~\nstill open\n	[]
+tables_b	case14	~~~~\n~~~\nstill open\n	[]
+t006_01	case14	~~~~\n~~~\nstill open\n	[]
+t006_02	case14	~~~~\n~~~\nstill open\n	[]
+heads_a	case14	~~~~\n~~~\nstill open\n	[]
+heads_b	case14	~~~~\n~~~\nstill open\n	[]
+heads_c	case14	~~~~\n~~~\nstill open\n	[]
+fence_004_14	case14	~~~~\n~~~\nstill open\n	000
+fence_006_01	case14	~~~~\n~~~\nstill open\n	111
+fence_006_02	case14	~~~~\n~~~\nstill open\n	110
+heads_006_01	case14	~~~~\n~~~\nstill open\n	[]
+find_006_02	case14	~~~~\n~~~\nstill open\n	[]
+caption_004_14	case14	~~~~\n~~~\nstill open\n	[]
+caption_004_15	case14	~~~~\n~~~\nstill open\n	[]
+norm_006_01	case14	~~~~\n~~~\nstill open\n	["~~~~", "~~~", "still open"]
+norm_006_02	case14	~~~~\n~~~\nstill open\n	["~~~~", "~~~", "still open"]
+fence_end_006_01	case14	~~~~\n~~~\nstill open\n	["line 1: unclosed code fence opened with ~~~~"]
+tables_a	case15	```\n``` tail\nopen\n	[]
+tables_b	case15	```\n``` tail\nopen\n	[]
+t006_01	case15	```\n``` tail\nopen\n	[]
+t006_02	case15	```\n``` tail\nopen\n	[]
+heads_a	case15	```\n``` tail\nopen\n	[]
+heads_b	case15	```\n``` tail\nopen\n	[]
+heads_c	case15	```\n``` tail\nopen\n	[]
+fence_004_14	case15	```\n``` tail\nopen\n	110
+fence_006_01	case15	```\n``` tail\nopen\n	111
+fence_006_02	case15	```\n``` tail\nopen\n	110
+heads_006_01	case15	```\n``` tail\nopen\n	[]
+find_006_02	case15	```\n``` tail\nopen\n	[]
+caption_004_14	case15	```\n``` tail\nopen\n	[]
+caption_004_15	case15	```\n``` tail\nopen\n	[]
+norm_006_01	case15	```\n``` tail\nopen\n	["```", "``` tail", "open"]
+norm_006_02	case15	```\n``` tail\nopen\n	["```", "``` tail", "open"]
+fence_end_006_01	case15	```\n``` tail\nopen\n	["line 1: unclosed code fence opened with ```"]
+tables_a	case16	  ````\n```\n	[]
+tables_b	case16	  ````\n```\n	[]
+t006_01	case16	  ````\n```\n	[]
+t006_02	case16	  ````\n```\n	[]
+heads_a	case16	  ````\n```\n	[]
+heads_b	case16	  ````\n```\n	[]
+heads_c	case16	  ````\n```\n	[]
+fence_004_14	case16	  ````\n```\n	11
+fence_006_01	case16	  ````\n```\n	11
+fence_006_02	case16	  ````\n```\n	11
+heads_006_01	case16	  ````\n```\n	[]
+find_006_02	case16	  ````\n```\n	[]
+caption_004_14	case16	  ````\n```\n	[]
+caption_004_15	case16	  ````\n```\n	[]
+norm_006_01	case16	  ````\n```\n	["````", "```"]
+norm_006_02	case16	  ````\n```\n	["````", "```"]
+fence_end_006_01	case16	  ````\n```\n	["line 1: unclosed code fence opened with ````"]
+tables_a	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
+tables_b	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
+t006_01	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
+t006_02	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
+heads_a	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[0, 1, "One"], [1, 2, "Two"], [2, 3, "Three"], [5, 2, "Spaced  title"], [6, 2, ""], [7, 2, "Tab"]]
+heads_b	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[0, 1, "One"], [1, 2, "Two"], [2, 3, "Three"], [5, 2, "Spaced  title"], [6, 2, ""], [7, 2, "Tab"]]
+heads_c	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[0, 1, "One"], [1, 2, "Two"], [2, 3, "Three"], [5, 2, "Spaced  title"], [6, 2, ""], [7, 2, "Tab"]]
+fence_004_14	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	000000000
+fence_006_01	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	000000000
+fence_006_02	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	000000000
+heads_006_01	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[[1, 1, "One"], [2, 2, "Two"], [3, 3, "Three"], [6, 2, "Spaced  title"], [7, 2, ""], [8, 2, "Tab"]]
+find_006_02	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[["One", [0, 9]], ["Two", [1, 5]], ["Three", [2, 5]], ["Spaced  title", [5, 6]], ["", [6, 7]], ["Tab", [7, 9]]]
+caption_004_14	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
+caption_004_15	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
+norm_006_01	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	["# One #", "## Two ##", "### Three#", "####### Seven", "#NoSpace", "## Spaced title", "## #", "## Tab", "## Indented"]
+norm_006_02	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	["# One #", "## Two ##", "### Three#", "####### Seven", "#NoSpace", "## Spaced title", "## #", "## Tab", "## Indented"]
+fence_end_006_01	case17	# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n	[]
+tables_a	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]]], [21, ["far", "x"], [["a", "1"]]]]
+tables_b	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]]], [21, ["far", "x"], [["a", "1"]]]]
+t006_01	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[[7, ["Item", "Bytes"]], [8, ["---", "---"]], [9, ["packet header", "28"]], [10, ["total", "28"]]], [[22, ["far", "x"]], [23, ["---", "---"]], [24, ["a", "1"]]]]
+t006_02	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[["Item", "Bytes"], [[9, ["packet header", "28"]], [10, ["total", "28"]]]], [["far", "x"], [[24, ["a", "1"]]]]]
+heads_a	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[0, 2, "Size budget"]]
+heads_b	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[0, 2, "Size budget"]]
+heads_c	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[0, 2, "Size budget"]]
+fence_004_14	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	000000000001111000000000
+fence_006_01	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	000000000001111000000000
+fence_006_02	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	000000000001111000000000
+heads_006_01	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[1, 2, "Size budget"]]
+find_006_02	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[["Size budget", [0, 24]]]
+caption_004_14	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, 10, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]], "The budget. Table 1: default case**"], [21, 24, ["far", "x"], [["a", "1"]], ""]]
+caption_004_15	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[[6, 10, ["Item", "Bytes"], [["packet header", "28"], ["total", "28"]], "The budget. Table 1: default case**"], [21, 24, ["far", "x"], [["a", "1"]], ""]]
+norm_006_01	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	["## Size budget", "", "The budget.", "", "**Table 1: default case**", "", "| Item | Bytes |", "|---|---|", "| packet header | 28 |", "| total | 28 |", "", "```", "| fenced | 1 |", "|---|---|", "```", "A caption", "", "", "", "", "", "| far | x |", "|---|---|", "| a | 1 |"]
+norm_006_02	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	["## Size budget", "", "The budget.", "", "**Table 1: default case**", "", "| Item | Bytes |", "|---|---|", "| packet header | 28 |", "| total | 28 |", "", "```", "| fenced | 1 |", "|---|---|", "```", "A caption", "", "", "", "", "", "| far | x |", "|---|---|", "| a | 1 |"]
+fence_end_006_01	case18	## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n	[]
+tables_a	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, ["a", "b"], [["1", "2"]]]]
+tables_b	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, ["a", "b"], [["1", "2"]]]]
+t006_01	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[[4, ["a", "b"]], [5, ["-", "-"]], [6, ["1", "2"]]]]
+t006_02	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
+heads_a	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
+heads_b	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
+heads_c	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
+fence_004_14	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	000000
+fence_006_01	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	000000
+fence_006_02	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	000000
+heads_006_01	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
+find_006_02	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
+caption_004_14	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, 6, ["a", "b"], [["1", "2"]], "Caption two Caption three"]]
+caption_004_15	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[[3, 6, ["a", "b"], [["1", "2"]], "Caption two Caption three"]]
+norm_006_01	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	["Caption one", "Caption two", "Caption three", "| a | b |", "| - | - |", "| 1 | 2 |"]
+norm_006_02	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	["Caption one", "Caption two", "Caption three", "| a | b |", "| - | - |", "| 1 | 2 |"]
+fence_end_006_01	case19	Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n	[]
+tables_a	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]]]]
+tables_b	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]]]]
+t006_01	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[[2, ["a"]], [3, ["---", ""]], [4, ["1"]], [5, ["b"]], [6, ["-"]], [7, ["2"]], [8, ["c"]], [9, ["--"]], [10, ["3"]], [11, ["d"]], [12, [":"]]]]
+t006_02	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[]
+heads_a	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[0, 1, "T"]]
+heads_b	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[0, 1, "T"]]
+heads_c	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[0, 1, "T"]]
+fence_004_14	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	000000000000
+fence_006_01	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	000000000000
+fence_006_02	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	000000000000
+heads_006_01	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, 1, "T"]]
+find_006_02	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[["T", [0, 12]]]
+caption_004_14	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, 12, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]], "T"]]
+caption_004_15	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[[1, 12, ["a"], [["1"], ["b"], ["-"], ["2"], ["c"], ["--"], ["3"], ["d"], [":"]], "T"]]
+norm_006_01	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	["# T", "| a |", "| --- | |", "| 1 |", "| b |", "|-|", "| 2 |", "| c |", "| -- |", "| 3 |", "| d |", "| : |"]
+norm_006_02	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	["# T", "| a |", "| --- | |", "| 1 |", "| b |", "|-|", "| 2 |", "| c |", "| -- |", "| 3 |", "| d |", "| : |"]
+fence_end_006_01	case20	# T\n| a |\n| --- | |\n| 1 |\n| b |\n|-|\n| 2 |\n| c |\n| -- |\n| 3 |\n| d |\n| : |\n	[]
+tables_a	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]]]]
+tables_b	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]]]]
+t006_01	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[[1, ["a", "b"]], [2, ["---", "---"]], [3, ["1", "2"]], [4, ["---", "---"]], [5, ["3", "4"]]]]
+t006_02	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[["a", "b"], [[3, ["1", "2"]], [4, ["---", "---"]], [5, ["3", "4"]]]]]
+heads_a	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
+heads_b	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
+heads_c	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
+fence_004_14	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	00000
+fence_006_01	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	00000
+fence_006_02	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	00000
+heads_006_01	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
+find_006_02	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
+caption_004_14	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, 5, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]], ""]]
+caption_004_15	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[[0, 5, ["a", "b"], [["1", "2"], ["---", "---"], ["3", "4"]], ""]]
+norm_006_01	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	["| a | b |", "|---|---|", "| 1 | 2 |", "|---|---|", "| 3 | 4 |"]
+norm_006_02	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	["| a | b |", "|---|---|", "| 1 | 2 |", "|---|---|", "| 3 | 4 |"]
+fence_end_006_01	case21	| a | b |\n|---|---|\n| 1 | 2 |\n|---|---|\n| 3 | 4 |\n	[]
+tables_a	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
+tables_b	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
+t006_01	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
+t006_02	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
+heads_a	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[0, 2, "Domain line and position map"], [5, 3, "Sub"], [6, 2, "Next"]]
+heads_b	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[0, 2, "Domain line and position map"], [5, 3, "Sub"], [6, 2, "Next"]]
+heads_c	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[0, 2, "Domain line and position map"], [5, 3, "Sub"], [6, 2, "Next"]]
+fence_004_14	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	0011100
+fence_006_01	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	0011100
+fence_006_02	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	0011100
+heads_006_01	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[[1, 2, "Domain line and position map"], [6, 3, "Sub"], [7, 2, "Next"]]
+find_006_02	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[["Domain line and position map", [0, 3]], ["Sub", [5, 6]], ["Next", [6, 7]]]
+caption_004_14	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
+caption_004_15	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
+norm_006_01	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	["## Domain line and position map", "text", "```", "## Domain line and position map", "```", "### Sub", "## Next"]
+norm_006_02	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	["## Domain line and position map", "text", "```", "## Domain line and position map", "```", "### Sub", "## Next"]
+fence_end_006_01	case22	## Domain line and position map\ntext\n```\n## Domain line and position map\n```\n### Sub\n## Next\n	[]
+tables_a	case23	## Domain line and position map ##\n### x\n# Top\n	[]
+tables_b	case23	## Domain line and position map ##\n### x\n# Top\n	[]
+t006_01	case23	## Domain line and position map ##\n### x\n# Top\n	[]
+t006_02	case23	## Domain line and position map ##\n### x\n# Top\n	[]
+heads_a	case23	## Domain line and position map ##\n### x\n# Top\n	[[0, 2, "Domain line and position map"], [1, 3, "x"], [2, 1, "Top"]]
+heads_b	case23	## Domain line and position map ##\n### x\n# Top\n	[[0, 2, "Domain line and position map"], [1, 3, "x"], [2, 1, "Top"]]
+heads_c	case23	## Domain line and position map ##\n### x\n# Top\n	[[0, 2, "Domain line and position map"], [1, 3, "x"], [2, 1, "Top"]]
+fence_004_14	case23	## Domain line and position map ##\n### x\n# Top\n	000
+fence_006_01	case23	## Domain line and position map ##\n### x\n# Top\n	000
+fence_006_02	case23	## Domain line and position map ##\n### x\n# Top\n	000
+heads_006_01	case23	## Domain line and position map ##\n### x\n# Top\n	[[1, 2, "Domain line and position map"], [2, 3, "x"], [3, 1, "Top"]]
+find_006_02	case23	## Domain line and position map ##\n### x\n# Top\n	[["Domain line and position map", [0, 2]], ["x", [1, 2]], ["Top", [2, 3]]]
+caption_004_14	case23	## Domain line and position map ##\n### x\n# Top\n	[]
+caption_004_15	case23	## Domain line and position map ##\n### x\n# Top\n	[]
+norm_006_01	case23	## Domain line and position map ##\n### x\n# Top\n	["## Domain line and position map ##", "### x", "# Top"]
+norm_006_02	case23	## Domain line and position map ##\n### x\n# Top\n	["## Domain line and position map ##", "### x", "# Top"]
+fence_end_006_01	case23	## Domain line and position map ##\n### x\n# Top\n	[]
+tables_a	case24	| a |\n|---|\n```\n| b |\n```\n	[[0, ["a"], []]]
+tables_b	case24	| a |\n|---|\n```\n| b |\n```\n	[[0, ["a"], []]]
+t006_01	case24	| a |\n|---|\n```\n| b |\n```\n	[[[1, ["a"]], [2, ["---"]]]]
+t006_02	case24	| a |\n|---|\n```\n| b |\n```\n	[]
+heads_a	case24	| a |\n|---|\n```\n| b |\n```\n	[]
+heads_b	case24	| a |\n|---|\n```\n| b |\n```\n	[]
+heads_c	case24	| a |\n|---|\n```\n| b |\n```\n	[]
+fence_004_14	case24	| a |\n|---|\n```\n| b |\n```\n	00111
+fence_006_01	case24	| a |\n|---|\n```\n| b |\n```\n	00111
+fence_006_02	case24	| a |\n|---|\n```\n| b |\n```\n	00111
+heads_006_01	case24	| a |\n|---|\n```\n| b |\n```\n	[]
+find_006_02	case24	| a |\n|---|\n```\n| b |\n```\n	[]
+caption_004_14	case24	| a |\n|---|\n```\n| b |\n```\n	[[0, 2, ["a"], [], ""]]
+caption_004_15	case24	| a |\n|---|\n```\n| b |\n```\n	[[0, 2, ["a"], [], ""]]
+norm_006_01	case24	| a |\n|---|\n```\n| b |\n```\n	["| a |", "|---|", "```", "| b |", "```"]
+norm_006_02	case24	| a |\n|---|\n```\n| b |\n```\n	["| a |", "|---|", "```", "| b |", "```"]
+fence_end_006_01	case24	| a |\n|---|\n```\n| b |\n```\n	[]
+tables_a	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, ["a", "b"], [["1", "2"]]]]
+tables_b	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, ["a", "b"], [["1", "2"]]]]
+t006_01	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[[1, ["a", "b"]], [2, ["---", "---"]], [3, ["1", "2"]]]]
+t006_02	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[["a", "b"], [[3, ["1", "2"]]]]]
+heads_a	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
+heads_b	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
+heads_c	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
+fence_004_14	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	000
+fence_006_01	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	000
+fence_006_02	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	000
+heads_006_01	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
+find_006_02	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
+caption_004_14	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, 3, ["a", "b"], [["1", "2"]], ""]]
+caption_004_15	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[[0, 3, ["a", "b"], [["1", "2"]], ""]]
+norm_006_01	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	["| a | b |", "|---|---|", "| 1 | 2 |"]
+norm_006_02	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	["| a | b |", "|---|---|", "| 1 | 2 |"]
+fence_end_006_01	case25	  | a | b |\n  |---|---|\n  | 1 | 2 |\n	[]
+tables_a	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, ["a"], [["b"]]], [4, ["c"], []]]
+tables_b	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, ["a"], [["b"]]], [4, ["c"], []]]
+t006_01	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[[1, ["a"]], [2, ["-"]], [3, ["b"]]], [[5, ["c"]], [6, [":--"]]]]
+t006_02	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
+heads_a	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
+heads_b	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
+heads_c	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
+fence_004_14	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	000000
+fence_006_01	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	000000
+fence_006_02	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	000000
+heads_006_01	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
+find_006_02	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
+caption_004_14	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, 3, ["a"], [["b"]], ""], [4, 6, ["c"], [], ""]]
+caption_004_15	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[[0, 3, ["a"], [["b"]], ""], [4, 6, ["c"], [], ""]]
+norm_006_01	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	["|a|", "|-|", "|b|", "", "|c|", "|:--|"]
+norm_006_02	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	["|a|", "|-|", "|b|", "", "|c|", "|:--|"]
+fence_end_006_01	case26	|a|\n|-|\n|b|\n\n|c|\n|:--|\n	[]
+tables_a	case27		[]
+tables_b	case27		[]
+t006_01	case27		[]
+t006_02	case27		[]
+heads_a	case27		[]
+heads_b	case27		[]
+heads_c	case27		[]
+fence_004_14	case27		
+fence_006_01	case27		
+fence_006_02	case27		
+heads_006_01	case27		[]
+find_006_02	case27		[]
+caption_004_14	case27		[]
+caption_004_15	case27		[]
+norm_006_01	case27		[]
+norm_006_02	case27		[]
+fence_end_006_01	case27		[]
+tables_a	case28	\n\n	[]
+tables_b	case28	\n\n	[]
+t006_01	case28	\n\n	[]
+t006_02	case28	\n\n	[]
+heads_a	case28	\n\n	[]
+heads_b	case28	\n\n	[]
+heads_c	case28	\n\n	[]
+fence_004_14	case28	\n\n	00
+fence_006_01	case28	\n\n	00
+fence_006_02	case28	\n\n	00
+heads_006_01	case28	\n\n	[]
+find_006_02	case28	\n\n	[]
+caption_004_14	case28	\n\n	[]
+caption_004_15	case28	\n\n	[]
+norm_006_01	case28	\n\n	["", ""]
+norm_006_02	case28	\n\n	["", ""]
+fence_end_006_01	case28	\n\n	[]
+tables_a	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
+tables_b	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
+t006_01	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
+t006_02	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
+heads_a	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[0, 2, "Heading with `code` and [link](#x)"], [1, 3, "Fences of the 006 family"]]
+heads_b	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[0, 2, "Heading with `code` and [link](#x)"], [1, 3, "Fences of the 006 family"]]
+heads_c	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[0, 2, "Heading with `code` and [link](#x)"], [1, 3, "Fences of the 006 family"]]
+fence_004_14	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	00111
+fence_006_01	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	00111
+fence_006_02	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	00111
+heads_006_01	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[[1, 2, "Heading with `code` and [link](#x)"], [2, 3, "Fences of the 006 family"]]
+find_006_02	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[["Heading with `code` and [link](#x)", [0, 3]], ["Fences of the 006 family", [1, 3]], ["no", [3, 5]]]
+caption_004_14	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
+caption_004_15	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
+norm_006_01	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	["## Heading with `code` and [link](#x)", "### Fences of the 006 family", "```` js", "## no", "````"]
+norm_006_02	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	["## Heading with `code` and [link](#x)", "### Fences of the 006 family", "```` js", "## no", "````"]
+fence_end_006_01	case29	## Heading with `code` and [link](#x)\n### Fences of the 006 family\n```` js\n## no\n````\n	[]
 norm_006_01	-		""
 norm_006_02	-		""
 norm_006_01	-	 	""
@@ -577,6 +671,7 @@ doc:caption_004_14	doc/design/00-context.md	fnv:4f2871f579cb5fb8	fnv:c324f03c802
 doc:caption_004_15	doc/design/00-context.md	fnv:4f2871f579cb5fb8	fnv:c324f03c802a779d
 doc:norm_006_01	doc/design/00-context.md	fnv:4f2871f579cb5fb8	fnv:ffd196cd22bb52ee
 doc:norm_006_02	doc/design/00-context.md	fnv:4f2871f579cb5fb8	fnv:ffd196cd22bb52ee
+doc:fence_end_006_01	doc/design/00-context.md	fnv:4f2871f579cb5fb8	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:18dba590856104e5
 doc:tables_b	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:18dba590856104e5
 doc:t006_01	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:f9388a4274b70984
@@ -593,6 +688,7 @@ doc:caption_004_14	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:900fda
 doc:caption_004_15	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:900fdaf1298aba6a
 doc:norm_006_01	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:3de5a3eff88d4b68
 doc:norm_006_02	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:3de5a3eff88d4b68
+doc:fence_end_006_01	doc/design/01-architecture.md	fnv:41cba647e678e3dd	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:2ed3812518b321df
 doc:tables_b	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:2ed3812518b321df
 doc:t006_01	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:ce5dd38f024ae811
@@ -609,6 +705,7 @@ doc:caption_004_14	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:f3d9dbfe3
 doc:caption_004_15	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:f3d9dbfe3c6cd6bc
 doc:norm_006_01	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:f412775c5244d311
 doc:norm_006_02	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:f412775c5244d311
+doc:fence_end_006_01	doc/design/02-constants.md	fnv:07e12892ac9ee956	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv:1a5d862953060e8e
 doc:tables_b	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv:1a5d862953060e8e
 doc:t006_01	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv:d3ba5acd10d5ac75
@@ -625,6 +722,7 @@ doc:caption_004_14	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv
 doc:caption_004_15	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv:b24db48ea3fb19c3
 doc:norm_006_01	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv:13b219eda14b9ccf
 doc:norm_006_02	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv:13b219eda14b9ccf
+doc:fence_end_006_01	doc/design/03-acceptance-criteria.md	fnv:f0b0a3754b4468ad	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:6ab89ffe83e198e2
 doc:tables_b	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:6ab89ffe83e198e2
 doc:t006_01	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:748ab9e7eb05b1b7
@@ -641,6 +739,7 @@ doc:caption_004_14	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:
 doc:caption_004_15	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:57ba689b315e6915
 doc:norm_006_01	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:0137a08dccb9be5b
 doc:norm_006_02	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:0137a08dccb9be5b
+doc:fence_end_006_01	doc/design/04-definition-of-done.md	fnv:321fd03929512b3e	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:14c08530b0106d52
 doc:tables_b	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:14c08530b0106d52
 doc:t006_01	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:a25ff1105bb6de93
@@ -657,6 +756,7 @@ doc:caption_004_14	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:1a96
 doc:caption_004_15	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:1a9607172de37cf0
 doc:norm_006_01	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:1cc54c0c09d78371
 doc:norm_006_02	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:1cc54c0c09d78371
+doc:fence_end_006_01	doc/design/05-risks-and-open.md	fnv:a9cf4765479168d6	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:a9d4783c85739066
 doc:tables_b	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:a9d4783c85739066
 doc:t006_01	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:15ba9c8c9345278c
@@ -673,6 +773,7 @@ doc:caption_004_14	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:0
 doc:caption_004_15	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:0cdc09f4f808fc61
 doc:norm_006_01	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:313b69cfa45c80c7
 doc:norm_006_02	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:313b69cfa45c80c7
+doc:fence_end_006_01	doc/design/06-evidence-appendix.md	fnv:665a02e70f1b6cfe	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/README.md	fnv:3b514e32f564df6e	fnv:7ba4b90a26dd4e63
 doc:tables_b	doc/design/README.md	fnv:3b514e32f564df6e	fnv:7ba4b90a26dd4e63
 doc:t006_01	doc/design/README.md	fnv:3b514e32f564df6e	fnv:83dc0e449417e881
@@ -689,6 +790,7 @@ doc:caption_004_14	doc/design/README.md	fnv:3b514e32f564df6e	fnv:8d5731bfee46fd1
 doc:caption_004_15	doc/design/README.md	fnv:3b514e32f564df6e	fnv:8d5731bfee46fd12
 doc:norm_006_01	doc/design/README.md	fnv:3b514e32f564df6e	fnv:fe73407e165a0db9
 doc:norm_006_02	doc/design/README.md	fnv:3b514e32f564df6e	fnv:fe73407e165a0db9
+doc:fence_end_006_01	doc/design/README.md	fnv:3b514e32f564df6e	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:74aec2685b1d1205
 doc:tables_b	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:74aec2685b1d1205
 doc:t006_01	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:ae277320287ef49e
@@ -705,6 +807,7 @@ doc:caption_004_14	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:61f04d3ea1a769
 doc:caption_004_15	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:61f04d3ea1a76917
 doc:norm_006_01	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:eae50f1a9147280d
 doc:norm_006_02	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:eae50f1a9147280d
+doc:fence_end_006_01	doc/design/roadmap.md	fnv:037d47f1dabb461f	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:63637526ba427853
 doc:tables_b	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:63637526ba427853
 doc:t006_01	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:be20164b4d3cc5cd
@@ -721,6 +824,7 @@ doc:caption_004_14	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:966639e0
 doc:caption_004_15	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:966639e0a9f6dcb5
 doc:norm_006_01	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:56e6eb32f71cbe6e
 doc:norm_006_02	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:56e6eb32f71cbe6e
+doc:fence_end_006_01	doc/design/spec/timeline.md	fnv:bcfbc285784ca252	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:7cc728842c615b1b
 doc:tables_b	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:7cc728842c615b1b
 doc:t006_01	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:d309cc93a5f67f8b
@@ -737,6 +841,7 @@ doc:caption_004_14	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:e832f92f134d
 doc:caption_004_15	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:e832f92f134df834
 doc:norm_006_01	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:0619d88f39a8ee66
 doc:norm_006_02	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:0619d88f39a8ee66
+doc:fence_end_006_01	doc/design/spec/wire.md	fnv:5862585b425d44e1	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-01-Wire-md-skeleton-and-conventions.md	fnv:a7728d45b60c540d	fnv:bd588483c929efd3
 doc:tables_b	doc/design/tickets/004/004-01-Wire-md-skeleton-and-conventions.md	fnv:a7728d45b60c540d	fnv:bd588483c929efd3
 doc:t006_01	doc/design/tickets/004/004-01-Wire-md-skeleton-and-conventions.md	fnv:a7728d45b60c540d	fnv:c43695c2907331db
@@ -753,6 +858,7 @@ doc:caption_004_14	doc/design/tickets/004/004-01-Wire-md-skeleton-and-convention
 doc:caption_004_15	doc/design/tickets/004/004-01-Wire-md-skeleton-and-conventions.md	fnv:a7728d45b60c540d	fnv:9dcd4c85ce7a76f6
 doc:norm_006_01	doc/design/tickets/004/004-01-Wire-md-skeleton-and-conventions.md	fnv:a7728d45b60c540d	fnv:49ddec3c778905b0
 doc:norm_006_02	doc/design/tickets/004/004-01-Wire-md-skeleton-and-conventions.md	fnv:a7728d45b60c540d	fnv:49ddec3c778905b0
+doc:fence_end_006_01	doc/design/tickets/004/004-01-Wire-md-skeleton-and-conventions.md	fnv:a7728d45b60c540d	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-02-Machine-readable-tables-and-round-trip-check.md	fnv:00256b77987f7547	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-02-Machine-readable-tables-and-round-trip-check.md	fnv:00256b77987f7547	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-02-Machine-readable-tables-and-round-trip-check.md	fnv:00256b77987f7547	fnv:09612b07b5ecb5a5
@@ -769,6 +875,7 @@ doc:caption_004_14	doc/design/tickets/004/004-02-Machine-readable-tables-and-rou
 doc:caption_004_15	doc/design/tickets/004/004-02-Machine-readable-tables-and-round-trip-check.md	fnv:00256b77987f7547	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-02-Machine-readable-tables-and-round-trip-check.md	fnv:00256b77987f7547	fnv:b882c28eb9444d92
 doc:norm_006_02	doc/design/tickets/004/004-02-Machine-readable-tables-and-round-trip-check.md	fnv:00256b77987f7547	fnv:b882c28eb9444d92
+doc:fence_end_006_01	doc/design/tickets/004/004-02-Machine-readable-tables-and-round-trip-check.md	fnv:00256b77987f7547	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md	fnv:126a18c42376e29d	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md	fnv:126a18c42376e29d	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md	fnv:126a18c42376e29d	fnv:09612b07b5ecb5a5
@@ -785,6 +892,7 @@ doc:caption_004_14	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md
 doc:caption_004_15	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md	fnv:126a18c42376e29d	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md	fnv:126a18c42376e29d	fnv:0af3085f6618ce9d
 doc:norm_006_02	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md	fnv:126a18c42376e29d	fnv:0af3085f6618ce9d
+doc:fence_end_006_01	doc/design/tickets/004/004-03-Rejection-reason-enumeration.md	fnv:126a18c42376e29d	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	fnv:71364bb513a53972	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	fnv:71364bb513a53972	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	fnv:71364bb513a53972	fnv:09612b07b5ecb5a5
@@ -801,6 +909,7 @@ doc:caption_004_14	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	f
 doc:caption_004_15	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	fnv:71364bb513a53972	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	fnv:71364bb513a53972	fnv:acfbab77c6ae1dd5
 doc:norm_006_02	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	fnv:71364bb513a53972	fnv:acfbab77c6ae1dd5
+doc:fence_end_006_01	doc/design/tickets/004/004-04-Versioning-rules-and-magic.md	fnv:71364bb513a53972	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a41ee61e694d3bbb	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a41ee61e694d3bbb	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a41ee61e694d3bbb	fnv:09612b07b5ecb5a5
@@ -817,6 +926,7 @@ doc:caption_004_14	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a4
 doc:caption_004_15	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a41ee61e694d3bbb	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a41ee61e694d3bbb	fnv:7ec5ee8f911e299e
 doc:norm_006_02	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a41ee61e694d3bbb	fnv:7ec5ee8f911e299e
+doc:fence_end_006_01	doc/design/tickets/004/004-05-Reserved-fields-rules.md	fnv:a41ee61e694d3bbb	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6fff3990df6b4	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6fff3990df6b4	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6fff3990df6b4	fnv:09612b07b5ecb5a5
@@ -833,6 +943,7 @@ doc:caption_004_14	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6
 doc:caption_004_15	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6fff3990df6b4	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6fff3990df6b4	fnv:ff19fcae26adeaee
 doc:norm_006_02	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6fff3990df6b4	fnv:ff19fcae26adeaee
+doc:fence_end_006_01	doc/design/tickets/004/004-06-Media-packet-header.md	fnv:1fe6fff3990df6b4	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md	fnv:313a6565ba4e13b4	fnv:cd744e7e7de37ac6
 doc:tables_b	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md	fnv:313a6565ba4e13b4	fnv:cd744e7e7de37ac6
 doc:t006_01	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md	fnv:313a6565ba4e13b4	fnv:e661807ac1e7f2cb
@@ -849,6 +960,7 @@ doc:caption_004_14	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md
 doc:caption_004_15	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md	fnv:313a6565ba4e13b4	fnv:95f01093c6cbd2d5
 doc:norm_006_01	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md	fnv:313a6565ba4e13b4	fnv:62ed6efa51c82fd9
 doc:norm_006_02	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md	fnv:313a6565ba4e13b4	fnv:62ed6efa51c82fd9
+doc:fence_end_006_01	doc/design/tickets/004/004-07-Timeline-epoch-wrap-analysis.md	fnv:313a6565ba4e13b4	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp.md	fnv:99993f51a6ebf7fa	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp.md	fnv:99993f51a6ebf7fa	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp.md	fnv:99993f51a6ebf7fa	fnv:09612b07b5ecb5a5
@@ -865,6 +977,7 @@ doc:caption_004_14	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp
 doc:caption_004_15	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp.md	fnv:99993f51a6ebf7fa	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp.md	fnv:99993f51a6ebf7fa	fnv:bdb5d444cf20a903
 doc:norm_006_02	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp.md	fnv:99993f51a6ebf7fa	fnv:bdb5d444cf20a903
+doc:fence_end_006_01	doc/design/tickets/004/004-08-Slice-header-and-send-timestamp.md	fnv:99993f51a6ebf7fa	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bbab6799bd278a5d	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bbab6799bd278a5d	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bbab6799bd278a5d	fnv:09612b07b5ecb5a5
@@ -881,6 +994,7 @@ doc:caption_004_14	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bb
 doc:caption_004_15	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bbab6799bd278a5d	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bbab6799bd278a5d	fnv:8529c57be51b0fc0
 doc:norm_006_02	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bbab6799bd278a5d	fnv:8529c57be51b0fc0
+doc:fence_end_006_01	doc/design/tickets/004/004-09-In-band-announcements.md	fnv:bbab6799bd278a5d	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1161ddf1013ed31	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1161ddf1013ed31	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1161ddf1013ed31	fnv:09612b07b5ecb5a5
@@ -897,6 +1011,7 @@ doc:caption_004_14	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1
 doc:caption_004_15	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1161ddf1013ed31	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1161ddf1013ed31	fnv:0576a5d8f6e054bc
 doc:norm_006_02	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1161ddf1013ed31	fnv:0576a5d8f6e054bc
+doc:fence_end_006_01	doc/design/tickets/004/004-10-Measurement-extension.md	fnv:c1161ddf1013ed31	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-11-Audio-and-dense-controller-messages.md	fnv:953e88d541a91a9d	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-11-Audio-and-dense-controller-messages.md	fnv:953e88d541a91a9d	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-11-Audio-and-dense-controller-messages.md	fnv:953e88d541a91a9d	fnv:09612b07b5ecb5a5
@@ -913,6 +1028,7 @@ doc:caption_004_14	doc/design/tickets/004/004-11-Audio-and-dense-controller-mess
 doc:caption_004_15	doc/design/tickets/004/004-11-Audio-and-dense-controller-messages.md	fnv:953e88d541a91a9d	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-11-Audio-and-dense-controller-messages.md	fnv:953e88d541a91a9d	fnv:7c22b7fbaa46e97c
 doc:norm_006_02	doc/design/tickets/004/004-11-Audio-and-dense-controller-messages.md	fnv:953e88d541a91a9d	fnv:7c22b7fbaa46e97c
+doc:fence_end_006_01	doc/design/tickets/004/004-11-Audio-and-dense-controller-messages.md	fnv:953e88d541a91a9d	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-12-Sparse-controller-and-transport-state-messages.md	fnv:c1650438a9aee318	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-12-Sparse-controller-and-transport-state-messages.md	fnv:c1650438a9aee318	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-12-Sparse-controller-and-transport-state-messages.md	fnv:c1650438a9aee318	fnv:09612b07b5ecb5a5
@@ -929,6 +1045,7 @@ doc:caption_004_14	doc/design/tickets/004/004-12-Sparse-controller-and-transport
 doc:caption_004_15	doc/design/tickets/004/004-12-Sparse-controller-and-transport-state-messages.md	fnv:c1650438a9aee318	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-12-Sparse-controller-and-transport-state-messages.md	fnv:c1650438a9aee318	fnv:409346a219b4554d
 doc:norm_006_02	doc/design/tickets/004/004-12-Sparse-controller-and-transport-state-messages.md	fnv:c1650438a9aee318	fnv:409346a219b4554d
+doc:fence_end_006_01	doc/design/tickets/004/004-12-Sparse-controller-and-transport-state-messages.md	fnv:c1650438a9aee318	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8cadec8012	fnv:65a094998874624c
 doc:tables_b	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8cadec8012	fnv:65a094998874624c
 doc:t006_01	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8cadec8012	fnv:57aed6155393862c
@@ -945,6 +1062,7 @@ doc:caption_004_14	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8ca
 doc:caption_004_15	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8cadec8012	fnv:c40da6cca19d91a1
 doc:norm_006_01	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8cadec8012	fnv:b816339221ef75ad
 doc:norm_006_02	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8cadec8012	fnv:b816339221ef75ad
+doc:fence_end_006_01	doc/design/tickets/004/004-13-Slice-checksum.md	fnv:48145e8cadec8012	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv:0972bd80be95da78	fnv:691c52fd265b14a1
 doc:tables_b	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv:0972bd80be95da78	fnv:691c52fd265b14a1
 doc:t006_01	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv:0972bd80be95da78	fnv:89dc373093a1f78e
@@ -961,6 +1079,7 @@ doc:caption_004_14	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv
 doc:caption_004_15	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv:0972bd80be95da78	fnv:0c426e00ba48414e
 doc:norm_006_01	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv:0972bd80be95da78	fnv:15ff11d48694db2b
 doc:norm_006_02	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv:0972bd80be95da78	fnv:15ff11d48694db2b
+doc:fence_end_006_01	doc/design/tickets/004/004-14-Media-packet-size-budget.md	fnv:0972bd80be95da78	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	fnv:1e05efebfb2a10c9	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	fnv:1e05efebfb2a10c9	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	fnv:1e05efebfb2a10c9	fnv:09612b07b5ecb5a5
@@ -977,6 +1096,7 @@ doc:caption_004_14	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	f
 doc:caption_004_15	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	fnv:1e05efebfb2a10c9	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	fnv:1e05efebfb2a10c9	fnv:6b3ce2d8ffa57d44
 doc:norm_006_02	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	fnv:1e05efebfb2a10c9	fnv:6b3ce2d8ffa57d44
+doc:fence_end_006_01	doc/design/tickets/004/004-15-Capacity-figures-recompute.md	fnv:1e05efebfb2a10c9	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55997fd8	fnv:ef90c7f8240c3555
 doc:tables_b	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55997fd8	fnv:ef90c7f8240c3555
 doc:t006_01	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55997fd8	fnv:dfc1ca58044cc344
@@ -993,6 +1113,7 @@ doc:caption_004_14	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55
 doc:caption_004_15	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55997fd8	fnv:0fc6b2ff0d999379
 doc:norm_006_01	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55997fd8	fnv:16883938835350e1
 doc:norm_006_02	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55997fd8	fnv:16883938835350e1
+doc:fence_end_006_01	doc/design/tickets/004/004-16-Hello-message.md	fnv:de033e4d55997fd8	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de3603be41bd	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de3603be41bd	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de3603be41bd	fnv:09612b07b5ecb5a5
@@ -1009,6 +1130,7 @@ doc:caption_004_14	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de
 doc:caption_004_15	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de3603be41bd	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de3603be41bd	fnv:def07ca761c8b5b0
 doc:norm_006_02	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de3603be41bd	fnv:def07ca761c8b5b0
+doc:fence_end_006_01	doc/design/tickets/004/004-17-Election-messages.md	fnv:4b96de3603be41bd	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-18-Admission-handshake-messages.md	fnv:20e5a34aababc792	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-18-Admission-handshake-messages.md	fnv:20e5a34aababc792	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-18-Admission-handshake-messages.md	fnv:20e5a34aababc792	fnv:09612b07b5ecb5a5
@@ -1025,6 +1147,7 @@ doc:caption_004_14	doc/design/tickets/004/004-18-Admission-handshake-messages.md
 doc:caption_004_15	doc/design/tickets/004/004-18-Admission-handshake-messages.md	fnv:20e5a34aababc792	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-18-Admission-handshake-messages.md	fnv:20e5a34aababc792	fnv:1c56aab113576c25
 doc:norm_006_02	doc/design/tickets/004/004-18-Admission-handshake-messages.md	fnv:20e5a34aababc792	fnv:1c56aab113576c25
+doc:fence_end_006_01	doc/design/tickets/004/004-18-Admission-handshake-messages.md	fnv:20e5a34aababc792	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:667605c8da562f3f	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:667605c8da562f3f	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:667605c8da562f3f	fnv:09612b07b5ecb5a5
@@ -1041,6 +1164,7 @@ doc:caption_004_14	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:6
 doc:caption_004_15	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:667605c8da562f3f	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:667605c8da562f3f	fnv:f3ee16c27cd6aa9c
 doc:norm_006_02	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:667605c8da562f3f	fnv:f3ee16c27cd6aa9c
+doc:fence_end_006_01	doc/design/tickets/004/004-19-Sync-request-and-reply.md	fnv:667605c8da562f3f	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-20-Receiver-report-and-one-way-probe.md	fnv:9944faec240db26a	fnv:64a71fd5adc465b3
 doc:tables_b	doc/design/tickets/004/004-20-Receiver-report-and-one-way-probe.md	fnv:9944faec240db26a	fnv:64a71fd5adc465b3
 doc:t006_01	doc/design/tickets/004/004-20-Receiver-report-and-one-way-probe.md	fnv:9944faec240db26a	fnv:0971adcd6643b238
@@ -1057,6 +1181,7 @@ doc:caption_004_14	doc/design/tickets/004/004-20-Receiver-report-and-one-way-pro
 doc:caption_004_15	doc/design/tickets/004/004-20-Receiver-report-and-one-way-probe.md	fnv:9944faec240db26a	fnv:c85b798126ff5e0f
 doc:norm_006_01	doc/design/tickets/004/004-20-Receiver-report-and-one-way-probe.md	fnv:9944faec240db26a	fnv:05b76f36e9b85b46
 doc:norm_006_02	doc/design/tickets/004/004-20-Receiver-report-and-one-way-probe.md	fnv:9944faec240db26a	fnv:05b76f36e9b85b46
+doc:fence_end_006_01	doc/design/tickets/004/004-20-Receiver-report-and-one-way-probe.md	fnv:9944faec240db26a	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-21-Validity-rules-completeness-audit.md	fnv:f37381b39f553c7f	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-21-Validity-rules-completeness-audit.md	fnv:f37381b39f553c7f	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-21-Validity-rules-completeness-audit.md	fnv:f37381b39f553c7f	fnv:09612b07b5ecb5a5
@@ -1073,6 +1198,7 @@ doc:caption_004_14	doc/design/tickets/004/004-21-Validity-rules-completeness-aud
 doc:caption_004_15	doc/design/tickets/004/004-21-Validity-rules-completeness-audit.md	fnv:f37381b39f553c7f	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-21-Validity-rules-completeness-audit.md	fnv:f37381b39f553c7f	fnv:f76700a726c6a60b
 doc:norm_006_02	doc/design/tickets/004/004-21-Validity-rules-completeness-audit.md	fnv:f37381b39f553c7f	fnv:f76700a726c6a60b
+doc:fence_end_006_01	doc/design/tickets/004/004-21-Validity-rules-completeness-audit.md	fnv:f37381b39f553c7f	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-22-Traceability-table-and-review.md	fnv:b1b3a24585e43f0f	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-22-Traceability-table-and-review.md	fnv:b1b3a24585e43f0f	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-22-Traceability-table-and-review.md	fnv:b1b3a24585e43f0f	fnv:09612b07b5ecb5a5
@@ -1089,6 +1215,7 @@ doc:caption_004_14	doc/design/tickets/004/004-22-Traceability-table-and-review.m
 doc:caption_004_15	doc/design/tickets/004/004-22-Traceability-table-and-review.md	fnv:b1b3a24585e43f0f	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-22-Traceability-table-and-review.md	fnv:b1b3a24585e43f0f	fnv:f7249dbfff99b716
 doc:norm_006_02	doc/design/tickets/004/004-22-Traceability-table-and-review.md	fnv:b1b3a24585e43f0f	fnv:f7249dbfff99b716
+doc:fence_end_006_01	doc/design/tickets/004/004-22-Traceability-table-and-review.md	fnv:b1b3a24585e43f0f	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-23-Design-document-updates-and-closeout.md	fnv:fb9a7eb3dd2d1c28	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-23-Design-document-updates-and-closeout.md	fnv:fb9a7eb3dd2d1c28	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-23-Design-document-updates-and-closeout.md	fnv:fb9a7eb3dd2d1c28	fnv:09612b07b5ecb5a5
@@ -1105,6 +1232,7 @@ doc:caption_004_14	doc/design/tickets/004/004-23-Design-document-updates-and-clo
 doc:caption_004_15	doc/design/tickets/004/004-23-Design-document-updates-and-closeout.md	fnv:fb9a7eb3dd2d1c28	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-23-Design-document-updates-and-closeout.md	fnv:fb9a7eb3dd2d1c28	fnv:fc5242961d89ed4d
 doc:norm_006_02	doc/design/tickets/004/004-23-Design-document-updates-and-closeout.md	fnv:fb9a7eb3dd2d1c28	fnv:fc5242961d89ed4d
+doc:fence_end_006_01	doc/design/tickets/004/004-23-Design-document-updates-and-closeout.md	fnv:fb9a7eb3dd2d1c28	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-24-Regime-stamp-message-and-request.md	fnv:2ba1115169f5d119	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-24-Regime-stamp-message-and-request.md	fnv:2ba1115169f5d119	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-24-Regime-stamp-message-and-request.md	fnv:2ba1115169f5d119	fnv:09612b07b5ecb5a5
@@ -1121,6 +1249,7 @@ doc:caption_004_14	doc/design/tickets/004/004-24-Regime-stamp-message-and-reques
 doc:caption_004_15	doc/design/tickets/004/004-24-Regime-stamp-message-and-request.md	fnv:2ba1115169f5d119	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-24-Regime-stamp-message-and-request.md	fnv:2ba1115169f5d119	fnv:2f7d02e4033f81c0
 doc:norm_006_02	doc/design/tickets/004/004-24-Regime-stamp-message-and-request.md	fnv:2ba1115169f5d119	fnv:2f7d02e4033f81c0
+doc:fence_end_006_01	doc/design/tickets/004/004-24-Regime-stamp-message-and-request.md	fnv:2ba1115169f5d119	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47261d3733a3cc61	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47261d3733a3cc61	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47261d3733a3cc61	fnv:09612b07b5ecb5a5
@@ -1137,6 +1266,7 @@ doc:caption_004_14	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47
 doc:caption_004_15	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47261d3733a3cc61	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47261d3733a3cc61	fnv:afb1c2ef1b4108a4
 doc:norm_006_02	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47261d3733a3cc61	fnv:afb1c2ef1b4108a4
+doc:fence_end_006_01	doc/design/tickets/004/004-25-Regime-stamp-sections.md	fnv:47261d3733a3cc61	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b3dac696ecd	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b3dac696ecd	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b3dac696ecd	fnv:09612b07b5ecb5a5
@@ -1153,6 +1283,7 @@ doc:caption_004_14	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b
 doc:caption_004_15	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b3dac696ecd	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b3dac696ecd	fnv:2a9d97c3a1c32f4c
 doc:norm_006_02	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b3dac696ecd	fnv:2a9d97c3a1c32f4c
+doc:fence_end_006_01	doc/design/tickets/004/004-26-Manifest-encoding.md	fnv:67e20b3dac696ecd	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536e8eff3ccd429	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536e8eff3ccd429	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536e8eff3ccd429	fnv:09612b07b5ecb5a5
@@ -1169,6 +1300,7 @@ doc:caption_004_14	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536
 doc:caption_004_15	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536e8eff3ccd429	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536e8eff3ccd429	fnv:676752c90bda3c92
 doc:norm_006_02	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536e8eff3ccd429	fnv:676752c90bda3c92
+doc:fence_end_006_01	doc/design/tickets/004/004-27-Path-MTU-probe-pair.md	fnv:e536e8eff3ccd429	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-28-Regime-stamp-sections-added-after-the-split.md	fnv:83afc6ba73511665	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-28-Regime-stamp-sections-added-after-the-split.md	fnv:83afc6ba73511665	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-28-Regime-stamp-sections-added-after-the-split.md	fnv:83afc6ba73511665	fnv:09612b07b5ecb5a5
@@ -1185,6 +1317,7 @@ doc:caption_004_14	doc/design/tickets/004/004-28-Regime-stamp-sections-added-aft
 doc:caption_004_15	doc/design/tickets/004/004-28-Regime-stamp-sections-added-after-the-split.md	fnv:83afc6ba73511665	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-28-Regime-stamp-sections-added-after-the-split.md	fnv:83afc6ba73511665	fnv:0bb7f15b4152813b
 doc:norm_006_02	doc/design/tickets/004/004-28-Regime-stamp-sections-added-after-the-split.md	fnv:83afc6ba73511665	fnv:0bb7f15b4152813b
+doc:fence_end_006_01	doc/design/tickets/004/004-28-Regime-stamp-sections-added-after-the-split.md	fnv:83afc6ba73511665	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/004-29-Commissioning-window-messages.md	fnv:62fe33025a1140a5	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/004/004-29-Commissioning-window-messages.md	fnv:62fe33025a1140a5	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/004/004-29-Commissioning-window-messages.md	fnv:62fe33025a1140a5	fnv:09612b07b5ecb5a5
@@ -1201,6 +1334,7 @@ doc:caption_004_14	doc/design/tickets/004/004-29-Commissioning-window-messages.m
 doc:caption_004_15	doc/design/tickets/004/004-29-Commissioning-window-messages.md	fnv:62fe33025a1140a5	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/004/004-29-Commissioning-window-messages.md	fnv:62fe33025a1140a5	fnv:15afb0323404fbfc
 doc:norm_006_02	doc/design/tickets/004/004-29-Commissioning-window-messages.md	fnv:62fe33025a1140a5	fnv:15afb0323404fbfc
+doc:fence_end_006_01	doc/design/tickets/004/004-29-Commissioning-window-messages.md	fnv:62fe33025a1140a5	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:91c611879e0f0ac2
 doc:tables_b	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:91c611879e0f0ac2
 doc:t006_01	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:2e1e44b4168f1451
@@ -1217,6 +1351,7 @@ doc:caption_004_14	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:e1a
 doc:caption_004_15	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:e1ad4ec5d273c2a9
 doc:norm_006_01	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:a1c421ab727d59fc
 doc:norm_006_02	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:a1c421ab727d59fc
+doc:fence_end_006_01	doc/design/tickets/004/README.md	fnv:c5d57cc03eeb9c93	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-constants.md	fnv:8e702c7abd711abd	fnv:96af6b43d271cec3
 doc:tables_b	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-constants.md	fnv:8e702c7abd711abd	fnv:96af6b43d271cec3
 doc:t006_01	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-constants.md	fnv:8e702c7abd711abd	fnv:828c01aa609538c6
@@ -1233,6 +1368,7 @@ doc:caption_004_14	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-cons
 doc:caption_004_15	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-constants.md	fnv:8e702c7abd711abd	fnv:dace356a754d294a
 doc:norm_006_01	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-constants.md	fnv:8e702c7abd711abd	fnv:fd1d3c3e6e3d40b1
 doc:norm_006_02	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-constants.md	fnv:8e702c7abd711abd	fnv:fd1d3c3e6e3d40b1
+doc:fence_end_006_01	doc/design/tickets/006/006-01-Timeline-spec-skeleton-and-constants.md	fnv:8e702c7abd711abd	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:a1891df9d2dea0d4	fnv:ff75f227d68151fa
 doc:tables_b	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:a1891df9d2dea0d4	fnv:ff75f227d68151fa
 doc:t006_01	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:a1891df9d2dea0d4	fnv:16d3f1675f9e5a96
@@ -1249,6 +1385,7 @@ doc:caption_004_14	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:
 doc:caption_004_15	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:a1891df9d2dea0d4	fnv:f77a73555b48737b
 doc:norm_006_01	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:a1891df9d2dea0d4	fnv:72d7e0131599bdf0
 doc:norm_006_02	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:a1891df9d2dea0d4	fnv:72d7e0131599bdf0
+doc:fence_end_006_01	doc/design/tickets/006/006-02-Position-map-arithmetic.md	fnv:a1891df9d2dea0d4	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf749a0b0727db9	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf749a0b0727db9	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf749a0b0727db9	fnv:09612b07b5ecb5a5
@@ -1265,6 +1402,7 @@ doc:caption_004_14	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf
 doc:caption_004_15	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf749a0b0727db9	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf749a0b0727db9	fnv:af6bf65c224953d1
 doc:norm_006_02	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf749a0b0727db9	fnv:af6bf65c224953d1
+doc:fence_end_006_01	doc/design/tickets/006/006-03-Epoch-width-and-wrap.md	fnv:aaf749a0b0727db9	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	fnv:a689f4f8cf928fdd	fnv:a9dd477a725df01b
 doc:tables_b	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	fnv:a689f4f8cf928fdd	fnv:a9dd477a725df01b
 doc:t006_01	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	fnv:a689f4f8cf928fdd	fnv:054306d4f6785d37
@@ -1281,6 +1419,7 @@ doc:caption_004_14	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	f
 doc:caption_004_15	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	fnv:a689f4f8cf928fdd	fnv:2e3ba0adf1474c48
 doc:norm_006_01	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	fnv:a689f4f8cf928fdd	fnv:dbe0581921e664d7
 doc:norm_006_02	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	fnv:a689f4f8cf928fdd	fnv:dbe0581921e664d7
+doc:fence_end_006_01	doc/design/tickets/006/006-04-Sync-reply-line-and-origin.md	fnv:a689f4f8cf928fdd	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf4582916b4f5d	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf4582916b4f5d	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf4582916b4f5d	fnv:09612b07b5ecb5a5
@@ -1297,6 +1436,7 @@ doc:caption_004_14	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf45
 doc:caption_004_15	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf4582916b4f5d	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf4582916b4f5d	fnv:dead7fd4aebc985b
 doc:norm_006_02	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf4582916b4f5d	fnv:dead7fd4aebc985b
+doc:fence_end_006_01	doc/design/tickets/006/006-05-Epoch-bump-causes.md	fnv:dccf4582916b4f5d	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:04659980238d2edc	fnv:606432f6a50747ce
 doc:tables_b	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:04659980238d2edc	fnv:606432f6a50747ce
 doc:t006_01	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:04659980238d2edc	fnv:9bc1613ce1d9871a
@@ -1313,6 +1453,7 @@ doc:caption_004_14	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:0465
 doc:caption_004_15	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:04659980238d2edc	fnv:14cdd8c4efcd1334
 doc:norm_006_01	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:04659980238d2edc	fnv:5fd2753022a21c1d
 doc:norm_006_02	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:04659980238d2edc	fnv:5fd2753022a21c1d
+doc:fence_end_006_01	doc/design/tickets/006/006-06-Discontinuity-event.md	fnv:04659980238d2edc	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:addc50f66b1acf7a	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:addc50f66b1acf7a	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:addc50f66b1acf7a	fnv:09612b07b5ecb5a5
@@ -1329,6 +1470,7 @@ doc:caption_004_14	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:ad
 doc:caption_004_15	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:addc50f66b1acf7a	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:addc50f66b1acf7a	fnv:142aaec5a313d973
 doc:norm_006_02	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:addc50f66b1acf7a	fnv:142aaec5a313d973
+doc:fence_end_006_01	doc/design/tickets/006/006-07-Handover-without-bump.md	fnv:addc50f66b1acf7a	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a0837212b991376	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a0837212b991376	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a0837212b991376	fnv:09612b07b5ecb5a5
@@ -1345,6 +1487,7 @@ doc:caption_004_14	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a08
 doc:caption_004_15	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a0837212b991376	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a0837212b991376	fnv:30b6051af17f174c
 doc:norm_006_02	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a0837212b991376	fnv:30b6051af17f174c
+doc:fence_end_006_01	doc/design/tickets/006/006-08-Timeline-Rust-types.md	fnv:2a0837212b991376	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-09-Source-switch-procedure-and-sessions.md	fnv:016a9a5374b273a4	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-09-Source-switch-procedure-and-sessions.md	fnv:016a9a5374b273a4	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-09-Source-switch-procedure-and-sessions.md	fnv:016a9a5374b273a4	fnv:09612b07b5ecb5a5
@@ -1361,6 +1504,7 @@ doc:caption_004_14	doc/design/tickets/006/006-09-Source-switch-procedure-and-ses
 doc:caption_004_15	doc/design/tickets/006/006-09-Source-switch-procedure-and-sessions.md	fnv:016a9a5374b273a4	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-09-Source-switch-procedure-and-sessions.md	fnv:016a9a5374b273a4	fnv:2f0c3270d30463bb
 doc:norm_006_02	doc/design/tickets/006/006-09-Source-switch-procedure-and-sessions.md	fnv:016a9a5374b273a4	fnv:2f0c3270d30463bb
+doc:fence_end_006_01	doc/design/tickets/006/006-09-Source-switch-procedure-and-sessions.md	fnv:016a9a5374b273a4	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-holdover.md	fnv:82897f13c9f41caa	fnv:0ae29d0450a2b04f
 doc:tables_b	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-holdover.md	fnv:82897f13c9f41caa	fnv:0ae29d0450a2b04f
 doc:t006_01	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-holdover.md	fnv:82897f13c9f41caa	fnv:f3c7c2dcecb0fcaf
@@ -1377,6 +1521,7 @@ doc:caption_004_14	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-hol
 doc:caption_004_15	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-holdover.md	fnv:82897f13c9f41caa	fnv:30bb78c85ef1fd24
 doc:norm_006_01	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-holdover.md	fnv:82897f13c9f41caa	fnv:53c2f8736995ad44
 doc:norm_006_02	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-holdover.md	fnv:82897f13c9f41caa	fnv:53c2f8736995ad44
+doc:fence_end_006_01	doc/design/tickets/006/006-10-New-epoch-during-Locking-or-holdover.md	fnv:82897f13c9f41caa	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv:6c648239d47fba71	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv:6c648239d47fba71	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv:6c648239d47fba71	fnv:09612b07b5ecb5a5
@@ -1393,6 +1538,7 @@ doc:caption_004_14	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv
 doc:caption_004_15	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv:6c648239d47fba71	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv:6c648239d47fba71	fnv:1b6c762ce3cd9a76
 doc:norm_006_02	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv:6c648239d47fba71	fnv:1b6c762ce3cd9a76
+doc:fence_end_006_01	doc/design/tickets/006/006-11-Consumer-side-procedures.md	fnv:6c648239d47fba71	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.md	fnv:19d527d22d100bb6	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.md	fnv:19d527d22d100bb6	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.md	fnv:19d527d22d100bb6	fnv:09612b07b5ecb5a5
@@ -1409,6 +1555,7 @@ doc:caption_004_14	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.
 doc:caption_004_15	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.md	fnv:19d527d22d100bb6	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.md	fnv:19d527d22d100bb6	fnv:6c942fd6515756d7
 doc:norm_006_02	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.md	fnv:19d527d22d100bb6	fnv:6c942fd6515756d7
+doc:fence_end_006_01	doc/design/tickets/006/006-12-Announcement-ordering-and-loss.md	fnv:19d527d22d100bb6	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-13-Partition-merge-sequence-diagram.md	fnv:f48cfd06e30a39e6	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-13-Partition-merge-sequence-diagram.md	fnv:f48cfd06e30a39e6	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-13-Partition-merge-sequence-diagram.md	fnv:f48cfd06e30a39e6	fnv:09612b07b5ecb5a5
@@ -1425,6 +1572,7 @@ doc:caption_004_14	doc/design/tickets/006/006-13-Partition-merge-sequence-diagra
 doc:caption_004_15	doc/design/tickets/006/006-13-Partition-merge-sequence-diagram.md	fnv:f48cfd06e30a39e6	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-13-Partition-merge-sequence-diagram.md	fnv:f48cfd06e30a39e6	fnv:855e2c86b9e1507d
 doc:norm_006_02	doc/design/tickets/006/006-13-Partition-merge-sequence-diagram.md	fnv:f48cfd06e30a39e6	fnv:855e2c86b9e1507d
+doc:fence_end_006_01	doc/design/tickets/006/006-13-Partition-merge-sequence-diagram.md	fnv:f48cfd06e30a39e6	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diagram.md	fnv:d2043ec8af7efde2	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diagram.md	fnv:d2043ec8af7efde2	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diagram.md	fnv:d2043ec8af7efde2	fnv:09612b07b5ecb5a5
@@ -1441,6 +1589,7 @@ doc:caption_004_14	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diag
 doc:caption_004_15	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diagram.md	fnv:d2043ec8af7efde2	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diagram.md	fnv:d2043ec8af7efde2	fnv:b87ac388e910ad0f
 doc:norm_006_02	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diagram.md	fnv:d2043ec8af7efde2	fnv:b87ac388e910ad0f
+doc:fence_end_006_01	doc/design/tickets/006/006-14-Unlocked-takeover-sequence-diagram.md	fnv:d2043ec8af7efde2	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.md	fnv:468a312d773bf9f5	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.md	fnv:468a312d773bf9f5	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.md	fnv:468a312d773bf9f5	fnv:09612b07b5ecb5a5
@@ -1457,6 +1606,7 @@ doc:caption_004_14	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.m
 doc:caption_004_15	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.md	fnv:468a312d773bf9f5	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.md	fnv:468a312d773bf9f5	fnv:16f2cf8907ac89b1
 doc:norm_006_02	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.md	fnv:468a312d773bf9f5	fnv:16f2cf8907ac89b1
+doc:fence_end_006_01	doc/design/tickets/006/006-15-Holder-stall-sequence-diagram.md	fnv:468a312d773bf9f5	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switch.md	fnv:f52067204b1c5d44	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switch.md	fnv:f52067204b1c5d44	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switch.md	fnv:f52067204b1c5d44	fnv:09612b07b5ecb5a5
@@ -1473,6 +1623,7 @@ doc:caption_004_14	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switc
 doc:caption_004_15	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switch.md	fnv:f52067204b1c5d44	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switch.md	fnv:f52067204b1c5d44	fnv:b55016df57cc1633
 doc:norm_006_02	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switch.md	fnv:f52067204b1c5d44	fnv:b55016df57cc1633
+doc:fence_end_006_01	doc/design/tickets/006/006-16-Scenario-fan-in-staggered-switch.md	fnv:f52067204b1c5d44	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	fnv:661cee1fe2018d8c	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	fnv:661cee1fe2018d8c	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	fnv:661cee1fe2018d8c	fnv:09612b07b5ecb5a5
@@ -1489,6 +1640,7 @@ doc:caption_004_14	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	f
 doc:caption_004_15	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	fnv:661cee1fe2018d8c	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	fnv:661cee1fe2018d8c	fnv:898fccd814e6e82d
 doc:norm_006_02	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	fnv:661cee1fe2018d8c	fnv:898fccd814e6e82d
+doc:fence_end_006_01	doc/design/tickets/006/006-17-Scenario-lost-announcement.md	fnv:661cee1fe2018d8c	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-18-Scenario-source-never-switches.md	fnv:1ec1e9157c6ebdd5	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-18-Scenario-source-never-switches.md	fnv:1ec1e9157c6ebdd5	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-18-Scenario-source-never-switches.md	fnv:1ec1e9157c6ebdd5	fnv:09612b07b5ecb5a5
@@ -1505,6 +1657,7 @@ doc:caption_004_14	doc/design/tickets/006/006-18-Scenario-source-never-switches.
 doc:caption_004_15	doc/design/tickets/006/006-18-Scenario-source-never-switches.md	fnv:1ec1e9157c6ebdd5	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-18-Scenario-source-never-switches.md	fnv:1ec1e9157c6ebdd5	fnv:83c54db4f7d114c1
 doc:norm_006_02	doc/design/tickets/006/006-18-Scenario-source-never-switches.md	fnv:1ec1e9157c6ebdd5	fnv:83c54db4f7d114c1
+doc:fence_end_006_01	doc/design/tickets/006/006-18-Scenario-source-never-switches.md	fnv:1ec1e9157c6ebdd5	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv:9ced373ca62854b5	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv:9ced373ca62854b5	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv:9ced373ca62854b5	fnv:09612b07b5ecb5a5
@@ -1521,6 +1674,7 @@ doc:caption_004_14	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv
 doc:caption_004_15	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv:9ced373ca62854b5	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv:9ced373ca62854b5	fnv:52cc786351af2724
 doc:norm_006_02	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv:9ced373ca62854b5	fnv:52cc786351af2724
+doc:fence_end_006_01	doc/design/tickets/006/006-19-Regime-stamp-epoch-field.md	fnv:9ced373ca62854b5	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d9ebc3e8	fnv:d498646d92efc547
 doc:tables_b	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d9ebc3e8	fnv:d498646d92efc547
 doc:t006_01	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d9ebc3e8	fnv:6e37efb619dfd754
@@ -1537,6 +1691,7 @@ doc:caption_004_14	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d
 doc:caption_004_15	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d9ebc3e8	fnv:bb32bc0404c83a53
 doc:norm_006_01	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d9ebc3e8	fnv:19f12181a69ac6d9
 doc:norm_006_02	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d9ebc3e8	fnv:19f12181a69ac6d9
+doc:fence_end_006_01	doc/design/tickets/006/006-20-Spec-close-out.md	fnv:32f25813d9ebc3e8	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.md	fnv:85ae67e2c65d8c5d	fnv:09612b07b5ecb5a5
 doc:tables_b	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.md	fnv:85ae67e2c65d8c5d	fnv:09612b07b5ecb5a5
 doc:t006_01	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.md	fnv:85ae67e2c65d8c5d	fnv:09612b07b5ecb5a5
@@ -1553,6 +1708,7 @@ doc:caption_004_14	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.
 doc:caption_004_15	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.md	fnv:85ae67e2c65d8c5d	fnv:09612b07b5ecb5a5
 doc:norm_006_01	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.md	fnv:85ae67e2c65d8c5d	fnv:5b8a94915e72e7fb
 doc:norm_006_02	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.md	fnv:85ae67e2c65d8c5d	fnv:5b8a94915e72e7fb
+doc:fence_end_006_01	doc/design/tickets/006/006-21-Health-of-an-other-epoch-input.md	fnv:85ae67e2c65d8c5d	fnv:09612b07b5ecb5a5
 doc:tables_a	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:ccdb6d5439f34d50
 doc:tables_b	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:ccdb6d5439f34d50
 doc:t006_01	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:64b3cd93ed441e8d
@@ -1569,3 +1725,4 @@ doc:caption_004_14	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:fda
 doc:caption_004_15	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:fdaaef14f86608a3
 doc:norm_006_01	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:7bd63e95e71c24f5
 doc:norm_006_02	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:7bd63e95e71c24f5
+doc:fence_end_006_01	doc/design/tickets/006/README.md	fnv:00156cf46e30a57f	fnv:09612b07b5ecb5a5

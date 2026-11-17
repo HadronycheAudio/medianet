@@ -137,6 +137,7 @@ DOC_CASES = [
     "\t```\n## tab fence\n\t```\n## out\n",
     "~~~~\n~~~\n## inside long tilde\n~~~~\n## out\n",
     "```\n~~~\n## mixed\n~~~\n```\n## out\n",
+    "## a\n```\nnever closed\n", "~~~~\n~~~\nstill open\n", "```\n``` tail\nopen\n", "  ````\n```\n",
     "# One #\n## Two ##   \n### Three#\n####### Seven\n#NoSpace\n##  Spaced  title  \n## #\n##\t Tab\n ## Indented\n",
     "## Size budget\n\nThe budget.\n\n**Table 1: default case**\n\n| Item | Bytes |\n|---|---|\n| packet header | 28 |\n| total | 28 |\n\n```\n| fenced | 1 |\n|---|---|\n```\nA caption\n\n\n\n\n\n| far | x |\n|---|---|\n| a | 1 |\n",
     "Caption one\nCaption two\nCaption three\n| a | b |\n| - | - |\n| 1 | 2 |\n",
@@ -244,6 +245,9 @@ if mode == "markdown":
             return q(g["parse_tables"](lines, g["visible_lines"](lines)))
         if key in ("heads_a", "heads_b", "heads_c"):
             return q(g["heading_index"](lines))
+        if key == "fence_end_006_01":
+            _, errs, _ = fns["t006_01"]["scan_fences_and_headings"](lines)
+            return q([e for e in errs if "unclosed code fence" in e])
         if key in ("norm_006_01", "norm_006_02"):
             return q([g["norm_text"](l) for l in lines])
         if key == "fence_004_14":
@@ -275,7 +279,7 @@ if mode == "markdown":
         raise KeyError(key)
     doc_kinds = ["tables_a", "tables_b", "t006_01", "t006_02", "heads_a", "heads_b", "heads_c", "fence_004_14",
                  "fence_006_01", "fence_006_02", "heads_006_01", "find_006_02", "caption_004_14", "caption_004_15",
-                 "norm_006_01", "norm_006_02"]
+                 "norm_006_01", "norm_006_02", "fence_end_006_01"]
     for line in data["rows"]:
         for key in ("row_family", "row_004_14", "row_006"):
             rec(key, "-", esc(line), q(fns[key]["split_row"](line)))

@@ -404,7 +404,7 @@ the same words occur in an earlier section.
 | `family004` | the 004 family's helpers: `Field`, `width_of`, `fields_of`, `is_field_table`, `tables`, `first_field_table`, `subsections`, `find_sub`, `sentences`, `Ctx` (`span_of`, `body`) |
 | `rx` | `Rx`, `M`, `Caps`: one regex API over both engines, Python's empty-match rule; `BACKTRACK_LIMIT`; engine failures recorded for `evaluate` |
 | `policy` | `FencePolicy`, `HeadingMatch`, `SectionEnd`, `RowSplit`, `SeparatorRule`, `HeaderlessRuns`, `TableRules`, `LineSplit`, `PathNorm`, `TomlReader` |
-| `markdown` | `code_mask` (a script's fence mask), `stem_tokens`/`stem_match` (006-01's stemmed heading match), headings with GitHub anchors, `section`, `section_with`, `find`, `find_by` (literal variants never compile a regex), `find_path`, `head_norms`, `tables_with(span, TableRules)` |
+| `markdown` | `code_mask` (a script's fence mask), `fence_scan` (the mask plus `open_at_end`: the fence left open at the end, as 006-01 reports it), `stem_tokens`/`stem_match` (006-01's stemmed heading match), headings with GitHub anchors, `section`, `section_with`, `find`, `find_by` (literal variants never compile a regex), `find_path`, `head_norms`, `tables_with(span, TableRules)` |
 | `tables` | `Table`, `Row`, `split_row_with`, `is_separator`, `is_separator_line`, `split_row_char_walk`, `is_dash_cells`, `caption_above` (004-14/15), `cell_label`, `cell_number_004_14`, `first_int_004_14` |
 | `units` | `units`, `prose_blocks`, `strip_fences`, `clean_start` |
 | `links` | `links`, `resolve`, `file_slugs` |

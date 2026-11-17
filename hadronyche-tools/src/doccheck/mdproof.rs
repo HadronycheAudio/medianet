@@ -217,6 +217,20 @@ fn canon(kind: &str, text: &str) -> String {
                 .map(|l| super::family006::norm_text(l))
                 .collect::<Vec<_>>(),
         )),
+        "fence_end_006_01" => {
+            let lines = splitlines(text);
+            q(&strs(
+                &super::markdown::fence_scan(&lines, FencePolicy::Matching)
+                    .open_at_end
+                    .map(|(at, m)| {
+                        vec![format!(
+                            "line {}: unclosed code fence opened with {m}",
+                            at + 1
+                        )]
+                    })
+                    .unwrap_or_default(),
+            ))
+        }
         "fence_004_14" => mask_str(text, FencePolicy::Backticks),
         "fence_006_01" => mask_str(text, FencePolicy::Matching),
         "fence_006_02" => mask_str(text, FencePolicy::SameChar),
