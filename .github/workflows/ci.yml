@@ -76,7 +76,10 @@ jobs:
     name: code coverage
     runs-on: ubuntu-latest
     steps:
+      # full history: coverage runs the red-phase tests too (see "unit tests")
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
