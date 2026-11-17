@@ -87,8 +87,16 @@ parallel without editing the same files.
      private emulations in the packages differed from Python (see
      MIGRATING-PACKAGES.md).
    - **Regex constructs not supported: the port fails to build its
-     pattern.** `\Z`, `{,n}` and back-references (`\1`, `(?P=name)`) are
-     refused (`pycompat::unsupported`); no script uses them. A refused or
+     pattern.** Refused by `pycompat::unsupported` (no script uses any):
+     `\Z`, `{,n}` and back-references (`\1`, `(?P=name)`); what Python
+     3.10 refuses: possessive quantifiers, atomic groups, a repeated
+     quantifier, `\p{…}`/`\P{…}`, `(?<name>…)` (write `(?P<name>…)`), a
+     look-behind whose alternatives differ in width (`(?<=a|bc)`); and
+     what Python reads differently from the regex crate: a `[` inside a
+     character set (Python: a literal, so `[[:alpha:]]` is the set
+     `[:alph` followed by `]`, never a POSIX class), and a doubled `&`,
+     `-` or `~` inside a set (Python: literals; the regex crate: set
+     operations). A refused or
      non-compiling pattern never panics: a literal one fails the library
      test `source_rules::every_literal_pattern_builds`; at check time it
      turns the check red under `REGEX_LIMIT`. Rewrite the pattern (`\z`
@@ -226,6 +234,12 @@ parallel without editing the same files.
        `parse::<` (`str::parse::<u32>`, `.parse :: <usize>()`),
        `from_str(`, `unwrap_or(0)` (`unwrap_or( 0 )`), `.evaluate(`; and the
        words `testing` (an aliased `use … testing as t` too) and `rx_raw`;
+     - in a check module (R21, no silent saturation): `saturating_*`,
+       `wrapping_*` and numeric `as` casts. Arithmetic on numbers read from
+       documents goes through `doccheck::checked::{add, sub, mul, sum,
+       product}`, which record `INT_LIMIT` on overflow; a `static`
+       anywhere (also inside a function body) and the word `thread` are
+       refused;
      - everywhere: `run)(`, `take_failures`, `restore_failures` (R19);
      - in a check module (review round 4): `thread::`, a `static` item,
        `OnceLock`, `LazyLock`, `OnceCell`, `thread_local!`, `Mutex`,
