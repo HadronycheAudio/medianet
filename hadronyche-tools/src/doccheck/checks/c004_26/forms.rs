@@ -6,20 +6,11 @@ use super::fields::Man;
 use super::landed::Landed;
 use crate::doccheck::Report;
 use crate::doccheck::text::{has_i, head, rx};
-use crate::doccheck::units::BlockKind;
+use crate::doccheck::items::{OpenItemPolicy, open_items};
 
-/// `OPEN_PARAS`: prose blocks whose first 40 characters, after `*_`` are
-/// removed and the text stripped, contain "open item".
+/// `OPEN_PARAS` ([`OpenItemPolicy::Head40`]).
 pub(crate) fn open_paras(man: &Man) -> Vec<String> {
-    man.prose
-        .iter()
-        .filter(|b| b.kind == BlockKind::Prose)
-        .filter(|b| {
-            let t = rx(r"[*_`]").replace_all(&b.text, "");
-            has_i("open item", &head(t.trim(), 40))
-        })
-        .map(|b| b.text.clone())
-        .collect()
+    open_items(&man.text, OpenItemPolicy::Head40).into_iter().map(|i| i.text).collect()
 }
 
 /// AC4; returns the join-delay open items.
@@ -35,7 +26,7 @@ fn is_repeat_row(f: &str) -> bool {
 }
 
 /// The members of `names` that `outcome` names as a whole word.
-fn named<'a>(names: impl Iterator<Item = &'a String>, outcome: &str) -> Vec<&'a String> {
+fn named<'a>(names: impl Iterator<Item = &'a str>, outcome: &str) -> Vec<&'a str> {
     names.filter(|n| rx(&format!(r"\b{}\b", regex::escape(n))).is_match(outcome)).collect()
 }
 
@@ -57,7 +48,7 @@ pub(crate) fn ac5(man: &Man, landed: &Landed, report: &mut Report) {
     let dup: Vec<&(String, String)> = forms.iter().filter(|(f, _)| is_repeat_row(f)).collect();
     report.check("AC5", !dup.is_empty(), "an identical repeated section has an invalid-form row (its outcome is stated)");
     for (_, o) in &dup {
-        let n = named(landed.reject.keys(), o);
+        let n = named(landed.reject.names(), o);
         let ok = n.is_empty() && has_i("not a rejection|never a rejection|ignored|valid|kept", o);
         report.check("AC5", ok, format!("the identical repeated section is not a rejection: its outcome names no Reject reason and keeps the section already held (names found: {n:?})"));
     }
@@ -65,6 +56,6 @@ pub(crate) fn ac5(man: &Man, landed: &Landed, report: &mut Report) {
     report.check("AC5", dis.iter().any(|(f, _)| has_i("manifest length", f)), "sections that disagree on the manifest length have an invalid-form row");
     report.check("AC5", dis.iter().any(|(f, _)| has_i("section count", f)), "sections that disagree on the section count have an invalid-form row");
     for (f, o) in &dis {
-        report.check("AC5", named(landed.reject.keys(), o).len() == 1, format!("the disagreement row '{}' names exactly one Reject reason", head(f, 40)));
+        report.check("AC5", named(landed.reject.names(), o).len() == 1, format!("the disagreement row '{}' names exactly one Reject reason", head(f, 40)));
     }
 }

@@ -2,38 +2,50 @@
 //! handshake (ticket 004-26).
 //!
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
-//! in `tests/doc_004_26.rs`. 004-26 is a rewrite of the shared helpers with
-//! its own conventions, each reproduced here and named where used:
+//! in `tests/doc/c004_26.rs`. 004-26 is a rewrite of the shared helpers with
+//! its own conventions, each a named library variant or private here:
 //! wire.md and the constants table read as written (no digit-group join:
-//! numbers are read with [`NUM`], which takes groups of three after a
-//! space, a no-break space or a narrow no-break space, and `0x` hex, and
-//! [`to_int`], which also drops commas); sections by
-//! [`section_lines`] (`re.search` at an exact level, the heading line
-//! excluded); field-table rows by [`model_rows`] (malformed rows collected,
-//! reported only for the manifest's own tables) and their tiling by
-//! [`tile`] (bit offsets from the first row, whole-byte rows byte-aligned);
-//! a counted row is one whose width has a `max` (`maxc is not None`, a
-//! count of 0 included); tables of the 004-16 to 004-29 family
-//! ([`crate::doccheck::checks::c004_24::py::tables`]); the validity table
-//! is any table with "form" and "outcome" in its first two header cells
-//! that is not a field table; reasons are matched as exact `\bNAME\b`
-//! against the names read from the Rejection reasons (unanchored
-//! `rejection[-\s]+reasons?`) and the refusal reasons (level 3), 13 and 18;
-//! the untagged-claim rule per prose block with 5 `\S+` words
-//! ([`TagPolicy::PROSE_004_26`]); an open item is a prose block whose first
-//! 40 characters after `*_`` are removed contain "open item", and it needs
-//! `\bowner\b` and `\bfalsifier\b`; every subsection that holds a table
-//! needs a tag. wire.toml is read with the scripts' subset reader
-//! ([`crate::doccheck::checks::c004_24::pytoml`]) and its values compared
-//! as Python compares them.
+//! numbers are read with [`NUM`] ([`NUM_004_26`]: groups of three after a
+//! space, a no-break space or a narrow no-break space, and `0x` hex) and
+//! [`to_int`] ([`IntRule::HexCommas004_26`], which also drops commas;
+//! beyond `i128` it is `INT_LIMIT`); sections by [`Wire::section_lines`]
+//! ([`section_span`] under [`SpanRule::AfterHeading004_16`] at an exact
+//! level, the heading line excluded); tables of the 004 family
+//! ([`tables`]); the Reject and refusal enumerations
+//! ([`REJECTION_004_26`](crate::doccheck::rejection_members::REJECTION_004_26),
+//! [`REFUSAL_004_26`](crate::doccheck::rejection_members::REFUSAL_004_26)),
+//! 13 and 18; the untagged-claim rule per prose block with 5 `\S+` words
+//! ([`TagPolicy::PROSE_004_26`]); every subsection that holds a table
+//! needs a tag ([`subsections_with_table_untagged`]); an open item is a
+//! prose block whose first 40 characters after `*_`` are removed contain
+//! "open item", and it needs `\bowner\b` and `\bfalsifier\b`
+//! ([`OpenItemPolicy::Head40`]); sentences split raw after `.`, `;` or `:`
+//! ([`RAW_COLON`](crate::doccheck::sentences::RAW_COLON)). wire.toml is
+//! read with the scripts' subset reader ([`crate::doccheck::tomlsubset`]):
+//! its `TomlError` is an AC6 failure, any other exception a crash; its
+//! values are compared as Python compares them
+//! ([`crate::doccheck::pyvalue::PyValue`]).
+//!
+//! Private to this port (the library has no equivalent): field-table rows
+//! by [`model_rows`] (malformed rows collected, reported only for the
+//! manifest's own tables) and their tiling by [`tile`] (bit offsets from
+//! the first row, whole-byte rows byte-aligned); a counted row is one whose
+//! width has a `max` (`maxc is not None`, a count of 0 included); the
+//! validity table is any table with "form" and "outcome" in its first two
+//! header cells that is not a field table; reasons are matched as exact
+//! `\bNAME\b`; the strict TOML item helpers ([`toml_side`]).
 //!
 //! Its repository-level assertions (`cargo run --bin wire-check` reports
 //! "checks clean"; `cargo test -p hadronyche-tools --test wire_tables` has 0
-//! failed and at least 12 passed; the checker names no ref containing main
-//! and runs no other check) are in `scripts/repo-state.d/004-26.sh`.
+//! failed and at least 12 passed) are in `scripts/repo-state.d/004-26.sh`;
+//! "the checker names no ref containing main and runs no other check" is
+//! the library-wide rule.
 //!
 //! [`TagPolicy::PROSE_004_26`]: crate::doccheck::evidence::TagPolicy::PROSE_004_26
+//! [`subsections_with_table_untagged`]: crate::doccheck::evidence::subsections_with_table_untagged
+//! [`OpenItemPolicy::Head40`]: crate::doccheck::items::OpenItemPolicy::Head40
 
+mod denials;
 mod encoding;
 mod fields;
 mod forms;
@@ -43,12 +55,12 @@ mod size;
 mod toml_side;
 
 use super::{CheckSpec, KnownDifference, Target};
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::{py_chars, py_text, stopped, tables};
-use crate::doccheck::checks::c004_27::width_of;
-use crate::doccheck::checks::c004_27::subsections;
+use crate::doccheck::family004::{IntRule, NUM_004_26, SpanRule, heading_index, is_field_table, section_span, subsections, tables, to_int as family_to_int, width_of};
+use crate::doccheck::policy::{LineSplit, TomlReader};
+use crate::doccheck::pycompat::{PyStr, parse_int, splitlines, universal_newlines};
+use crate::doccheck::report::Flow;
 use crate::doccheck::tables::{Table, split_row};
-use crate::doccheck::text::{full, rx, splitlines};
+use crate::doccheck::text::full;
 use crate::doccheck::ticket::CONSTANTS_MD;
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
@@ -93,36 +105,36 @@ pub const SPEC: CheckSpec = CheckSpec {
     ],
     keywords: &["falsified", "exceeds", "distinct", "reserved", "device"],
     known_differences: KNOWN,
+    denials: denials::DENIALS,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
+
+/// How the script reads the constants table (`CONST_TEXT.splitlines()`).
+const LINES: LineSplit = LineSplit::PySplitlines;
 
 /// The differences the harness found and a reviewer accepted.
 const KNOWN: &[KnownDifference] = &[];
 
 /// 004-26's number: `0x` hex, digit groups after a space or a (narrow)
 /// no-break space, or digits.
-pub(crate) const NUM: &str = "(?:0x[0-9a-fA-F]+|\\d{1,3}(?:[ \u{a0}\u{202f}]\\d{3})+|\\d+)";
+pub(crate) const NUM: &str = NUM_004_26;
 /// `HEXNUM`.
 pub(crate) const HEXNUM: &str = "0x[0-9a-fA-F]+";
 
-/// 004-26's `to_int`: hex after `0x`, else the digits with spaces, no-break
-/// spaces and commas dropped. `None` where Python's `int()` raises (or the
-/// value does not fit 128 bits).
+/// 004-26's `to_int` ([`IntRule::HexCommas004_26`]): `None` where Python's
+/// `int()` raises (a value beyond `i128` is `INT_LIMIT`).
 pub(crate) fn to_int(s: &str) -> Option<i128> {
-    let s = s.trim();
-    if s.to_lowercase().starts_with("0x") {
-        return i128::from_str_radix(&s[2..].replace('_', ""), 16).ok();
-    }
-    let t: String = s.chars().filter(|c| !matches!(c, ' ' | '\u{a0}' | '\u{202f}' | ',')).collect();
-    t.replace('_', "").parse().ok()
+    family_to_int(s, IntRule::HexCommas004_26).ok()
 }
 
 /// One row of a field table (`model_rows`).
 #[derive(Debug, Clone)]
 pub(crate) struct MRow {
-    pub off: i64,
-    pub bits: i64,
+    pub off: i128,
+    pub bits: i128,
     /// `maxc`: `Some` for a counted row (a count of 0 included).
-    pub maxc: Option<i64>,
+    pub maxc: Option<i128>,
     pub ty: String,
     pub meaning: String,
     pub valid: String,
@@ -144,12 +156,12 @@ pub(crate) fn model_rows(rows: &[Vec<String>]) -> (Vec<MRow>, Vec<String>) {
             bad.push(format!("a row has fewer than five cells: {:?}", &r[..r.len().min(2)]));
             continue;
         }
-        let c0 = r[0].trim();
-        let Some(off) = full(r"\d+", c0).then(|| c0.parse::<i64>().ok()).flatten() else {
+        let c0 = r[0].py_strip();
+        let Some(off) = full(r"\d+", c0).then(|| parse_int(&r[0]).ok()).flatten() else {
             bad.push(format!("the Offset cell '{}' is not a byte offset", r[0]));
             continue;
         };
-        let Some((bits, maxc)) = width_of(&r[1]) else {
+        let Ok(Some((bits, maxc))) = width_of(&r[1]) else {
             bad.push(format!("the Width cell '{}' is neither a byte count, a bit count nor 'W × max M'", r[1]));
             continue;
         };
@@ -157,10 +169,10 @@ pub(crate) fn model_rows(rows: &[Vec<String>]) -> (Vec<MRow>, Vec<String>) {
             off,
             bits,
             maxc,
-            ty: r[2].trim().to_string(),
-            meaning: r[3].trim().to_string(),
-            valid: r[4].trim().to_string(),
-            wcell: r[1].trim().to_string(),
+            ty: r[2].py_strip().to_string(),
+            meaning: r[3].py_strip().to_string(),
+            valid: r[4].py_strip().to_string(),
+            wcell: r[1].py_strip().to_string(),
         });
     }
     (out, bad)
@@ -172,30 +184,25 @@ pub(crate) fn cells(t: &Table) -> Vec<Vec<String>> {
 }
 
 /// `tile`: the bit offset of each row, the total bits, the tiling errors.
-pub(crate) fn tile(rows: &[MRow]) -> (Vec<i64>, i64, Vec<String>) {
+pub(crate) fn tile(rows: &[MRow]) -> (Vec<i128>, i128, Vec<String>) {
     let (mut errors, mut offsets) = (Vec::new(), Vec::new());
     let Some(first) = rows.first() else { return (offsets, 0, errors) };
-    let mut cursor = first.off * 8;
+    let mut cursor = first.off.saturating_mul(8);
     let start = cursor;
     for r in rows {
         if r.off != cursor.div_euclid(8) {
             errors.push(format!("offset {} does not follow the previous row, which ends at byte {}", r.off, cursor.div_euclid(8)));
         }
-        if r.bits % 8 == 0 && cursor.rem_euclid(8) != 0 {
+        if r.bits.rem_euclid(8) == 0 && cursor.rem_euclid(8) != 0 {
             errors.push(format!("a whole-byte row at offset {} is not byte-aligned", r.off));
         }
         offsets.push(cursor);
-        cursor += r.bits * r.maxc.filter(|&m| m != 0).unwrap_or(1);
+        cursor = cursor.saturating_add(r.bits.saturating_mul(r.maxc.filter(|&m| m != 0).unwrap_or(1)));
     }
     if (cursor - start).rem_euclid(8) != 0 {
         errors.push("the table does not cover a whole number of bytes".into());
     }
     (offsets, cursor - start, errors)
-}
-
-/// `is_field_table`.
-pub(crate) fn is_field_table(h: &[String]) -> bool {
-    crate::doccheck::checks::c004_27::is_field_table(h)
 }
 
 /// `is_validity_table`.
@@ -206,7 +213,7 @@ pub(crate) fn is_validity_table(h: &[String]) -> bool {
 
 /// The wire text as 004-26 holds it.
 pub(crate) struct Wire {
-    /// The raw text, word and space classes as Python's.
+    /// The text as `open()` reads it (universal newlines).
     pub raw: String,
     /// `wire.splitlines()`.
     pub lines: Vec<String>,
@@ -215,38 +222,12 @@ pub(crate) struct Wire {
 impl Wire {
     /// `section_lines(wire, pattern, level)`: the lines after the first
     /// heading at `level` matching `pattern` (any case), to the next heading
-    /// of that level or higher.
+    /// of that level or higher ([`SpanRule::AfterHeading004_16`] at a level).
     pub fn section_lines(&self, pattern: &str, level: usize) -> Option<Vec<String>> {
-        section_lines(&self.lines, pattern, level)
+        let heads = heading_index(&self.lines);
+        let (a, b) = section_span(self.lines.len(), &heads, pattern, Some(level), SpanRule::AfterHeading004_16)?;
+        Some(self.lines[a..b].to_vec())
     }
-}
-
-/// `heading_index` over `lines`.
-pub(crate) fn heading_index(lines: &[String]) -> Vec<(usize, usize, String)> {
-    let (mut out, mut fence) = (Vec::new(), false);
-    let re = rx(r"^(#{1,6})\s+(.*?)\s*#*\s*$");
-    for (i, l) in lines.iter().enumerate() {
-        if rx(r"^\s*```").is_match(l) {
-            fence = !fence;
-            continue;
-        }
-        if fence {
-            continue;
-        }
-        if let Some(c) = re.captures(l) {
-            out.push((i, c[1].len(), c[2].trim().to_string()));
-        }
-    }
-    out
-}
-
-/// `section_lines` over `lines`.
-pub(crate) fn section_lines(lines: &[String], pattern: &str, level: usize) -> Option<Vec<String>> {
-    let hs = heading_index(lines);
-    let re = rx(&format!("(?i){pattern}"));
-    let (i, (idx, _, _)) = hs.iter().enumerate().find(|(_, (_, l, t))| *l == level && re.is_match(t))?;
-    let end = hs[i + 1..].iter().find(|(_, l, _)| *l <= level).map_or(lines.len(), |(j, _, _)| *j);
-    Some(lines[idx + 1..end].to_vec())
 }
 
 /// `subsections(lines)`.
@@ -257,7 +238,7 @@ pub(crate) fn subs(lines: &[String]) -> Vec<(String, String)> {
 /// The rows of every line of `text` that starts with `|`, after the first
 /// two (how the script reads the Hello's common control header).
 pub(crate) fn pipe_rows(text: &str) -> Vec<Vec<String>> {
-    splitlines(text).into_iter().filter(|l| l.trim_start().starts_with('|')).skip(2).map(split_row).collect()
+    splitlines(text).into_iter().filter(|l| l.py_lstrip().starts_with('|')).skip(2).map(split_row).collect()
 }
 
 /// The field tables of `text`.
@@ -268,44 +249,44 @@ pub(crate) fn field_tables(text: &str) -> Vec<Table> {
 /// The check.
 pub fn run(docs: &Docs) -> Report {
     let mut report = Report::default();
-    let consts = py_text(&docs.read(CONSTANTS_MD).map(|t| t.to_string()).unwrap_or_default());
+    let consts = LINES.normalize(&universal_newlines(&docs.read(CONSTANTS_MD).map(|t| t.to_string()).unwrap_or_default()));
     let raw = match docs.read(WIRE_MD) {
-        Some(t) => py_chars(&t, false),
+        Some(t) => universal_newlines(&t),
         None => {
             report.fail("AC3", format!("{WIRE_MD} does not exist"));
             String::new()
         }
     };
     let wire = Wire {
-        lines: splitlines(&py_chars(&raw, true)).into_iter().map(String::from).collect(),
+        lines: splitlines(&raw).into_iter().map(String::from).collect(),
         raw,
     };
-    let landed = landed::landed(&consts, &wire, &mut report);
-    let man = fields::manifest(&wire, &mut report);
-    fields::ac1(&man, &mut report);
-    encoding::ac2(&man, &mut report);
-    let top = size::ac3(&man, &landed, &mut report);
-    let join_open = forms::ac4(&man, &mut report);
-    forms::ac5(&man, &landed, &mut report);
-    size::t1(&man, &landed, top.as_ref(), &join_open, &mut report);
-    rest::tags(&man, &mut report);
-    let after = |report: &mut Report| -> Result<(), Stop> {
-        let mut toml = toml_side::parse(docs.read(WIRE_TOML).as_deref(), report)?;
-        toml_side::models(&man, &landed, &toml, report)?;
-        rest::point2(&man, report);
-        toml_side::fixed(&man, top.as_ref(), &mut toml, report)?;
-        fields::point4(&man, &toml, report)?;
-        fields::t3a(&man, &wire, report);
-        encoding::t3b(&man, &toml, report)?;
-        rest::t3c(&man, report);
-        rest::reserved(&man, &wire, report);
-        fields::t3f(&man, &wire, report);
-        rest::t3g(&man, report);
-        landed::unchanged(&wire, &landed, report);
-        Ok(())
-    };
-    if let Err(Stop(e)) = after(&mut report) {
-        stopped(&mut report, "AC6", &e);
-    }
-    report
+    let toml_text = docs.read(WIRE_TOML).map(|t| universal_newlines(&t));
+    let flow = checks(&consts, &wire, toml_text.as_deref(), &mut report);
+    report.finish(flow)
+}
+
+fn checks(consts: &str, wire: &Wire, toml_text: Option<&str>, report: &mut Report) -> Flow<()> {
+    let landed = landed::landed(consts, wire, report);
+    let man = fields::manifest(wire, report);
+    fields::ac1(&man, report);
+    encoding::ac2(&man, report);
+    let top = size::ac3(&man, &landed, report);
+    let join_open = forms::ac4(&man, report);
+    forms::ac5(&man, &landed, report);
+    size::t1(&man, &landed, top.as_ref(), &join_open, report);
+    rest::tags(&man, report);
+    let mut toml = toml_side::parse(toml_text, report)?;
+    toml_side::models(&man, &landed, &toml, report)?;
+    rest::point2(&man, report);
+    toml_side::fixed(&man, top.as_ref(), &mut toml, report)?;
+    fields::point4(&man, &toml, report)?;
+    fields::t3a(&man, wire, report);
+    encoding::t3b(&man, &toml, report)?;
+    rest::t3c(&man, report);
+    rest::reserved(&man, wire, report);
+    fields::t3f(&man, wire, report);
+    rest::t3g(&man, report);
+    landed::unchanged(wire, &landed, report);
+    Ok(())
 }

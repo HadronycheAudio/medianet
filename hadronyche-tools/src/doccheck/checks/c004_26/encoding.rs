@@ -9,7 +9,7 @@ use super::fields::{Man, e_rows, numeric_range};
 use super::toml_side::Toml;
 use super::{HEXNUM, MRow, NUM, to_int};
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::Stop;
+use crate::doccheck::report::Flow;
 use crate::doccheck::text::{has, has_i, rx};
 
 const NOT_INTERP: &str = r"not (?:interpreted|read|used)|ignored|disregard|does not apply|no meaning";
@@ -25,7 +25,7 @@ pub(crate) fn code_for(text: &str, word: &str) -> Option<i128> {
 }
 
 /// `2 ** bits` compared with `code`.
-fn fits(code: i128, bits: i64) -> bool {
+fn fits(code: i128, bits: i128) -> bool {
     bits >= 127 || code < (1i128 << bits.max(0))
 }
 
@@ -99,7 +99,7 @@ pub(crate) fn ac2(man: &Man, report: &mut Report) {
 }
 
 /// T3 (b).
-pub(crate) fn t3b(man: &Man, toml: &Toml, report: &mut Report) -> Result<(), Stop> {
+pub(crate) fn t3b(man: &Man, toml: &Toml, report: &mut Report) -> Flow<()> {
     let mut table_code = std::collections::BTreeMap::new();
     for (kind, rows) in [("none", e_rows(man, "required")), ("unknown", e_rows(man, "declared"))] {
         if let Some(c) = rows.iter().find_map(|r| code_for(&r.valid, kind)) {
@@ -119,7 +119,7 @@ pub(crate) fn t3b(man: &Man, toml: &Toml, report: &mut Report) -> Result<(), Sto
         if !prose_hex.is_empty() {
             report.check("AC2", prose_hex.contains(&code) && stray.is_empty(), format!("the prose sentinel for {kind} agrees with the table row ({code:#x}); prose hex values {prose_hex:?}"));
         }
-        toml.sentinel_checks(kind, code, report).map_err(Stop)?;
+        toml.sentinel_checks(kind, code, report)?;
     }
     Ok(())
 }

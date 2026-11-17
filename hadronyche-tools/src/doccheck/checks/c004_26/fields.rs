@@ -7,16 +7,17 @@
 use super::toml_side::Toml;
 use super::{MRow, NUM, Wire, cells, is_field_table, is_validity_table, model_rows, tile, to_int};
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::{split_after, tables};
+use crate::doccheck::report::Flow;
+use crate::doccheck::family004::tables;
+use crate::doccheck::sentences::{RAW_COLON, split_raw};
 use crate::doccheck::text::{has, has_i, rx};
-use crate::doccheck::units::{Block, BlockKind, prose_blocks, strip_fences};
+use crate::doccheck::units::{BlockKind, prose_blocks, strip_fences};
 
 /// One field table: rows, bit offsets, total bits, where.
 pub(crate) struct Model {
     pub rows: Vec<MRow>,
-    pub offs: Vec<i64>,
-    pub total: i64,
+    pub offs: Vec<i128>,
+    pub total: i128,
     pub place: String,
 }
 
@@ -29,7 +30,6 @@ pub(crate) struct Man {
     pub models: Vec<Model>,
     /// `FORMS`.
     pub forms: Vec<(String, String)>,
-    pub prose: Vec<Block>,
     /// `PARAS_FLAT`.
     pub paras_flat: Vec<String>,
 }
@@ -47,12 +47,12 @@ impl Man {
 
     /// The sentences of `FLAT` (`re.split(r"(?<=[.;:])\s+", FLAT)`).
     pub fn flat_sentences(&self) -> Vec<String> {
-        split_after(&self.flat, ".;:")
+        split_raw(&self.flat, RAW_COLON).into_iter().map(String::from).collect()
     }
 
     /// The sentences of `" ".join(PARAS_FLAT)`.
     pub fn para_sentences(&self) -> Vec<String> {
-        split_after(&self.paras_flat.join(" "), ".;:")
+        split_raw(&self.paras_flat.join(" "), RAW_COLON).into_iter().map(String::from).collect()
     }
 }
 
@@ -92,14 +92,13 @@ pub(crate) fn manifest(wire: &Wire, report: &mut Report) -> Man {
         flat,
         models,
         forms,
-        prose,
         paras_flat,
     }
 }
 
 /// `re.sub(r"\s+", " ", t)` (no strip).
 fn squash_keep(t: &str) -> String {
-    rx(r"\s+").replace_all(t, " ").into_owned()
+    rx(r"\s+").replace_all(t, " ")
 }
 
 const TIME_UNIT: &str = r"(?:µs|μs|\bus\b|microseconds?|\bns\b|nanoseconds?|\bms\b|milliseconds?)";
@@ -150,7 +149,7 @@ fn nums(text: &str) -> Vec<i128> {
 }
 
 /// Review point 4; `Err` where the script stops.
-pub(crate) fn point4(man: &Man, toml: &Toml, report: &mut Report) -> Result<(), Stop> {
+pub(crate) fn point4(man: &Man, toml: &Toml, report: &mut Report) -> Flow<()> {
     let mut loc = None;
     for (k, m) in man.models.iter().enumerate() {
         for (i, r) in m.rows.iter().enumerate() {
@@ -164,8 +163,8 @@ pub(crate) fn point4(man: &Man, toml: &Toml, report: &mut Report) -> Result<(), 
         return Ok(());
     };
     let m = &man.models[k];
-    let sig: Vec<(i64, i64, Option<i64>)> = m.rows.iter().zip(&m.offs).map(|(r, o)| (*o, r.bits, r.maxc)).collect();
-    let texts = toml.texts_at(&sig, boff).map_err(Stop)?;
+    let sig: Vec<(i128, i128, Option<i128>)> = m.rows.iter().zip(&m.offs).map(|(r, o)| (*o, r.bits, r.maxc)).collect();
+    let texts = toml.texts_at(&sig, boff)?;
     report.check("AC1", texts.iter().any(|t| has("65[ \u{a0}\u{202f}]?535", t)), "wire.toml's channel-count field of the stream element states the audio-length bound (65 535)");
     Ok(())
 }

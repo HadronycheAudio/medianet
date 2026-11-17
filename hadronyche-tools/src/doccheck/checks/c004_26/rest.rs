@@ -10,33 +10,33 @@ use super::fields::Man;
 use super::forms::open_paras;
 use super::{Wire, is_field_table, subs};
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::py::{split_after, tables};
-use crate::doccheck::evidence::{TagPolicy, has_tag, untagged};
+use crate::doccheck::pycompat::PyStr;
+use crate::doccheck::family004::tables;
+use crate::doccheck::sentences::{RAW_COLON, split_raw};
+use crate::doccheck::evidence::{TagPolicy, subsections_with_table_untagged, untagged};
 use crate::doccheck::text::{has, has_i, head};
-use crate::doccheck::units::{BlockKind, prose_blocks};
+
 
 /// Evidence tags on prose and on subsections with a table; owned open
 /// items.
 pub(crate) fn tags(man: &Man, report: &mut Report) {
     for u in untagged(&man.text, &TagPolicy::PROSE_004_26) {
-        report.fail("DoD", format!("prose paragraph '{}...' carries an evidence tag", head(u.text.trim(), 50)));
+        report.fail("DoD", format!("prose paragraph '{}...' carries an evidence tag", head(u.text.py_strip(), 50)));
     }
-    for (title, body) in subs(&man.lines) {
-        if prose_blocks(&body).iter().any(|b| b.kind == BlockKind::Table) {
-            report.check("DoD", has_tag(&body), format!("subsection '{title}' with a table carries an evidence tag"));
-        }
+    for title in subsections_with_table_untagged(&man.lines.join("\n")) {
+        report.fail("DoD", format!("subsection '{title}' with a table carries an evidence tag"));
     }
     for p in open_paras(man) {
-        report.check("DoD", has_i(r"\bowner\b", &p) && has_i(r"\bfalsifier\b", &p), format!("open item '{}...' names an owner and a falsifier", head(p.trim(), 50)));
+        report.check("DoD", has_i(r"\bowner\b", &p) && has_i(r"\bfalsifier\b", &p), format!("open item '{}...' names an owner and a falsifier", head(p.py_strip(), 50)));
     }
 }
 
 /// Review point 2: the major-change sentence excepts a new content type.
 pub(crate) fn point2(man: &Man, report: &mut Report) {
     for p in &man.paras_flat {
-        for s in split_after(p, ".;:") {
-            if has_i("every addition", &s) && has_i(r"\bmajor\b", &s) {
-                report.check("DoD", has_i("content[- ]type", &s) && has_i(r"\bexcept\b|other than", &s), "the sentence that says every addition to the manifest is a major change excepts a new content-type code (accept-any)");
+        for s in split_raw(p, RAW_COLON) {
+            if has_i("every addition", s) && has_i(r"\bmajor\b", s) {
+                report.check("DoD", has_i("content[- ]type", s) && has_i(r"\bexcept\b|other than", s), "the sentence that says every addition to the manifest is a major change excepts a new content-type code (accept-any)");
             }
         }
     }
@@ -77,11 +77,11 @@ pub(crate) fn reserved(man: &Man, wire: &Wire, report: &mut Report) {
     for (title, body) in subs(&man.lines) {
         for t in tables(&body).into_iter().filter(|t| is_field_table(t.head())) {
             for r in t.rows.iter().filter(|r| r.cells.len() >= 5) {
-                title_of.insert(r.cell(3).trim().to_string(), title.to_lowercase());
+                title_of.insert(r.cell(3).py_strip().to_string(), title.to_lowercase());
             }
         }
     }
-    let reserved = man.all_rows().filter(|r| r.meaning.starts_with("Reserved") || r.valid.trim().to_lowercase() == "0 only" || has_i("must be zero|accept any|ignores? any other", &r.valid));
+    let reserved = man.all_rows().filter(|r| r.meaning.starts_with("Reserved") || r.valid.py_strip().to_lowercase() == "0 only" || has_i("must be zero|accept any|ignores? any other", &r.valid));
     for r in reserved {
         let title = title_of.get(&r.meaning).cloned().unwrap_or_default();
         let key = title.split_whitespace().next().unwrap_or("").to_string();
