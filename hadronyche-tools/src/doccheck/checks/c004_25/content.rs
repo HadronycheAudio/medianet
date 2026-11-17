@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::Consts;
 use super::types::SType;
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::tables;
-use crate::doccheck::checks::c004_27::Field;
+use crate::doccheck::family004::tables;
+use crate::doccheck::family004::Field;
+use crate::doccheck::report::{Flow, crash};
 use crate::doccheck::tables::Row;
 use crate::doccheck::text::{has, has_i};
 
@@ -140,10 +140,10 @@ fn max_match(keys: &[String], texts: &[&str]) -> (usize, BTreeMap<usize, usize>)
 }
 
 /// AC3.
-pub(crate) fn ac3(types: &[SType], consts: &Consts, report: &mut Report) -> Result<(), Stop> {
+pub(crate) fn ac3(types: &[SType], consts: &Consts, report: &mut Report) -> Flow<()> {
     let Some(h) = get(types, "health").filter(|_| consts.c159.len() == 11) else { return Ok(()) };
     if h.root.is_none() {
-        return Err(Stop("KeyError: the health type has no entries".into()));
+        return crash("KeyError: 'entries'");
     }
     let hf = h.entry_fields();
     let ht: Vec<&str> = hf.iter().map(|f| f.meaning.as_str()).collect();

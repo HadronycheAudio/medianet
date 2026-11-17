@@ -12,79 +12,50 @@ use std::collections::BTreeSet;
 use super::types::SType;
 use super::{Consts, Stamp};
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::{has_number, tables};
-use crate::doccheck::checks::c004_27::Ctx;
+use crate::doccheck::family004::{Ctx, tables};
+use crate::doccheck::pycompat::{is_nd, parse_int};
+use crate::doccheck::pynum::record_int_limit;
+use crate::doccheck::report::{Flow, crash};
+use crate::doccheck::sentences::{SentenceSplit, split};
 use crate::doccheck::evidence::has_tag;
 use crate::doccheck::text::{full, has, has_i, join_digit_groups, rx};
 use crate::doccheck::units::{BlockKind, prose_blocks};
 
-/// `re.split(r"(?<=[.;])\s+|\n\s*\n|\n(?=[|*#-])", text)`.
-fn split_pieces(text: &str) -> Vec<&str> {
-    split_pieces_with(text, true)
+/// 004-25's `sentences` ([`SentenceSplit::BLOCKS_004_25`]).
+fn sentences(text: &str) -> Vec<String> {
+    split(text, SentenceSplit::BLOCKS_004_25)
 }
 
-/// The same split, with or without the third alternative `\n(?=[|*#-])`
-/// (004-29's `sentences_of` has only the first two).
-pub(crate) fn split_pieces_with(text: &str, pipe_lines: bool) -> Vec<&str> {
-    let mut out = Vec::new();
-    let (mut start, mut i) = (0, 0);
-    let bytes = text.as_bytes();
-    while i < text.len() {
-        if !text.is_char_boundary(i) {
-            i += 1;
-            continue;
-        }
-        let ws_run = |at: usize| text[at..].char_indices().find(|(_, c)| !c.is_whitespace()).map_or(text.len(), |(k, _)| at + k);
-        let prev = text[..i].chars().next_back();
-        let here = text[i..].chars().next().expect("char");
-        let end = if prev.is_some_and(|p| p == '.' || p == ';') && here.is_whitespace() {
-            Some(ws_run(i))
-        } else if here == '\n' {
-            let run = ws_run(i + 1);
-            let last_nl = text[i + 1..run].rfind('\n').map(|k| i + 1 + k + 1);
-            match last_nl {
-                Some(e) => Some(e),
-                None => bytes.get(i + 1).filter(|b| pipe_lines && b"|*#-".contains(b)).map(|_| i + 1),
-            }
-        } else {
-            None
-        };
-        match end {
-            Some(e) => {
-                out.push(&text[start..i]);
-                start = e;
-                i = e;
-            }
-            None => i += here.len_utf8(),
-        }
-    }
-    out.push(&text[start..]);
-    out
+/// `re.search(rf"(?<!\d){n}(?!\d)", text)` (`has_num`).
+fn has_number(text: &str, n: i128) -> bool {
+    has(&format!(r"(?<!\d){n}(?!\d)"), text)
 }
 
-/// 004-25's and 004-28's `sentences`: the pieces with text, a piece that
-/// starts with `[` or a backtick joined to the one before.
-pub(crate) fn sentences(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for s in split_pieces(text).into_iter().filter(|s| !s.trim().is_empty()) {
-        match out.last_mut() {
-            Some(last) if rx(r"^\s*[\[`]").is_match(s) => {
-                last.push(' ');
-                last.push_str(s);
-            }
-            _ => out.push(s.to_string()),
-        }
-    }
-    out
+/// `str.isdigit()` inside the repertoire: a decimal digit, or one of the
+/// superscript and subscript digits (`int()` of which raises).
+fn py_isdigit(c: char) -> bool {
+    is_nd(c) || "¹²³⁴⁵⁶⁹₁₂₃".contains(c)
+}
+
+/// A product or difference Python computes exactly: beyond `i128` it is
+/// recorded as `INT_LIMIT` (the verdict is red by rule; the value then
+/// returned is never compared).
+fn exact(v: Option<i128>, what: &str) -> i128 {
+    v.unwrap_or_else(|| {
+        record_int_limit(what);
+        i128::MAX
+    })
 }
 
 const RULE7: &str = "a stamp that needs more cannot be sent";
 
-fn c1_report(st: &Stamp, h: &SType, s: i64, section_max: Option<i64>, report: &mut Report) {
+fn c1_report(st: &Stamp, h: &SType, s: i128, section_max: Option<i128>, report: &mut Report) -> Flow<()> {
     let f_h = h.list_counts()[0];
-    let s_other = s - h.nt.unwrap_or(0);
-    let t = (section_max.filter(|&m| m != 0).unwrap_or(64) - s_other) * f_h;
+    // `_S - HEALTH["Nt"]`: set whenever the health type has entries
+    let Some(h_nt) = h.nt else { return crash("TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'") };
+    let s_other = s - h_nt;
+    let sm = section_max.filter(|&m| m != 0).unwrap_or(64);
+    let t = exact(sm.checked_sub(s_other).and_then(|d| d.checked_mul(f_h)), "(SECTION_MAX or 64) - S_other) * F_H");
     let paras: Vec<&str> = st.prose.iter().filter(|b| b.kind == BlockKind::Prose && has(r"Open item 1(?:\D|$)", &b.text)).map(|b| b.text.as_str()).collect();
     let score = |p: &str| -> usize {
         let lower = p.to_lowercase();
@@ -114,28 +85,29 @@ fn c1_report(st: &Stamp, h: &SType, s: i64, section_max: Option<i64>, report: &m
     report.check("DoD", has_i("no stamp", best), "review C1: the report says that above the bound a module sends no stamp at all");
     report.check("DoD", has_number(best, t) && has_i("threshold|fit", best), format!("review C1: the report gives the threshold in entries, (64 − {s_other}) × {f_h} = {t}, below which a stamp still fits"));
     report.check("DoD", has_tag(best), "review C1: the report paragraph carries an evidence tag");
+    Ok(())
 }
 
 /// C1.
-pub(crate) fn c1(st: &Stamp, types: &[SType], s: i64, section_max: Option<i64>, consts: &Consts, report: &mut Report) {
+pub(crate) fn c1(st: &Stamp, types: &[SType], s: i128, section_max: Option<i128>, consts: &Consts, report: &mut Report) -> Flow<()> {
     report.check("DoD", st.text.contains(RULE7), format!("review C1: the merged sender rule 7 is quoted by the report: \"{RULE7}\""));
     if s <= section_max.filter(|&m| m != 0).unwrap_or(64) {
-        return;
+        return Ok(());
     }
-    let Some(h) = types.iter().find(|t| t.key == "health").filter(|h| h.root.as_ref().is_some_and(|r| r.rows.iter().any(|x| x.child.is_some()))) else { return };
+    let Some(h) = types.iter().find(|t| t.key == "health").filter(|h| h.root.as_ref().is_some_and(|r| r.rows.iter().any(|x| x.child.is_some()))) else { return Ok(()) };
     let product = match (consts.c09_max, consts.peers) {
-        (Some(a), Some(b)) if a != 0 && b != 0 => Some(2 * a * b),
+        (Some(a), Some(b)) if a != 0 && b != 0 => Some(exact(a.checked_mul(b).and_then(|p| p.checked_mul(2)), "2 * C09_MAX * PEERS")),
         _ => None,
     };
     let m_h = h.m_stated.first().copied();
     report.check("DoD", product.is_some() && m_h == product, format!("review C1: the health maximum equals the constants' product: {:?} streams (C-09) × {:?} peers (C-217) × 2 directions = {product:?} (stated {m_h:?})", consts.c09_max, consts.peers));
     let states = product.is_some_and(|p| has_number(&join_digit_groups(&h.text), p)) && h.text.contains("C-09") && h.text.contains("C-217");
     report.check("DoD", states, "review C1: the health subsection states the product with its constants C-09 and C-217");
-    c1_report(st, h, s, section_max, report);
+    c1_report(st, h, s, section_max, report)
 }
 
 fn capnorm(x: &str) -> String {
-    rx(r"[_\-]+").replace_all(&x.to_lowercase(), " ").into_owned()
+    rx(r"[_\-]+").replace_all(&x.to_lowercase(), " ")
 }
 
 const CAP_VOCAB: [&str; 9] = [
@@ -151,8 +123,8 @@ const CAP_VOCAB: [&str; 9] = [
 ];
 
 /// C2 and its round-2 count.
-pub(crate) fn c2(st: &Stamp, types: &[SType], report: &mut Report) {
-    let Some(cap) = types.iter().find(|t| t.key == "capability") else { return };
+pub(crate) fn c2(st: &Stamp, types: &[SType], report: &mut Report) -> Flow<()> {
+    let Some(cap) = types.iter().find(|t| t.key == "capability") else { return Ok(()) };
     let (mut cap_rows, mut id_rows) = (Vec::new(), 0usize);
     for tb in tables(&cap.text) {
         let is_id = tb.head().first().is_some_and(|h| h.trim().to_lowercase() == "id");
@@ -178,13 +150,18 @@ pub(crate) fn c2(st: &Stamp, types: &[SType], report: &mut Report) {
     let words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
     for c in rx(r"(?i)stamps? (\w+) capabilities").captures_iter(&st.text) {
         let w = &c[1];
-        let n: i64 = if w.chars().all(|x| x.is_ascii_digit()) {
-            w.parse().unwrap_or(-1)
+        // `int(w) if w.isdigit() else WORDS.get(w.lower(), -1)`: `int("²")` raises
+        let n: i128 = if w.chars().all(py_isdigit) {
+            match parse_int(w) {
+                Ok(n) => n,
+                Err(_) => return crash(format!("ValueError: invalid literal for int() with base 10: {w:?}")),
+            }
         } else {
-            words.iter().position(|x| *x == w.to_lowercase()).map_or(-1, |p| p as i64)
+            words.iter().position(|x| *x == w.to_lowercase()).map_or(-1, |p| p as i128)
         };
-        report.check("DoD", n == id_rows as i64, format!("review R2-1: the stated count of {n} capabilities equals the numbered rows of the capability id table ({id_rows} numbered rows)"));
+        report.check("DoD", n == id_rows as i128, format!("review R2-1: the stated count of {n} capabilities equals the numbered rows of the capability id table ({id_rows} numbered rows)"));
     }
+    Ok(())
 }
 
 /// C3.
@@ -209,10 +186,10 @@ pub(crate) fn c3(ctx: &Ctx, st: &Stamp, report: &mut Report) {
 }
 
 /// C4.
-pub(crate) fn c4(types: &[SType], report: &mut Report) -> Result<(), Stop> {
+pub(crate) fn c4(types: &[SType], report: &mut Report) -> Flow<()> {
     let Some(h) = types.iter().find(|t| t.key == "health") else { return Ok(()) };
     if h.root.is_none() {
-        return Err(Stop("KeyError: the health type has no entries".into()));
+        return crash("KeyError: 'entries'");
     }
     let field = h.entry_fields().iter().any(|f| has_i("request id|admission|generation|epoch of the connection", &f.meaning));
     let sentence = sentences(&h.text).iter().any(|s| has_i("reset", s) && has_i("wrap", s) && has_tag(s));
@@ -225,9 +202,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_scripts_sentence_split() {
-        assert_eq!(split_pieces("A. B; c\n\nd\n| e\nf"), vec!["A.", "B;", "c", "d", "| e\nf"]);
+    fn the_scripts_sentences_and_digits() {
         assert_eq!(sentences("A. `[decision]` b."), vec!["A. `[decision]` b."]);
-        assert_eq!(split_pieces("a\n \n\nb"), vec!["a", "b"]);
+        assert!(has_number("count 64.", 64) && !has_number("640", 64));
+        assert!(py_isdigit('²') && py_isdigit('7') && !py_isdigit('x'));
     }
 }

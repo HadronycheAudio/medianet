@@ -2,49 +2,68 @@
 //! constants table names (ticket 004-25).
 //!
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
-//! in `tests/doc_004_25.rs`. The script's variants, named where used:
-//! wire.md read with U+2212 turned into `-` and digit groups joined; the
-//! constants table with digit groups joined; headings found by `re.search`
-//! at an exact level (004-27's `span_of`), the Rejection reasons by the
-//! anchored `^rejection\s+reasons$`; the tables of the 004-16 to 004-29
-//! family ([`crate::doccheck::checks::c004_24::py::tables`]); the
-//! arithmetic tree of the section types ([`tree`], shared with 004-28); the
-//! Rejection reasons pinned by name and value ([`merged::REJ_FIXED`],
-//! shared with 004-28); reason tokens `[A-Z][a-z]+(?:[A-Z][a-z0-9]+)+`; the
-//! non-rejection pattern with "no reason" ([`validity::NONREJ`]); the
-//! untagged-claim rule per prose block of each type subsection
-//! ([`TagPolicy::PROSE_004_29`]); open items as any prose or table block of
-//! the Regime stamp section that mentions "open item"
-//! ([`MENTION_BLOCKS_004_24`], the same rule as 004-24's).
+//! in `tests/doc/c004_25.rs`; the denial list is `denials.rs`. The script's
+//! variants, named where used:
 //!
-//! Its repository-level assertions (`cargo run --bin wire-check` reports
-//! "checks clean"; `cargo test -p hadronyche-tools --test wire_tables` has 0
-//! failed and at least 12 passed; the checker names no ref containing main
-//! and runs no other check) are in `scripts/repo-state-checks.sh`.
+//! * wire.md read as `open()` does, U+2212 turned into `-`, digit groups
+//!   joined, then `splitlines()` ([`LineSplit::PySplitlines`]);
+//! * the 004 family's helpers ([`crate::doccheck::family004`]);
+//! * the Rejection reasons by [`REJECTION_004_25`] (anchored), pinned by
+//!   name and value ([`REJ_FIXED`]); reason tokens [`CAMEL_DIGITS`]; the
+//!   non-rejection pattern [`NON_REJECTION_004_25`];
+//! * the arithmetic tree of the section types ([`tree`], private: the
+//!   library has none; 004-28 has the same functions) and Python's `eval`
+//!   of a stated sum ([`crate::doccheck::pynum::eval_arith`]: a
+//!   `SyntaxError` there is a crash, the script has no `try`);
+//! * sentences by [`SentenceSplit::BLOCKS_004_25`];
+//! * the untagged-claim rule per prose block of each type subsection
+//!   ([`TagPolicy::PROSE_004_29`]); open items
+//!   ([`OpenItemPolicy::MentionBlocks`]);
+//! * wire.toml through the script's subset reader
+//!   ([`TomlReader::Subset004_18`]), every exception of the reader caught
+//!   as an AC6 failure; the uncaught exceptions of the values' use, of a
+//!   missing C-17 bound, of a four-cell Section count row, of a health type
+//!   without entries, of `int()` of a superscript digit, are crashes.
 //!
+//! Its repository-level assertions are in `scripts/repo-state.d/004-25.sh`.
+//!
+//! [`LineSplit::PySplitlines`]: crate::doccheck::policy::LineSplit::PySplitlines
+//! [`REJECTION_004_25`]: crate::doccheck::rejection_members::REJECTION_004_25
+//! [`REJ_FIXED`]: crate::doccheck::rejection_members::REJ_FIXED
+//! [`CAMEL_DIGITS`]: crate::doccheck::rejection_members::reasons::CAMEL_DIGITS
+//! [`NON_REJECTION_004_25`]: crate::doccheck::rejection_members::reasons::NON_REJECTION_004_25
+//! [`SentenceSplit::BLOCKS_004_25`]: crate::doccheck::sentences::SentenceSplit::BLOCKS_004_25
 //! [`TagPolicy::PROSE_004_29`]: crate::doccheck::evidence::TagPolicy::PROSE_004_29
-//! [`MENTION_BLOCKS_004_24`]: crate::doccheck::checks::c004_24::dod::MENTION_BLOCKS_004_24
+//! [`OpenItemPolicy::MentionBlocks`]: crate::doccheck::items::OpenItemPolicy::MentionBlocks
+//! [`TomlReader::Subset004_18`]: crate::doccheck::policy::TomlReader::Subset004_18
 
 mod content;
-pub(crate) mod merged;
-pub(crate) mod review;
-pub(crate) mod tree;
-pub(crate) mod toml_side;
-pub(crate) mod types;
-pub(crate) mod validity;
+mod denials;
+mod merged;
+mod review;
+mod toml_side;
+mod tree;
+mod types;
+mod validity;
 
 use super::{CheckSpec, KnownDifference, Target};
-use crate::doccheck::checks::c004_24::dod::{MENTION_BLOCKS_004_24, block_items};
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::{py_text, stopped};
-use crate::doccheck::checks::c004_27::{Ctx, subsections};
 use crate::doccheck::evidence::{TagPolicy, has_tag, untagged};
+use crate::doccheck::family004::{Ctx, subsections};
+use crate::doccheck::items::{OpenItemPolicy, open_items, unowned_items};
 use crate::doccheck::markdown::Markdown;
+use crate::doccheck::policy::{LineSplit, TomlReader};
+use crate::doccheck::pycompat::{PyStr, parse_int, universal_newlines};
+use crate::doccheck::pyvalue::Dict;
+use crate::doccheck::report::Flow;
 use crate::doccheck::text::{has_i, head, join_digit_groups, rx};
 use crate::doccheck::ticket::{CONSTANTS_MD, Constants};
+use crate::doccheck::tomlsubset;
 use crate::doccheck::units::{Block, prose_blocks};
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
+
+/// How the script reads its documents.
+const LINES: LineSplit = LineSplit::PySplitlines;
 
 /// The specification.
 pub const WIRE_MD: &str = "doc/design/spec/wire.md";
@@ -82,6 +101,9 @@ pub const SPEC: CheckSpec = CheckSpec {
     ],
     keywords: &["exceed", "reset", "wrap", "control", "reserved"],
     known_differences: KNOWN,
+    denials: denials::DENIALS,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.
@@ -89,13 +111,13 @@ const KNOWN: &[KnownDifference] = &[];
 
 /// The numbers and lists the constants table gives.
 pub(crate) struct Consts {
-    pub ctrl_bound: Option<i64>,
+    pub ctrl_bound: Option<i128>,
     pub c159: Vec<String>,
-    pub dscp: Option<i64>,
+    pub dscp: Option<i128>,
     pub cap_states: Vec<String>,
     pub ts_sources: Vec<String>,
-    pub c09_max: Option<i64>,
-    pub peers: Option<i64>,
+    pub c09_max: Option<i128>,
+    pub peers: Option<i128>,
 }
 
 /// The Regime stamp section.
@@ -105,14 +127,15 @@ pub(crate) struct Stamp {
     pub prose: Vec<Block>,
 }
 
-fn grab(c: &Constants, id: &str, pat: &str) -> Option<i64> {
-    rx(pat).captures(c.value(id)).and_then(|m| m[1].parse().ok())
+/// `int(re.search(pat, const_row(id)).group(1))` when it matches.
+fn grab(c: &Constants, id: &str, pat: &str) -> Option<i128> {
+    rx(pat).captures(c.value(id)).and_then(|m| parse_int(&m[1]).ok())
 }
 
 fn consts(c: &Constants, report: &mut Report) -> Consts {
     let ctrl_bound = grab(c, "C-17", r"at most (\d+) bytes");
-    let c159: Vec<String> = c.value("C-159").split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect();
-    let cap_states: Vec<String> = rx(r"four: ([^.]*)\.").captures(c.value("C-129")).map(|m| m[1].split(',').map(|x| x.trim().to_lowercase()).collect()).unwrap_or_default();
+    let c159: Vec<String> = c.value("C-159").split(',').map(PyStr::py_strip).filter(|x| !x.is_empty()).map(String::from).collect();
+    let cap_states: Vec<String> = rx(r"four: ([^.]*)\.").captures(c.value("C-129")).map(|m| m[1].split(',').map(|x| x.py_strip().to_lowercase()).collect()).unwrap_or_default();
     let ts_sources: Vec<String> = rx(r"([a-z][a-z-]*) \(").captures_iter(c.value("C-131")).map(|m| m[1].to_lowercase()).collect();
     report.check("AC1", ctrl_bound == Some(1252), format!("the constants table gives the control bound C-17 as 1 252 bytes (read {ctrl_bound:?})"));
     report.check("AC3", c159.len() == 11, format!("the constants table gives eleven C-159 counters, read at run time (found {}: {c159:?})", c159.len()));
@@ -138,49 +161,41 @@ fn dod(st: &Stamp, types: &[types::SType], m: &merged::Merged, report: &mut Repo
         let bad: Vec<String> = untagged(&t.text, &TagPolicy::PROSE_004_29).iter().map(|u| head(&u.text, 50)).collect();
         report.check("DoD", bad.is_empty(), format!("every prose paragraph of 5 or more words in the {} subsection carries an evidence tag; untagged: {bad:?}", t.key));
     }
-    let (n, unowned) = block_items(&st.text, &MENTION_BLOCKS_004_24);
+    let n = open_items(&st.text, OpenItemPolicy::MentionBlocks).len();
+    let unowned: Vec<String> = unowned_items(&st.text, OpenItemPolicy::MentionBlocks).iter().map(|i| head(&i.text, 50)).collect();
     report.check("DoD", unowned.is_empty(), format!("every Open item paragraph of the regime stamp section names an owner and a falsifier ({n} found); without: {unowned:?}"));
 }
 
 /// The check.
 pub fn run(docs: &Docs) -> Report {
     let mut report = Report::default();
-    let raw = match docs.read(WIRE_MD) {
-        Some(t) => t.to_string(),
+    // norm(WIRE_RAW.replace("−", "-")), then splitlines()
+    let wire = match docs.read(WIRE_MD) {
+        Some(t) => LINES.normalize(&join_digit_groups(&universal_newlines(&t).replace('\u{2212}', "-"))),
         None => {
             report.fail("AC1", format!("{WIRE_MD} does not exist"));
             String::new()
         }
     };
-    let wire = join_digit_groups(&py_text(&raw.replace('\u{2212}', "-")));
-    let toml_text = docs.read(WIRE_TOML).map(|t| t.to_string());
+    let toml_text = docs.read(WIRE_TOML).map(|t| universal_newlines(&t));
     if toml_text.is_none() {
         report.fail("AC6", format!("{WIRE_TOML} does not exist"));
     }
-    let constants = Constants::parse(&join_digit_groups(&py_text(&docs.read(CONSTANTS_MD).map(|t| t.to_string()).unwrap_or_default())));
+    let constants = docs.read(CONSTANTS_MD).map(|t| t.to_string()).unwrap_or_default();
+    let constants = Constants::parse(&LINES.normalize(&join_digit_groups(&universal_newlines(&constants))));
     let consts = consts(&constants, &mut report);
-    let ctx = Ctx {
-        md: Markdown::parse(&wire),
-        consts: constants,
-        toml_text,
-    };
+    let ctx = Ctx { md: Markdown::parse(&wire), consts: constants };
     let span = ctx.span_of(r"^regime\s+stamp$", 2);
     let text = ctx.body(span);
     report.check("AC1", span.is_some() && !text.to_lowercase().contains("to be filled"), "wire.md has a Regime stamp section with its placeholder replaced");
-    let st = Stamp {
-        subs: subsections(&text),
-        prose: prose_blocks(&text),
-        text,
-    };
-    if let Err(Stop(e)) = checks(&ctx, &st, &wire, &consts, &mut report) {
-        stopped(&mut report, "AC1", &e);
-    }
-    report
+    let st = Stamp { subs: subsections(&text), prose: prose_blocks(&text), text };
+    let flow = checks(&ctx, &st, &wire, toml_text.as_deref(), &consts, &mut report);
+    report.finish(flow)
 }
 
-fn checks(ctx: &Ctx, st: &Stamp, wire: &str, consts: &Consts, report: &mut Report) -> Result<(), Stop> {
+fn checks(ctx: &Ctx, st: &Stamp, wire: &str, toml_text: Option<&str>, consts: &Consts, report: &mut Report) -> Flow<()> {
     let block = merged::code_block(wire, "004-25");
-    let m = merged::merged(ctx, wire, &st.text, report, |r| {
+    let m = merged::merged(wire, &st.text, report, |r| {
         r.check("AC1", block.is_some(), format!("the merged section type codes give 004-25 a block (read {block:?})"));
     })?;
     let (types, s) = types::section_types(st, consts.ctrl_bound, block, m.section_max, report)?;
@@ -189,9 +204,17 @@ fn checks(ctx: &Ctx, st: &Stamp, wire: &str, consts: &Consts, report: &mut Repor
     content::ac3(&types, consts, report)?;
     validity::ac5(&st.text, &m, report);
     dod(st, &types, &m, report);
-    toml_side::ac6(ctx.toml_text.as_deref(), &types, &m, consts.dscp, report)?;
-    review::c1(st, &types, s, m.section_max, consts, report);
-    review::c2(st, &types, report);
+    // TOML = parse_toml(TOML_TEXT), any exception caught as an AC6 failure
+    let toml: Option<Dict> = match tomlsubset::parse(toml_text.unwrap_or("")) {
+        Ok(t) => Some(t),
+        Err(e) => {
+            report.fail("AC6", format!("wire.toml does not parse: {e}"));
+            None
+        }
+    };
+    toml_side::ac6(toml.as_ref(), &types, &m, consts.dscp, report)?;
+    review::c1(st, &types, s, m.section_max, consts, report)?;
+    review::c2(st, &types, report)?;
     review::c3(ctx, st, report);
     review::c4(&types, report)
 }

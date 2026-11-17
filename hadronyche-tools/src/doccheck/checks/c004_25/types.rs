@@ -5,9 +5,9 @@
 use super::Stamp;
 use super::tree::{Node, bad_arithmetic, build_tree, cdiv, entry_nodes, lo_of, maxc, size_node, tile_node};
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::tables;
-use crate::doccheck::checks::c004_27::{Field, fields_of, find_sub, is_field_table};
+use crate::doccheck::family004::{Field, fields_of, find_sub, is_field_table, tables};
+use crate::doccheck::pycompat::parse_int;
+use crate::doccheck::report::{Flow, crash};
 use crate::doccheck::text::rx;
 
 /// The seven types and the subsection title patterns that find them.
@@ -31,11 +31,11 @@ pub(crate) struct SType {
     pub fl_all: Vec<Field>,
     /// The tree, when the type has a non-empty first field table.
     pub root: Option<Node>,
-    pub sec_max: Option<i64>,
-    pub nt: Option<i64>,
+    pub sec_max: Option<i128>,
+    pub nt: Option<i128>,
     pub body_rel: bool,
-    pub m_stated: Vec<i64>,
-    pub code: Option<i64>,
+    pub m_stated: Vec<i128>,
+    pub code: Option<i128>,
 }
 
 impl SType {
@@ -45,28 +45,28 @@ impl SType {
     }
 
     /// The list counts of the root's list rows.
-    pub fn list_counts(&self) -> Vec<i64> {
+    pub fn list_counts(&self) -> Vec<i128> {
         self.root.as_ref().map(|r| r.rows.iter().filter_map(|x| maxc(&x.f)).collect()).unwrap_or_default()
     }
 }
 
 /// `(?:⌈|ceil\s*\()\s*(\d+)\s*/\s*(\d+)\s*(?:⌉|\))\s*=\s*(\d+)`, any case.
-fn statements(text: &str) -> Vec<(i64, i64, i64)> {
+fn statements(text: &str) -> Vec<(i128, i128, i128)> {
     rx(r"(?i)(?:⌈|ceil\s*\()\s*(\d+)\s*/\s*(\d+)\s*(?:⌉|\))\s*=\s*(\d+)")
         .captures_iter(text)
-        .filter_map(|c| Some((c[1].parse().ok()?, c[2].parse().ok()?, c[3].parse().ok()?)))
+        .filter_map(|c| Some((parse_int(&c[1]).ok()?, parse_int(&c[2]).ok()?, parse_int(&c[3]).ok()?)))
         .collect()
 }
 
 /// `TYPE_CODE_RE`: the first type code the text states.
-pub(crate) fn type_code(text: &str) -> Option<i64> {
+pub(crate) fn type_code(text: &str) -> Option<i128> {
     let c = rx(r"(?i)type code\D{0,20}?(\d+)|\bcode (\d+)\b|section type\D{0,20}?(\d+)\b").captures(text)?;
-    (1..=3).find_map(|i| c.get(i)).and_then(|m| m.as_str().parse().ok())
+    (1..=3).find_map(|i| c.get(i)).and_then(|m| parse_int(m.as_str()).ok())
 }
 
 /// `SIZE_MAX_RE`: every "maximum … N bytes" figure.
-pub(crate) fn stated_sizes(text: &str) -> Vec<i64> {
-    rx(r"(?i)maximum[^.;]{0,120}?(\d+)\s*bytes").captures_iter(text).filter_map(|c| c[1].parse().ok()).collect()
+pub(crate) fn stated_sizes(text: &str) -> Vec<i128> {
+    rx(r"(?i)maximum[^.;]{0,120}?(\d+)\s*bytes").captures_iter(text).filter_map(|c| parse_int(&c[1]).ok()).collect()
 }
 
 fn counts(t: &mut SType, root: &Node, report: &mut Report) {
@@ -83,12 +83,12 @@ fn counts(t: &mut SType, root: &Node, report: &mut Report) {
         nt = nt.max(cdiv(m, f));
     }
     t.nt = Some(nt);
-    let lists: Vec<i64> = root.rows.iter().filter_map(|r| maxc(&r.f)).collect();
+    let lists: Vec<i128> = root.rows.iter().filter_map(|r| maxc(&r.f)).collect();
     t.m_stated = stmts.iter().filter(|s| lists.contains(&s.1)).map(|s| s.0).collect();
 }
 
 /// The tree of one type: `fl_all`, the root with its starts and sizes.
-fn one_type(t: &mut SType, ctrl_bound: Option<i64>, block: Option<(i64, i64)>, report: &mut Report) -> Result<(), Stop> {
+fn one_type(t: &mut SType, ctrl_bound: Option<i128>, block: Option<(i128, i128)>, report: &mut Report) -> Flow<()> {
     let mut ft = Vec::new();
     for tb in tables(&t.text).iter().filter(|tb| is_field_table(tb.head())) {
         let fl = fields_of(Some(tb), "AC1", &t.title, report);
@@ -109,12 +109,12 @@ fn one_type(t: &mut SType, ctrl_bound: Option<i64>, block: Option<(i64, i64)>, r
     if off0 != 0 && off0 != 58 {
         report.fail("AC1", format!("the {} table starts at offset {off0}: a body starts at 0 and a section at 58", t.key));
     }
-    let start = off0 * 8 + lo_of(first).unwrap_or(0);
+    let start = off0 * 8 + lo_of(first).unwrap_or_default();
     tile_node(&mut root, start, &t.title, "AC1", report);
     let rbits = size_node(&mut root, &t.title, report);
     let sec_max = 58 + cdiv(rbits, 8);
     t.sec_max = Some(sec_max);
-    let Some(b) = ctrl_bound else { return Err(Stop("TypeError: int <= None (C-17 unread)".into())) };
+    let Some(b) = ctrl_bound else { return crash("TypeError: '<=' not supported between instances of 'int' and 'NoneType'") };
     let within = sec_max <= b;
     report.check("AC1", within, format!("the {} section at its maxima is {sec_max} bytes, no more than the control bound (C-17) of {ctrl_bound:?} bytes", t.key));
     counts(t, &root, report);
@@ -136,7 +136,7 @@ fn report64(stamp: &str) -> bool {
 
 /// AC1 for the seven types; returns them (the ones found, in spec order)
 /// and `_S`, the sections they need at their maxima.
-pub(crate) fn section_types(st: &Stamp, ctrl_bound: Option<i64>, block: Option<(i64, i64)>, section_max: Option<i64>, report: &mut Report) -> Result<(Vec<SType>, i64), Stop> {
+pub(crate) fn section_types(st: &Stamp, ctrl_bound: Option<i128>, block: Option<(i128, i128)>, section_max: Option<i128>, report: &mut Report) -> Flow<(Vec<SType>, i128)> {
     let mut found = Vec::new();
     for (key, pat) in TYPE_SPECS {
         let hits = find_sub(&st.subs, pat);
@@ -155,16 +155,14 @@ pub(crate) fn section_types(st: &Stamp, ctrl_bound: Option<i64>, block: Option<(
     for t in &mut found {
         one_type(t, ctrl_bound, block, report)?;
     }
-    let codes: Vec<i64> = found.iter().filter_map(|t| t.code).collect();
+    let codes: Vec<i128> = found.iter().filter_map(|t| t.code).collect();
     let mut distinct = codes.clone();
     distinct.sort_unstable();
     distinct.dedup();
     report.check("AC1", found.len() == 7 && codes.len() == distinct.len() && codes.len() == found.len(), format!("the seven section type codes are distinct (found {codes:?})"));
-    match bad_arithmetic(&st.text) {
-        Ok(bad) => report.check("AC1", bad.is_empty(), format!("every product and sum stated in the regime stamp section is exact: {bad:?}")),
-        Err(()) => return Err(Stop("SyntaxError: eval of a stated sum".into())),
-    };
-    let s: i64 = found.iter().filter_map(|t| t.nt).filter(|&n| n != 0).sum();
+    let bad = bad_arithmetic(&st.text)?;
+    report.check("AC1", bad.is_empty(), format!("every product and sum stated in the regime stamp section is exact: {bad:?}"));
+    let s: i128 = found.iter().filter_map(|t| t.nt).filter(|&n| n != 0).sum();
     let bound = section_max.filter(|&m| m != 0).unwrap_or(64);
     report.check("AC1", found.len() == 7 && (s <= bound || report64(&st.text)), format!("the seven types need {s} sections at their maxima; that fits the 64-section bound, or the text reports the excess and names Open item 1"));
     Ok((found, s))

@@ -3,17 +3,16 @@
 
 use super::merged::Merged;
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_24::py::tables;
+use crate::doccheck::family004::tables;
+use crate::doccheck::rejection_members::reasons::{CAMEL_DIGITS, NON_REJECTION_004_25};
 use crate::doccheck::text::{has, has_i, head, rx};
 
-/// 004-25's and 004-28's non-rejection outcome pattern (it has "no reason").
-pub(crate) const NONREJ: &str = r"not a rejection|never a rejection|\bignored\b|\bvalid\b|no reason";
 /// The forms that may be silent.
 pub(crate) const NEUTRAL: &str = r"repeat|unknown (section )?(type|code)|older|skipped";
 
 /// The reason tokens of 004-24 to 004-29 except 004-27.
 pub(crate) fn tokens(s: &str) -> Vec<String> {
-    rx(r"\b[A-Z][a-z]+(?:[A-Z][a-z0-9]+)+\b").find_iter(s).map(|m| m.as_str().to_string()).collect()
+    rx(CAMEL_DIGITS).find_iter(s).map(|m| m.as_str().to_string()).collect()
 }
 
 /// (form, outcome) of every row of the `Invalid form | Required outcome`
@@ -37,13 +36,13 @@ pub(crate) fn new_rows(stamp: &str) -> Vec<(String, String)> {
 
 /// One row's reason rules; `ac` is the criterion they report under.
 pub(crate) fn row_rules(form: &str, outcome: &str, merged: &Merged, ac: &str, report: &mut Report) {
-    let names: Vec<String> = tokens(outcome).into_iter().filter(|t| merged.rej_value.contains_key(t)).collect();
+    let names: Vec<String> = tokens(outcome).into_iter().filter(|t| merged.is_member(t)).collect();
     let bad: Vec<&String> = names.iter().filter(|n| !merged.is_control(n)).collect();
     if !bad.is_empty() {
         report.fail(ac, format!("an invalid form names a reason outside the control layer {bad:?}: {}", head(form, 50)));
         return;
     }
-    if names.is_empty() && !(has_i(NONREJ, outcome) && has_i(NEUTRAL, form)) {
+    if names.is_empty() && !(NON_REJECTION_004_25.is_match(outcome) && has_i(NEUTRAL, form)) {
         report.fail(ac, format!("a malformed form names no Reject reason (only repeats, unknown codes and older versions may be silent): {}", head(form, 60)));
         return;
     }
