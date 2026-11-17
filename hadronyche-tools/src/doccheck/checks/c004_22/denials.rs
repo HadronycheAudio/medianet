@@ -4,7 +4,7 @@
 //! --denials`. The last two are the review's port-weaker findings 1a and 1b
 //! (PR #42, round 1).
 
-use super::{WIRE_MD, WIRE_TOML};
+use super::{ARCH_MD, WIRE_MD, WIRE_TOML};
 use crate::doccheck::denial::{Denial, DenialEdit};
 use crate::doccheck::mutate::{anchored_replace, delete_row, rename_heading, replace_all, replace_in_line, strip_tags};
 
@@ -639,5 +639,181 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|t| anchored_replace(t, "| Rule 8 |", "| Rule 8 |", "| Rule \u{667} | dup | x | y | z |\n| Rule 8 |")),
         // outside the repertoire: red by rule (R13)
         expect: &[("REPERTOIRE", "")],
+    },
+    // review round 3 (PR #42): expected = the old script's verdict at c02d6ca,
+    // or REGEX_LIMIT where the script's answer lies past the backtracking limit
+    Denial {
+        name: "review_r3_001_backtracking_4000_backticked_names_then_zzz_32_bits_samples",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-105 |", "| C-105 |", &format!("| C-105 {} x `zzz` (32 bits, samples) |", "`a`, ".repeat(4000)))),
+        // the script finds AC2; the port's width pattern hits the backtracking
+        // limit on the list first: red by rule (R19)
+        expect: &[("REGEX_LIMIT", "")],
+    },
+    Denial {
+        name: "review_r3_002_backtracking_6000_backticked_names_then_zzz_32_bits_samples",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-105 |", "| C-105 |", &format!("| C-105 {} x `zzz` (32 bits, samples) |", "`a`, ".repeat(6000)))),
+        // the script finds AC2; the port's width pattern hits the backtracking
+        // limit on the list first: red by rule (R19)
+        expect: &[("REGEX_LIMIT", "")],
+    },
+    Denial {
+        name: "review_r3_003_lone_r_in_the_ticket_s_constants_line_adds_c_999_after_it",
+        file: TICKET,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "Constants traced:", "Constants traced:", "Constants traced: C-999\r")),
+        expect: &[("AC2", "")],
+    },
+    Denial {
+        name: "review_r3_004_crlf_ticket",
+        file: TICKET,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "", "ALL\n", "\r\n")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_005_lone_r_starts_3_8_extra_in_the_architecture_s_section_3",
+        file: ARCH_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### 3.7 Redundancy", "### 3.7 Redundancy", "### 3.7 Redundancy\r\r### 3.8 Extra\r")),
+        expect: &[("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_006_lone_r_inside_a_rule_row_row_breaks",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| Rule 7 |", "| Rule 7 |", "| Rule 7 |\r")),
+        expect: &[("AC1", ""), ("DoD", "")],
+    },
+    Denial {
+        name: "review_r3_007_tab_after_the_heading_hashes_ttraceability_table",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Traceability table", "## Traceability table\n", "##\tTraceability table\n")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_008_closing_hashes_traceability_table",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Traceability table", "## Traceability table\n", "## Traceability table ##\n")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_009_seven_hashes_are_not_a_heading_review_record",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Review record", "## Review record", "####### Review record")),
+        expect: &[("AC1", ""), ("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_010_indented_heading_review_record",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Review record", "## Review record", " ## Review record")),
+        expect: &[("AC1", ""), ("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_011_indented_fence_opens_code_before_the_audit_table",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Per-receiver field audit", "### Per-receiver field audit\n", "### Per-receiver field audit\n\n  ```\n")),
+        expect: &[("AC3", ""), ("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_012_tilde_fence_is_not_a_fence_for_004_22",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Per-receiver field audit", "### Per-receiver field audit\n", "### Per-receiver field audit\n\n~~~\nplain\n~~~\n")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_013_escaped_bracket_x_nope_still_a_link_to_the_regex",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "**Purpose:**", "**Purpose:**", "**Purpose:** \\[x](#nope)")),
+        expect: &[("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_014_nested_brackets_a_b_traceability_table",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "**Purpose:**", "**Purpose:**", "**Purpose:** [a [b]](#traceability-table)")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_015_upper_case_anchor_traceability_table",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "**Purpose:**", "**Purpose:**", "**Purpose:** [t](#Traceability-Table)")),
+        expect: &[("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_016_s_unit_for_residence_time_in_a_wire_visible_row",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-105 |", "`structural_latency` (32 bits, samples)", "`structural_latency` (32 bits, µs)")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_017_superscript_glued_to_a_unit_samples",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-105 |", "`structural_latency` (32 bits, samples)", "`structural_latency` (32 bits, samples²)")),
+        expect: &[("AC2", "")],
+    },
+    Denial {
+        name: "review_r3_018_en_dash_range_c_20_c_22_in_a_constants_cell",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-20, C-21, C-22 |", "| C-20, C-21, C-22 |", "| C-20 – C-22 |")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_019_minus_sign_range_c_20_c_22_not_a_range",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-20, C-21, C-22 |", "| C-20, C-21, C-22 |", "| C-20 − C-22 |")),
+        expect: &[("AC2", "")],
+    },
+    Denial {
+        name: "review_r3_020_final_sigma_in_a_heading_and_its_reference_copy_index",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Copy index (C-07)", "### Copy index (C-07)", "### Copy index (C-07)Σ")),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "review_r3_021_greek_heading_referenced_in_upper_case_notes_notes",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Rules 1 to 22", "### Rules 1 to 22\n", "### Rules 1 to 22\n\n#### ΔΣ notes\n\nShort note here `[decision]`.\n")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_022_empty_match_verdict_cell_none_with_tabs",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| `magic` | media packet | none |", "| `magic` | media packet | none |", "| `magic` | media packet |\tnone\t|")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_023_date_as_16_nov_2026_month_date",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "**Date:**", "**Date:** 2026-11-16", "**Date:** 16 Nov. 2026")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_024_date_as_16_november_2026",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "**Date:**", "**Date:** 2026-11-16", "**Date:** 16 November, 2026")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_025_main_branch_split_by_a_tab_b_and_s",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "**Purpose:**", "the review record of ticket 004-22:", "the review record of ticket 004-22 (main\tbranch):")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_057_backtracking_list_of_4000_then_zzz_32_bits_samples_at_the_en",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-105 |", "| implemented |", &format!("| implemented {} x `zzz` (32 bits, samples) |", "`a`, ".repeat(4000)))),
+        // the script finds it (slowly); the port hits the backtracking limit: red by rule (R19)
+        expect: &[("REGEX_LIMIT", "")],
+    },
+    Denial {
+        name: "review_r3_058_backtracking_list_of_6000_then_zzz_32_bits_samples_at_the_en",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-105 |", "| implemented |", &format!("| implemented {} x `zzz` (32 bits, samples) |", "`a`, ".repeat(6000)))),
+        // the script finds it (slowly); the port hits the backtracking limit: red by rule (R19)
+        expect: &[("REGEX_LIMIT", "")],
+    },
+    Denial {
+        name: "review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-105 |", "| implemented |", "| implemented x `zzz` (32 bits, samples) |")),
+        expect: &[("AC2", "")],
     },
 ];

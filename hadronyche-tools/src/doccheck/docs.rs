@@ -8,6 +8,14 @@
 //! lives in `/tmp` and no override variable exists.
 //!
 //! Paths are repository-relative with `/` separators (`doc/design/spec/wire.md`).
+//!
+//! The repertoire guard is a property of `Docs` (lead ruling R20): a check
+//! runs only through [`CheckSpec::evaluate`], which hands it a logged view;
+//! every text the check obtains from [`Docs::read`] (whatever the path:
+//! a ticket, a separate review record, a link target outside `doc/`) is
+//! logged and guarded, and one character outside the repertoire makes the
+//! verdict `REPERTOIRE`. No list of inputs is kept by any check. The same
+//! entry point turns a regex engine failure into `REGEX_LIMIT` (R19).
 
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the document sources themselves
 
@@ -17,7 +25,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use super::checks::CheckSpec;
 use super::pycompat::{PyStr, normpath};
+use super::repertoire::guard_text;
+use super::report::Report;
+use super::rx::{RxFailure, restore_failures, take_failures};
+
+/// The criterion of a regex engine failure (R19).
+pub const REGEX_LIMIT: &str = "REGEX_LIMIT";
 
 /// Where the unmodified documents come from.
 #[derive(Debug, Clone)]
@@ -35,7 +50,12 @@ pub struct Docs {
     overrides: BTreeMap<String, Option<Arc<str>>>,
     cache: Arc<Mutex<HashMap<String, Option<Arc<str>>>>>,
     tree: Arc<Mutex<Option<Arc<BTreeSet<String>>>>>,
+    /// Set inside [`CheckSpec::evaluate`]: every text read, in order.
+    log: Option<Arc<Mutex<ReadLog>>>,
 }
+
+/// The texts a check read, by normalised path, first read first.
+type ReadLog = Vec<(String, Arc<str>)>;
 
 impl Docs {
     /// The working tree of this repository (the crate's parent directory).
@@ -76,6 +96,7 @@ impl Docs {
             overrides: BTreeMap::new(),
             cache: Arc::new(Mutex::new(HashMap::new())),
             tree: Arc::new(Mutex::new(None)),
+            log: None,
         }
     }
 
@@ -117,6 +138,18 @@ impl Docs {
 
     /// The text of `path`, or `None` when it does not exist or is not UTF-8.
     pub fn read(&self, path: &str) -> Option<Arc<str>> {
+        let text = self.read_unlogged(path);
+        if let (Some(log), Some(t)) = (&self.log, &text) {
+            let key = norm(path);
+            let mut log = log.lock().expect("docs log poisoned");
+            if !log.iter().any(|(k, _)| *k == key) {
+                log.push((key, t.clone()));
+            }
+        }
+        text
+    }
+
+    fn read_unlogged(&self, path: &str) -> Option<Arc<str>> {
         let key = norm(path);
         if outside(&key) {
             return None;
@@ -240,6 +273,89 @@ impl Docs {
         }
         Ok(())
     }
+}
+
+impl CheckSpec {
+    /// The only way to run a check (its `run` is called nowhere else; a
+    /// source test holds this). The check gets a logged view of `docs`;
+    /// afterwards:
+    ///
+    /// * a text it read that holds a character outside the repertoire makes
+    ///   the verdict red under `REPERTOIRE` alone, one failure per such file
+    ///   (R13, R20): inside the repertoire the port equals its script, and
+    ///   outside it nothing else it found is meaningful;
+    /// * otherwise a regex engine failure during the run (backtracking
+    ///   limit, a pattern that does not compile) makes the verdict red
+    ///   under `REGEX_LIMIT` alone, with the pattern and the file:line of
+    ///   the text it was matching (R19): an engine failure is never "no
+    ///   match", and the rest of the verdict cannot be trusted.
+    pub fn evaluate(&self, docs: &Docs) -> Report {
+        let outer = take_failures();
+        let log = Arc::new(Mutex::new(ReadLog::new()));
+        let mut view = docs.clone();
+        view.log = Some(log.clone());
+        let report = (self.run)(&view);
+        let failures = take_failures();
+        restore_failures(outer);
+        let read = std::mem::take(&mut *log.lock().expect("docs log poisoned"));
+        let mut guarded = Report::default();
+        for (path, text) in &read {
+            guard_text(path, text, &mut guarded);
+        }
+        if !guarded.failures.is_empty() {
+            return guarded;
+        }
+        if failures.is_empty() {
+            return report;
+        }
+        let mut limited = Report::default();
+        for f in dedup(failures) {
+            let (file, line) = locate(&read, &f.hay);
+            let pattern: String = f.pattern.chars().take(160).collect();
+            let what = format!(
+                "the regex engine failed on pattern {pattern:?} ({}); the check cannot \
+                 tell match from no match, so it is red by rule (R19)",
+                f.what
+            );
+            match file {
+                Some(file) => limited.fail_at(REGEX_LIMIT, &file, line, what),
+                None => limited.fail(
+                    REGEX_LIMIT,
+                    format!("{what}; the text begins {:?}", head(&f.hay)),
+                ),
+            }
+        }
+        limited
+    }
+}
+
+fn dedup(failures: Vec<RxFailure>) -> Vec<RxFailure> {
+    let mut out: Vec<RxFailure> = Vec::new();
+    for f in failures {
+        if !out.iter().any(|o| o.pattern == f.pattern && o.hay == f.hay) {
+            out.push(f);
+        }
+    }
+    out
+}
+
+fn head(text: &str) -> String {
+    text.chars().take(60).collect()
+}
+
+/// The first document read whose text contains the start of `hay`, and
+/// the 1-based line where it starts (the unit being matched).
+fn locate(read: &ReadLog, hay: &str) -> (Option<String>, usize) {
+    let probe: String = hay.trim_start().chars().take(60).collect();
+    if probe.is_empty() {
+        return (None, 0);
+    }
+    for (path, text) in read {
+        if let Some(at) = text.find(probe.as_str()) {
+            return (Some(path.clone()), text[..at].matches('\n').count() + 1);
+        }
+    }
+    (None, 0)
 }
 
 fn git_archive(repo: &Path, commit: &str, prefixes: &[&str], dest: &Path) -> std::io::Result<()> {

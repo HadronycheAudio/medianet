@@ -9,26 +9,85 @@
 //! by `fancy-regex`. Callers see one API ([`Rx`], [`M`], [`Caps`]) whichever
 //! engine runs.
 //!
-//! `fancy-regex` reports an error instead of a match when its backtracking
-//! limit is exceeded; [`Rx`] then counts "no match" and records the event in
-//! [`Rx::limit_hits`] (a check that hits it is suspect, and the counter is
-//! asserted to stay zero by the library tests on the real documents).
+//! Iteration (`find_iter`, `captures_iter`, `replace*`, `split`) follows
+//! Python 3.7+: an empty match is allowed right after a non-empty one, and
+//! after an empty match the next one must advance (`re.sub("x*", "-",
+//! "abxd")` is `-a-b--d-`).
+//!
+//! A regex engine error is never "no match" (lead ruling R19). When
+//! `fancy-regex` exceeds its backtracking limit, or a pattern did not
+//! compile, the event is recorded in this thread's failure list
+//! ([`take_failures`]) and the match is reported empty. A check never sees
+//! that list: the only entry point to a check,
+//! [`crate::doccheck::checks::CheckSpec::check`], clears it before the run
+//! and turns the report red under criterion `REGEX_LIMIT` when it is not
+//! empty afterwards, with the pattern and the place of the text it was
+//! matching. A check cannot ignore or discard it, and a source test forbids
+//! calling a check's `run` other than through `check`.
 
+use std::cell::RefCell;
 use std::ops::Index;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-static LIMIT_HITS: AtomicUsize = AtomicUsize::new(0);
+/// The backtracking steps `fancy-regex` may take for one match attempt.
+/// Python has no limit (it is slow, then right); past this one the check is
+/// red under `REGEX_LIMIT`, never silently "no match" (R19). The real
+/// documents stay far below it (the pilots' tests assert no `REGEX_LIMIT`).
+pub const BACKTRACK_LIMIT: usize = 1_000_000;
+
+/// One regex engine failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RxFailure {
+    /// The pattern as written in the check.
+    pub pattern: String,
+    /// What went wrong (backtracking limit, compile error).
+    pub what: String,
+    /// The start of the text being matched (to locate it in a document).
+    pub hay: String,
+}
+
+thread_local! {
+    static FAILURES: RefCell<Vec<RxFailure>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The failures recorded on this thread since the last call, emptied.
+pub fn take_failures() -> Vec<RxFailure> {
+    FAILURES.with(|f| std::mem::take(&mut *f.borrow_mut()))
+}
+
+/// Puts back failures taken by an enclosing evaluation (a nested one leaves
+/// its caller's record as it found it).
+pub fn restore_failures(failures: Vec<RxFailure>) {
+    FAILURES.with(|f| {
+        let mut f = f.borrow_mut();
+        let mine = std::mem::take(&mut *f);
+        *f = failures;
+        f.extend(mine);
+    });
+}
+
+fn record(pattern: &str, what: &str, hay: &str) {
+    FAILURES.with(|f| {
+        f.borrow_mut().push(RxFailure {
+            pattern: pattern.to_string(),
+            what: what.to_string(),
+            hay: hay.chars().take(200).collect(),
+        });
+    });
+}
 
 enum Engine {
     Plain(regex::Regex),
     /// The look-around pattern, and a plain prefilter that matches wherever
     /// it does (the same pattern without its boundary assertions).
     Fancy(fancy_regex::Regex, regex::Regex),
+    /// A pattern that did not compile: every use records the failure.
+    Broken(String),
 }
 
 /// A compiled pattern.
 pub struct Rx {
     engine: Engine,
+    pattern: String,
 }
 
 /// A match: byte offsets into the haystack, and the matched text.
@@ -90,31 +149,56 @@ impl Index<usize> for Caps<'_> {
     }
 }
 
-fn limit_hit() {
-    LIMIT_HITS.fetch_add(1, Ordering::Relaxed);
-}
-
 impl Rx {
-    /// Compiles `source` (already translated); a `prefilter` (the pattern
-    /// without boundaries) selects the look-around engine.
-    pub fn new(source: &str, prefilter: Option<&str>) -> Result<Rx, String> {
-        let engine = if let Some(pre) = prefilter {
-            Engine::Fancy(
-                fancy_regex::RegexBuilder::new(source)
-                    .backtrack_limit(10_000_000)
-                    .build()
-                    .map_err(|e| e.to_string())?,
-                regex::Regex::new(pre).map_err(|e| e.to_string())?,
-            )
-        } else {
-            Engine::Plain(regex::Regex::new(source).map_err(|e| e.to_string())?)
+    /// Compiles `source` (the translated form of `pattern`); a `prefilter`
+    /// (the pattern without its look-arounds) selects the look-around
+    /// engine. A compile error does not panic: it gives a pattern whose
+    /// every use records the failure (R19).
+    pub fn new(pattern: &str, source: &str, prefilter: Option<&str>) -> Rx {
+        let engine = match prefilter {
+            Some(pre) => {
+                let fancy = fancy_regex::RegexBuilder::new(source)
+                    .backtrack_limit(BACKTRACK_LIMIT)
+                    .build();
+                match (fancy, regex::Regex::new(pre)) {
+                    (Ok(f), Ok(p)) => Engine::Fancy(f, p),
+                    (Err(e), _) => Engine::Broken(e.to_string()),
+                    (_, Err(e)) => Engine::Broken(e.to_string()),
+                }
+            }
+            None => regex::Regex::new(source)
+                .map_or_else(|e| Engine::Broken(e.to_string()), Engine::Plain),
         };
-        Ok(Rx { engine })
+        Rx {
+            engine,
+            pattern: pattern.to_string(),
+        }
     }
 
-    /// How many times a fancy match gave up at its backtracking limit.
-    pub fn limit_hits() -> usize {
-        LIMIT_HITS.load(Ordering::Relaxed)
+    /// A pattern refused before compiling (`why`): every use records it.
+    pub fn refused(pattern: &str, why: &str) -> Rx {
+        Rx {
+            engine: Engine::Broken(why.to_string()),
+            pattern: pattern.to_string(),
+        }
+    }
+
+    /// The compile error, if the pattern did not compile.
+    pub fn compile_error(&self) -> Option<&str> {
+        match &self.engine {
+            Engine::Broken(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    fn broken(&self, hay: &str) {
+        if let Engine::Broken(e) = &self.engine {
+            record(
+                &self.pattern,
+                &format!("the pattern does not compile ({e})"),
+                hay,
+            );
+        }
     }
 
     /// `re.search` as a boolean.
@@ -123,10 +207,14 @@ impl Rx {
             Engine::Plain(r) => r.is_match(hay),
             Engine::Fancy(r, pre) => {
                 pre.is_match(hay)
-                    && r.is_match(hay).unwrap_or_else(|_| {
-                        limit_hit();
+                    && r.is_match(hay).unwrap_or_else(|e| {
+                        record(&self.pattern, &e.to_string(), hay);
                         false
                     })
+            }
+            Engine::Broken(_) => {
+                self.broken(hay);
+                false
             }
         }
     }
@@ -136,7 +224,7 @@ impl Rx {
         self.captures(hay).and_then(|c| c.get(0))
     }
 
-    /// Every non-overlapping match, left to right.
+    /// Every match, left to right, with Python's empty-match rule.
     pub fn find_iter<'h>(&self, hay: &'h str) -> std::vec::IntoIter<M<'h>> {
         self.captures_iter(hay)
             .filter_map(|c| c.get(0))
@@ -144,38 +232,66 @@ impl Rx {
             .into_iter()
     }
 
-    /// The groups of the leftmost match.
-    pub fn captures<'h>(&self, hay: &'h str) -> Option<Caps<'h>> {
+    /// The groups of the leftmost match at or after `pos`; `Err` on an engine
+    /// failure (recorded).
+    fn captures_at<'h>(&self, hay: &'h str, pos: usize) -> Option<Caps<'h>> {
         match &self.engine {
-            Engine::Plain(r) => r.captures(hay).map(|c| plain_caps(hay, &c)),
-            Engine::Fancy(_, pre) if !pre.is_match(hay) => None,
-            Engine::Fancy(r, _) => match r.captures(hay) {
+            Engine::Plain(r) => r.captures_at(hay, pos).map(|c| plain_caps(hay, &c)),
+            Engine::Fancy(r, _) => match r.captures_from_pos(hay, pos) {
                 Ok(c) => c.map(|c| fancy_caps(hay, &c)),
-                Err(_) => {
-                    limit_hit();
+                Err(e) => {
+                    record(&self.pattern, &e.to_string(), hay);
                     None
                 }
             },
+            Engine::Broken(_) => {
+                self.broken(hay);
+                None
+            }
         }
     }
 
-    /// The groups of every non-overlapping match, left to right.
+    /// The groups of the leftmost match.
+    pub fn captures<'h>(&self, hay: &'h str) -> Option<Caps<'h>> {
+        if let Engine::Fancy(_, pre) = &self.engine
+            && !pre.is_match(hay)
+        {
+            return None;
+        }
+        self.captures_at(hay, 0)
+    }
+
+    /// The groups of every match, left to right: after an empty match the
+    /// next must advance; an empty match right after a non-empty one counts
+    /// (Python 3.7+).
     pub fn captures_iter<'h>(&self, hay: &'h str) -> std::vec::IntoIter<Caps<'h>> {
-        let all: Vec<Caps<'h>> = match &self.engine {
-            Engine::Plain(r) => r.captures_iter(hay).map(|c| plain_caps(hay, &c)).collect(),
-            Engine::Fancy(_, pre) if !pre.is_match(hay) => Vec::new(),
-            Engine::Fancy(r, _) => r
-                .captures_iter(hay)
-                .map_while(|c| match c {
-                    Ok(c) => Some(fancy_caps(hay, &c)),
-                    Err(_) => {
-                        limit_hit();
-                        None
-                    }
-                })
-                .collect(),
-        };
-        all.into_iter()
+        let mut out = Vec::new();
+        if let Engine::Fancy(_, pre) = &self.engine
+            && !pre.is_match(hay)
+        {
+            return out.into_iter();
+        }
+        let (mut pos, mut must_advance) = (0, false);
+        while pos <= hay.len() {
+            let Some(c) = self.captures_at(hay, pos) else {
+                break;
+            };
+            let Some((start, end)) = c.groups.first().copied().flatten() else {
+                break;
+            };
+            if must_advance && start == pos && end == pos {
+                must_advance = false;
+                match hay[pos..].chars().next() {
+                    Some(ch) => pos += ch.len_utf8(),
+                    None => break,
+                }
+                continue;
+            }
+            must_advance = start == end;
+            pos = end;
+            out.push(c);
+        }
+        out.into_iter()
     }
 
     /// `re.sub(pattern, rep, hay, count=1)`; `rep` may use `$1`, `${1}`, `$$`.
@@ -288,10 +404,14 @@ fn expand(rep: &str, c: &Caps) -> String {
 mod tests {
     use super::*;
 
+    fn plain(p: &str) -> Rx {
+        Rx::new(p, p, None)
+    }
+
     #[test]
     fn both_engines_share_one_api() {
         for pre in [None, Some(r"(\d+)-(\d+)")] {
-            let r = Rx::new(r"(\d+)-(\d+)", pre).unwrap();
+            let r = Rx::new("p", r"(\d+)-(\d+)", pre);
             let c = r.captures("a 1-22 b 3-4").unwrap();
             assert_eq!(&c[1], "1");
             assert_eq!(c.get(2).unwrap().as_str(), "22");
@@ -304,7 +424,37 @@ mod tests {
             );
             assert_eq!(r.find("x 5-6").map(|m| (m.start(), m.end())), Some((2, 5)));
         }
-        let lit = Rx::new("a", None).unwrap();
-        assert_eq!(lit.replace_all_literal("aXa", "$1"), "$1X$1");
+        assert_eq!(plain("a").replace_all_literal("aXa", "$1"), "$1X$1");
+    }
+
+    #[test]
+    fn empty_matches_follow_python() {
+        assert_eq!(plain("x*").replace_all("abxd", "-"), "-a-b--d-");
+        assert_eq!(plain(r"\s*").replace_all("a b", "-"), "-a--b-");
+        assert_eq!(
+            plain(",?").split("a,b").collect::<Vec<_>>(),
+            vec!["", "a", "", "b", ""]
+        );
+    }
+
+    #[test]
+    fn engine_failures_are_recorded_never_silent() {
+        take_failures();
+        let bad = Rx::new("(", "(", None);
+        assert!(bad.compile_error().is_some());
+        assert!(!bad.is_match("x"));
+        let f = take_failures();
+        assert_eq!(f.len(), 1);
+        assert!(f[0].what.contains("does not compile"));
+        // exponential backtracking (review r3, finding 1): the limit is a
+        // recorded failure, never "no match"
+        let r = crate::doccheck::text::rx(r"\b[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+\b");
+        let hay = format!("Aa{}_ x BadMagik", "B".repeat(26));
+        let _ = r.find_iter(&hay).count();
+        assert!(
+            !take_failures().is_empty(),
+            "a backtracking limit is recorded"
+        );
+        assert!(take_failures().is_empty(), "taken once");
     }
 }

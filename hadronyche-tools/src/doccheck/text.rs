@@ -9,7 +9,7 @@ use super::pycompat::PyStr;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::pycompat::{IntError, is_nd, parse_int, relaxed, translate};
+use super::pycompat::{IntError, is_nd, parse_int, relaxed, translate, unsupported};
 use super::rx::Rx;
 
 /// The most distinct patterns the cache keeps. Patterns are keyed by their
@@ -36,9 +36,11 @@ fn cached(pattern: &str, python: bool) -> Arc<Rx> {
         (pattern.to_string(), false)
     };
     let pre = fancy.then(|| relaxed(pattern));
-    let compiled = Arc::new(
-        Rx::new(&source, pre.as_deref()).unwrap_or_else(|e| panic!("bad pattern {pattern:?}: {e}")),
-    );
+    let refused = if python { unsupported(pattern) } else { None };
+    let compiled = Arc::new(match refused {
+        Some(why) => Rx::refused(pattern, &why),
+        None => Rx::new(pattern, &source, pre.as_deref()),
+    });
     let mut cache = cache.lock().expect("regex cache");
     if cache.len() < RX_CACHE_LIMIT {
         cache.insert(pattern.to_string(), compiled.clone());
@@ -52,9 +54,10 @@ fn cached(pattern: &str, python: bool) -> Arc<Rx> {
 /// Patterns are written as in the scripts; prefix `(?i)` for `re.I`. The
 /// classes `\w`, `\W`, `\s`, `\S` and the boundaries `\b`, `\B` are
 /// Python's ([`super::pycompat::translate`]); a pattern with `\b`/`\B` runs
-/// on `fancy-regex` ([`super::rx`]). A bad pattern is a programming error in
-/// a check and panics with the pattern; a pattern that embeds document text
-/// must escape it ([`regex::escape`]).
+/// on `fancy-regex` ([`super::rx`]). A pattern that does not compile, or a
+/// match that exceeds the backtracking limit, never panics and never reads
+/// "no match": it turns the check red under `REGEX_LIMIT` (R19). A pattern
+/// that embeds document text must escape it ([`regex::escape`]).
 pub fn rx(pattern: &str) -> Arc<Rx> {
     cached(pattern, true)
 }
@@ -82,7 +85,7 @@ pub fn starts(pattern: &str, text: &str) -> bool {
 
 /// `re.fullmatch(pattern, text)`.
 pub fn full(pattern: &str, text: &str) -> bool {
-    rx(&format!("^(?:{pattern})$")).is_match(text)
+    rx(&format!("^(?:{pattern})\\z")).is_match(text)
 }
 
 pub use super::pycompat::splitlines;

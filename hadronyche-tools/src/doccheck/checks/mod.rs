@@ -16,8 +16,10 @@ use super::policy::TomlReader;
 pub struct CheckSpec {
     /// The ticket id, as in `checks/<id>.sh`.
     pub id: &'static str,
-    /// The port.
-    pub run: fn(&Docs) -> Report,
+    /// The port. Called only by [`CheckSpec::evaluate`] (which guards what
+    /// it reads and turns regex engine failures red); a source test forbids
+    /// any other call.
+    pub(crate) run: fn(&Docs) -> Report,
     /// Environment the script must get under the harness: the override
     /// variables it honours, set to the exported copies, so it skips its
     /// repository-level cargo runs (those moved to
@@ -175,8 +177,8 @@ mod tests {
         for spec in super::registry() {
             for (file, edit) in &cases {
                 let docs = base.mutate(file, |t| edit(t));
-                let run = spec.run;
-                let outcome = std::panic::catch_unwind(|| run(&docs));
+                let outcome =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| spec.evaluate(&docs)));
                 assert!(
                     outcome.is_ok(),
                     "{} panicked on a corrupted {file}",
@@ -218,8 +220,9 @@ mod tests {
                         .with("doc/design/spec/wire.md", md.clone())
                         .with("doc/design/spec/wire.toml", t.clone())
                         .with("doc/design/02-constants.md", constants.clone());
-                    let run = spec.run;
-                    let outcome = std::panic::catch_unwind(|| run(&docs));
+                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        spec.evaluate(&docs)
+                    }));
                     assert!(
                         outcome.is_ok(),
                         "{} panicked on wire.md {md:?} and wire.toml {t:?}",

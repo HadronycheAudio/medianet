@@ -36,7 +36,7 @@ pub fn report_of(spec: &'static CheckSpec) -> Report {
     if let Some(r) = cache.lock().expect("report cache").get(spec.id) {
         return r.clone();
     }
-    let r = (spec.run)(repo());
+    let r = spec.evaluate(repo());
     cache
         .lock()
         .expect("report cache")
@@ -73,7 +73,7 @@ pub fn red_phase(spec: &CheckSpec, commit: &str, criteria: &[&str]) {
     }
     let docs =
         Docs::at_commit(root, commit).unwrap_or_else(|e| panic!("red-phase {}: {e}", spec.id));
-    let r = (spec.run)(&docs);
+    let r = spec.evaluate(&docs);
     let failed: Vec<String> = r.failed_criteria().into_iter().collect();
     visible(&format!(
         "EXECUTED red-phase {} at {commit}: FAIL {}",
@@ -92,7 +92,7 @@ pub fn check_denial(spec: &CheckSpec, name: &str) {
         .find(|d| d.name == name)
         .unwrap_or_else(|| panic!("{}: no denial named {name}", spec.id));
     let docs = d.apply(repo()).unwrap_or_else(|e| panic!("{e}"));
-    let r = (spec.run)(&docs);
+    let r = spec.evaluate(&docs);
     let unmet = d.unmet(&r);
     assert!(
         unmet.is_empty(),

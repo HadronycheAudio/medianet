@@ -223,7 +223,7 @@ fn row(
     timer: &mut Timer,
 ) -> Row {
     let t = Instant::now();
-    let report = (spec.run)(docs);
+    let report = spec.evaluate(docs);
     timer.port += t.elapsed();
     let port_criteria = report.failed_criteria();
     let port_crash = report.crash.is_some();
@@ -356,7 +356,7 @@ fn denials(
         let v = timed(timer, || sb.run_edited(d.file, edited.as_deref()))?;
         let mutated = d.apply(docs)?;
         let mut r = row(spec, format!("denial {}", d.name), v, &mutated, timer);
-        let unmet = d.unmet(&(spec.run)(&mutated));
+        let unmet = d.unmet(&spec.evaluate(&mutated));
         if !unmet.is_empty() {
             r.status = Status::Unmet(unmet.join("; "));
         }

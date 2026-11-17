@@ -6,8 +6,8 @@
 //! reproduces the script's variant of every shared rule, named where it is
 //! used:
 //!
-//! * the repertoire guard first (R13), on wire.md, wire.toml, the
-//!   architecture, the ticket and every `doc/` file wire.md links to;
+//! * the repertoire guard (R13) on every text it reads, by construction
+//!   (R20: [`CheckSpec::evaluate`] guards each [`Docs::read`]);
 //! * text read as `open()` does, split with `split("\n")`
 //!   ([`LineSplit::Nl`], [`LINES`]);
 //! * tables by [`TableRules::T004_22`] (plain `split("|")`, cell-wise
@@ -50,7 +50,7 @@ use crate::doccheck::policy::{LineSplit, TableRules, TomlReader};
 use crate::doccheck::tables::Row;
 use crate::doccheck::ticket::Ticket;
 use crate::doccheck::pyvalue::{Dict, PyValue};
-use crate::doccheck::{repertoire, tomllib};
+use crate::doccheck::tomllib;
 use crate::doccheck::{Docs, Report};
 
 /// The specification.
@@ -249,33 +249,9 @@ fn find_trace(inp: &Inputs) -> Option<Trace> {
     })
 }
 
-/// The documents wire.md links to under `doc/` (a superset of those the
-/// check reads for their anchors, or as a separate review record): inputs
-/// for the repertoire guard.
-fn linked_documents(docs: &Docs) -> Vec<String> {
-    let Some(text) = docs.read(WIRE_MD) else { return Vec::new() };
-    let mut out: Vec<String> = crate::doccheck::links::links(&text)
-        .into_iter()
-        .filter(|l| !l.target.starts_with("http") && !l.path().is_empty())
-        .map(|l| crate::doccheck::docs::join(refs::base_of(WIRE_MD), l.path()))
-        .filter(|p| p.starts_with("doc/") && docs.is_file(p))
-        .collect();
-    out.sort();
-    out.dedup();
-    out
-}
-
 /// The check.
 pub fn run(docs: &Docs) -> Report {
     let mut report = Report::default();
-    let ticket = Ticket::load(docs, "004-22").map(|t| t.path);
-    let mut inputs: Vec<String> = [WIRE_MD, WIRE_TOML, ARCH_MD].iter().map(|p| p.to_string()).collect();
-    inputs.extend(ticket);
-    inputs.extend(linked_documents(docs));
-    let paths: Vec<&str> = inputs.iter().map(String::as_str).collect();
-    if !repertoire::guard(docs, &paths, &mut report) {
-        return report;
-    }
     let Some(inp) = load(docs, &mut report) else {
         return report;
     };

@@ -20,8 +20,8 @@
 //!   values queried as Python did (`int()`, `isinstance`, `==` across int
 //!   and float, iteration over a string's characters); the script's
 //!   uncaught exceptions are modelled as crashes (`Report::crash`);
-//! * the repertoire guard first, on wire.md, wire.toml and the constants
-//!   (R13);
+//! * the repertoire guard (R13) on every text it reads, by construction
+//!   (R20: [`CheckSpec::evaluate`] guards each [`Docs::read`]);
 //! * integers checked (`pycompat::parse_int`): a number beyond `i128` is
 //!   reported, never wrapped.
 //!
@@ -49,7 +49,7 @@ mod validity;
 use super::{CheckSpec, KnownDifference, Target};
 use crate::doccheck::family004::Ctx;
 use crate::doccheck::pyvalue::Dict;
-use crate::doccheck::{repertoire, tomlsubset};
+use crate::doccheck::tomlsubset;
 use crate::doccheck::markdown::Markdown;
 use crate::doccheck::policy::{LineSplit, TomlReader};
 use crate::doccheck::pycompat::universal_newlines;
@@ -116,9 +116,6 @@ const KNOWN: &[KnownDifference] = &[];
 /// The check.
 pub fn run(docs: &Docs) -> Report {
     let mut report = Report::default();
-    if !repertoire::guard(docs, &[WIRE_MD, WIRE_TOML, CONSTANTS_MD], &mut report) {
-        return report;
-    }
     // read_text (universal newlines), norm (digit groups), splitlines
     let wire = match docs.read(WIRE_MD) {
         Some(t) => LINES.normalize(&join_digit_groups(&universal_newlines(&t))),

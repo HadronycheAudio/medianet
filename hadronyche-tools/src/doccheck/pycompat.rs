@@ -7,11 +7,14 @@
 //! * regex classes — [`translate`]: Python's `\w` is `str.isalnum() or "_"`
 //!   (letters `L*`, every numeric `N*` such as `²`, `_`), Rust's is
 //!   Alphabetic + marks + `Nd` + connector punctuation; Python's `\s` also
-//!   holds `\x1c`–`\x1f`. [`crate::doccheck::text::rx`] translates every
-//!   pattern, so all checks get Python's classes. Known limit: `\b` keeps
-//!   Rust's word definition (it differs from Python's only next to a
-//!   non-decimal numeral such as `²` or a combining mark); a port that needs
-//!   it exact writes the boundary as a class.
+//!   holds `\x1c`–`\x1f`; `\b`/`\B` use Python's word class; `$` (without
+//!   `(?m)`) also matches before a trailing newline.
+//!   [`crate::doccheck::text::rx`] translates every pattern, so all checks
+//!   get Python's semantics. Constructs with no faithful translation
+//!   ([`unsupported`]: `\Z`, `{,n}`, back-references, look-behind) are
+//!   refused: the pattern does not build, which fails the port's pattern
+//!   test and, at check time, turns the check red (`REGEX_LIMIT`), never a
+//!   panic.
 //! * line boundaries — [`splitlines`] (`str.splitlines()`: `\n`, `\r`,
 //!   `\r\n`, VT, FF, FS, GS, RS, NEL, U+2028, U+2029) and
 //!   [`universal_newlines`] (what `open()` in text mode does on read:
@@ -50,21 +53,98 @@ const PY_S: &str = r"\s\x1c-\x1f";
 /// it needs look-around (`fancy-regex`). Everything else passes through
 /// (`\d` is Unicode `Nd` in both).
 pub fn translate(pattern: &str) -> (String, bool) {
-    translate_with(pattern, PY_BOUNDARY, PY_NOT_BOUNDARY)
+    translate_with(pattern, PY_BOUNDARY, PY_NOT_BOUNDARY, PY_DOLLAR)
 }
 
-/// The pattern with `\b`/`\B` removed: it matches wherever the translated
-/// pattern does (and more), so it is a sound prefilter for it.
+/// The pattern with `\b`/`\B` and Python's `$` removed: it matches
+/// wherever the translated pattern does (and more), so it is a sound
+/// prefilter for it.
 pub fn relaxed(pattern: &str) -> String {
-    translate_with(pattern, "", "").0
+    translate_with(pattern, "", "", "").0
 }
 
-fn translate_with(pattern: &str, boundary: &str, not_boundary: &str) -> (String, bool) {
+/// Python's `$` without `re.M`: the end of the text, or before a newline
+/// that ends it.
+const PY_DOLLAR: &str = r"(?=\n?\z)";
+
+/// True when the pattern sets `(?m)` in its leading flag group (then `$`
+/// is the end of a line in both engines).
+fn multiline(pattern: &str) -> bool {
+    pattern.strip_prefix("(?").is_some_and(|rest| {
+        rest.chars()
+            .take_while(|c| c.is_ascii_alphabetic())
+            .any(|c| c == 'm')
+    })
+}
+
+/// Why `pattern` uses a Python construct the library refuses (no faithful
+/// translation), or `None`: `\Z`, `{,n}`, a back-reference (`\1`,
+/// `(?P=name)`) or a look-behind (`(?<=`, `(?<!`). Python accepts them;
+/// a port that needs one must rewrite its pattern.
+pub fn unsupported(pattern: &str) -> Option<String> {
+    let c: Vec<char> = pattern.chars().collect();
+    let mut in_class = false;
+    let mut i = 0;
+    let refuse = |what: &str| {
+        Some(format!(
+            "{what} is not supported by the library (PORTING.md, \"Regex constructs\")"
+        ))
+    };
+    while i < c.len() {
+        match c[i] {
+            '\\' => {
+                match c.get(i + 1) {
+                    Some('Z') if !in_class => return refuse(r"`\Z`"),
+                    Some('1'..='9') if !in_class => return refuse("a back-reference"),
+                    _ => {}
+                }
+                i += 2;
+                continue;
+            }
+            '[' if !in_class => {
+                in_class = true;
+                if c.get(i + 1) == Some(&'^') {
+                    i += 1;
+                }
+                if c.get(i + 1) == Some(&']') {
+                    i += 1;
+                }
+            }
+            ']' if in_class => in_class = false,
+            '(' if !in_class => {
+                let next: String = c[i + 1..].iter().take(3).collect();
+                if next.starts_with("?<=") || next.starts_with("?<!") {
+                    return refuse("a look-behind");
+                }
+                if next.starts_with("?P=") {
+                    return refuse("a named back-reference");
+                }
+            }
+            '{' if !in_class && c.get(i + 1) == Some(&',') => return refuse("`{,n}`"),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+fn translate_with(
+    pattern: &str,
+    boundary: &str,
+    not_boundary: &str,
+    dollar: &str,
+) -> (String, bool) {
     let mut out = String::with_capacity(pattern.len() + 16);
     let mut chars = pattern.chars().peekable();
     let mut in_class = false;
     let mut fancy = false;
+    let py_dollar = !multiline(pattern);
     while let Some(c) = chars.next() {
+        if c == '$' && !in_class && py_dollar {
+            fancy = true;
+            out.push_str(dollar);
+            continue;
+        }
         if c == '\\' {
             let Some(n) = chars.next() else {
                 out.push('\\');
@@ -299,19 +379,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dollar_and_refused_constructs_follow_python() {
+        use crate::doccheck::text::{full, has, rx};
+        // Python: re.search("a$", "a\n") matches; fullmatch does not
+        assert!(has("a$", "a\n") && has("a$", "a") && !has("a$", "a\n\n"));
+        assert!(!has("a$", "ab") && has("(?m)a$", "a\nb"));
+        assert!(!full("a", "a\n") && full("a", "a"));
+        for (p, why) in [
+            (r"a\Z", r"`\Z`"),
+            ("a{,2}b", "`{,n}`"),
+            (r"(a)\1", "back-reference"),
+            ("(?P<x>a)(?P=x)", "back-reference"),
+            (r"(?<=\d)x", "look-behind"),
+            (r"(?<!\d)x", "look-behind"),
+        ] {
+            let msg = unsupported(p).unwrap_or_default();
+            assert!(msg.contains(why), "{p}: {msg}");
+            assert!(rx(p).compile_error().is_some(), "{p} does not build");
+        }
+        for p in [r"[\Z]", r"a{1,2}", r"\\1", r"[(?<=]", r"(?:x)", r"\{,"] {
+            assert_eq!(unsupported(p), None, "{p}");
+        }
+    }
+
+    #[test]
     fn python_word_class() {
         assert!(is_word('²') && is_word('a') && is_word('_') && is_word('٣'));
         assert!(!is_word('\u{301}') && !is_word('-'));
         let re = regex::Regex::new(&translate(r"[^\w\- ]").0).unwrap();
         assert!(!re.is_match("²"), "² is a Python word character");
         assert!(re.is_match("\u{301}"), "a combining mark is not");
-        let w = regex::Regex::new(&translate(r"^\w+$").0).unwrap();
+        let w = crate::doccheck::text::rx(r"^\w+$");
         assert!(w.is_match("x²"));
-        let s = regex::Regex::new(&translate(r"^\s$").0).unwrap();
+        let s = crate::doccheck::text::rx(r"^\s$");
         assert!(s.is_match("\u{1c}") && s.is_match(" "));
         assert_eq!(translate(r"a\\w[]x]").0, r"a\\w[\]x]");
         assert_eq!(translate(r"\d\.\(").0, r"\d\.\(");
         assert!(translate(r"\bx").1 && !translate(r"x").1);
+        assert!(translate(r"x$").1 && !translate(r"(?m)x$").1 && !translate(r"[$]").1);
         let b = crate::doccheck::text::rx(r"branch\b");
         assert!(
             !b.is_match("branch²"),

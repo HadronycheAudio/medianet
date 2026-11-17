@@ -701,6 +701,197 @@ pub const DENIALS: &[Denial] = &[
         edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe reply", "|---|---|---|---|---|\n", "")),
         expect: &[("AC1", ""), ("AC4", "")],
     },
+    // review round 3 (PR #42): expected = the old script's verdict at c02d6ca,
+    // or REGEX_LIMIT where the script's answer lies past the backtracking limit
+    Denial {
+        name: "review_r3_026_backtracking_aab_b_24_before_a_non_member_token_in_an_outcom",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Matching a reply to its probe", "| drop and count under BadMagic |", &format!("| drop and count under BadMagic, Aa{}_ x BadMagik |", "B".repeat(24)))),
+        // the script finds it (slowly); the port hits the backtracking limit: red by rule (R19)
+        expect: &[("REGEX_LIMIT", "")],
+    },
+    Denial {
+        name: "review_r3_027_backtracking_aab_b_28_before_a_non_member_token",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Matching a reply to its probe", "| drop and count under BadMagic |", &format!("| drop and count under BadMagic, Aa{}_ x BadMagik |", "B".repeat(28)))),
+        // the script finds it (slowly); the port hits the backtracking limit: red by rule (R19)
+        expect: &[("REGEX_LIMIT", "")],
+    },
+    Denial {
+        name: "review_r3_028_backtracking_aab_b_32_before_a_non_member_token",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Matching a reply to its probe", "| drop and count under BadMagic |", &format!("| drop and count under BadMagic, Aa{}_ x BadMagik |", "B".repeat(32)))),
+        // the script finds it (slowly); the port hits the backtracking limit: red by rule (R19)
+        expect: &[("REGEX_LIMIT", "")],
+    },
+    Denial {
+        name: "review_r3_029_tab_inside_the_separator_t_t",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe reply", "|---|---|---|---|---|", "|\t---\t|---|---|---|---|")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_030_separator_without_a_trailing_pipe",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe reply", "|---|---|---|---|---|", "|---|---|---|---|---")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_031_separator_and",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe reply", "|---|---|---|---|---|", "|:--|--:|:-:|---|---|")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_032_width_16_bits_for_magic",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe request", "| 0 | 2 | u16 | Magic", "| 0 | 16 bits | u16 | Magic")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_033_width_2_bytes_re_i",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe request", "| 0 | 2 | u16 | Magic", "| 0 | 2 BYTES | u16 | Magic")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_034_width_1_max_65453_without_spaces",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe request", "| 54 | 1 × max 65453 |", "| 54 | 1×max65453 |")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_035_width_1_x_max_65453",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe request", "| 54 | 1 × max 65453 |", "| 54 | 1 X MAX 65453 |")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_036_width_8_bits_max_65453",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe request", "| 54 | 1 × max 65453 |", "| 54 | 8 bits × max 65453 |")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_037_offset_40",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe request", "| 40 | 8 | u64 | Recipient", "| +40 | 8 | u64 | Recipient")),
+        expect: &[("AC1", ""), ("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_038_maximum_tsize_with_a_tab",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe reply", "The reply's maximum size is 54 bytes", "The reply's maximum\tsize is 54 bytes")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_039_maximum_size_54_0_bytes",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe reply", "The reply's maximum size is 54 bytes", "The reply's maximum size is 54.0 bytes")),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "review_r3_040_cs5_40_without_a_space",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Path-MTU probe pair", "CS5 (40)", "CS5(40)")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_041_digit_group_65_507_in_the_request_s_maximum",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe request", "The request's maximum size is 65 507 bytes", "The request's maximum size is 65507 bytes")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_042_digit_group_1_2_80_not_a_group",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Path-MTU probe pair", "the 1 280-byte fallback (C-06)", "the 1 2 80-byte fallback (C-06)")),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "review_r3_043_tag_in_upper_case_decision_on_the_ruling",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Sizes and the exemption", "[decision]", "[DECISION]")),
+        expect: &[("AC1", "")],
+    },
+    Denial {
+        name: "review_r3_044_lone_r_in_constants_splits_the_c_17_row",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "| C-17 |", "| C-17 |", "| C-17 |\r")),
+        expect: &[("AC1", ""), ("AC4", "")],
+    },
+    Denial {
+        name: "review_r3_045_crlf_constants",
+        file: CONSTANTS_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "", "ALL\n", "\r\n")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_046_crlf_wire_toml",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "", "ALL\n", "\r\n")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_047_greek_in_a_probe_title_path_mtu_probe_request",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Path-MTU probe pair", "### Path-MTU probe request", "### Path-MTU probe request Δ")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_048_in_the_reply_s_prose_within_10_s",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Path-MTU probe reply", "it carries no padding", "it carries no padding within 10 µs")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_049_don_t_fragment_w_0_2",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "## Path-MTU probe pair", "the sender sets the IPv4 don't-fragment bit", "the sender sets the IPv4 don--t fragment bit")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_050_exemption_sentence_split_by_before_c_116",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "### Sizes and the exemption", "under C-116", "; under C-116")),
+        expect: &[("AC2", "")],
+    },
+    Denial {
+        name: "review_r3_051_toml_tab_indented_keys",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "name = \"path-MTU probe request\"", "dscp = 40", "\tdscp = 40")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_052_toml_message_with_spaces_on_the_probe_reply",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "name = \"path-MTU probe request\"", "[[message]]\nname = \"path-MTU probe reply\"", "[[ message ]]\nname = \"path-MTU probe reply\"")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_053_toml_trailing_comma_in_rejection_reasons",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "name = \"path-MTU probe request\"", "\"ReservedNonZero\"]", "\"ReservedNonZero\",]")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_054_toml_dscp_4_0",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "name = \"path-MTU probe request\"", "dscp = 40", "dscp = 4_0")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_055_toml_single_quoted_name",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "name = \"path-MTU probe request\"", "name = \"path-MTU probe request\"", "name = 'path-MTU probe request'")),
+        expect: &[],
+    },
+    Denial {
+        name: "review_r3_056_toml_key_with_spaces_on_the_reply_not_exempt_1",
+        file: WIRE_TOML,
+        edit: DenialEdit::Text(|t| anchored_replace(t, "name = \"path-MTU probe reply\"", "max_size = 54\n", "max_size = 54\nnot exempt = 1\n")),
+        expect: &[],
+    },
 ];
 
 /// Applies `edit` to the probe request's `[[message]]` block of wire.toml
