@@ -23,7 +23,7 @@ fn members_of(o: &str, landed: &Landed) -> Vec<String> {
     tokens(o).into_iter().filter(|t| landed.is_member(t)).collect()
 }
 
-fn category(form: &str) -> Option<&'static str> {
+pub(super) fn category(form: &str) -> Option<&'static str> {
     let f = form.to_lowercase();
     let h = |p: &str| has(p, &f);
     if h("oversize|over-size|1252|control bound") {

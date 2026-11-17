@@ -2,6 +2,7 @@
 //! computed from them (AC2).
 
 use super::hello::Landed;
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::{Ctx, Field, fields_of, is_field_table, subsections, tables};
 use crate::doccheck::pycompat::parse_int;
@@ -38,9 +39,14 @@ impl Stamp {
 
     /// `stated_max_size(n)`.
     fn stated_max_size(&self, n: i128) -> bool {
-        let re = rx(&format!(r"(?<!\d){n}\s*bytes"));
-        self.sent.iter().any(|s| has("maximum|at most|largest|fixed size", s) && re.is_match(s))
+        stated_max_size(&self.sent, n)
     }
+}
+
+/// `stated_max_size(n)` over the sentences `SENT`.
+pub(super) fn stated_max_size(sent: &[String], n: i128) -> bool {
+    let re = rx(&format!(r"(?<!\d){n}\s*bytes"));
+    sent.iter().any(|s| has("maximum|at most|largest|fixed size", s) && re.is_match(s))
 }
 
 /// `re.findall(r"(?<![\d.])(\d+)\s*bytes", s)` as integers (`None` for a
@@ -64,7 +70,7 @@ pub(crate) fn tile_problems(fl: &[Field]) -> (i128, Vec<String>) {
         if f.size_bits().rem_euclid(8) != 0 {
             probs.push(format!("'{m}' is not a whole number of bytes"));
         }
-        cur = f.off.saturating_add(f.size_bits().div_euclid(8));
+        cur = checked::add(f.off, f.size_bits().div_euclid(8));
     }
     (cur, probs)
 }
@@ -190,14 +196,14 @@ fn count_and_constants(ctx: &Ctx, st: &Stamp, report: &mut Report) -> (Option<i1
     let grab = |id: &str, pat: &str| rx(pat).captures(ctx.consts.value(id)).and_then(|c| parse_int(&c[1]).ok());
     let peers = grab("C-217", r"(\d+) peers");
     let modules = grab("C-34", r"at most (\d+)");
-    let ok = peers.is_some_and(|p| p != 0 && modules == Some(p.saturating_add(1)));
+    let ok = peers.is_some_and(|p| p != 0 && modules == Some(checked::add(p, 1)));
     report.check("AC2", ok, format!("the constants give {peers:?} peers (C-217) and {modules:?} modules (C-34)"));
     (m, peers, modules)
 }
 
 type Product = (Option<i128>, Option<i128>, Option<i128>);
 
-fn products(s: &str) -> Vec<Product> {
+pub(super) fn products(s: &str) -> Vec<Product> {
     rx(r"(\d+)\s*×\s*(\d+)\s*=\s*(\d+)")
         .captures_iter(s)
         .map(|c| (parse_int(&c[1]).ok(), parse_int(&c[2]).ok(), parse_int(&c[3]).ok()))
@@ -208,7 +214,7 @@ fn products(s: &str) -> Vec<Product> {
 /// that fits it).
 fn inexact((a, b, c): Product) -> bool {
     match (a, b, c) {
-        (Some(a), Some(b), Some(c)) => a.checked_mul(b) != Some(c),
+        (Some(a), Some(b), Some(c)) => checked::mul(a, b) != c,
         _ => false,
     }
 }
@@ -216,7 +222,7 @@ fn inexact((a, b, c): Product) -> bool {
 /// AC2: the numbers, computed from the table and the constants.
 pub(crate) fn ac2(ctx: &Ctx, st: &Stamp, landed: &Landed, report: &mut Report) -> Flow<()> {
     let (m, peers, modules) = count_and_constants(ctx, st, report);
-    let expect = m.filter(|&m| m != 0).map(|m| m.saturating_mul(st.sec_tile));
+    let expect = m.filter(|&m| m != 0).map(|m| checked::mul(m, st.sec_tile));
     let stamp_nums: Vec<Option<i128>> = st
         .sent
         .iter()
@@ -227,7 +233,7 @@ pub(crate) fn ac2(ctx: &Ctx, st: &Stamp, landed: &Landed, report: &mut Report) -
     let ok = match (stated, landed.ctrl_bound) {
         (false, _) => false,
         (true, None) => return crash("TypeError: unsupported operand type(s) for *: 'int' and 'NoneType'"),
-        (true, Some(b)) => expect.is_some_and(|e| m.and_then(|m| m.checked_mul(b)).is_none_or(|lim| e <= lim)),
+        (true, Some(b)) => expect.is_some_and(|e| m.is_none_or(|m| e <= checked::mul(m, b))),
     };
     report.check("AC2", ok, format!("a sentence states the maximum stamp size as {m:?} x {} = {expect:?} bytes (the section count times the section maximum computed from the table, at most the count times the control bound {:?})", st.sec_tile, landed.ctrl_bound));
     let storage: Vec<&String> = st.sent.iter().filter(|s| s.contains("storage")).collect();

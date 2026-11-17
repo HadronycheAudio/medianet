@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 
 use super::hello::Landed;
 use super::stamp::Stamp;
+use crate::doccheck::checked;
 use crate::doccheck::Report;
 use crate::doccheck::family004::Field;
 use crate::doccheck::pyvalue::{Dict, PyValue};
@@ -61,7 +62,7 @@ fn toml_sig(m: &Dict) -> Flow<Sig> {
 }
 
 fn md_sig(fl: &[Field]) -> Sig {
-    fl.iter().map(|f| (f.off.saturating_mul(8), f.bits, f.maxc.filter(|&m| m != 0).unwrap_or(1))).collect()
+    fl.iter().map(|f| (checked::mul(f.off, 8), f.bits, f.maxc.filter(|&m| m != 0).unwrap_or(1))).collect()
 }
 
 /// `isinstance(ms, int) and ms <= CTRL_BOUND and not probs and cur == ms * 8`.
@@ -78,7 +79,7 @@ fn tiles(ms: Option<&PyValue>, cur: i128, probs: &[String], landed: &Landed) -> 
     }) else {
         return Ok(false);
     };
-    Ok(s <= b && probs.is_empty() && Some(cur) == s.checked_mul(8))
+    Ok(s <= b && probs.is_empty() && cur == checked::mul(s, 8))
 }
 
 /// `check_toml_message`.
@@ -91,7 +92,7 @@ fn one_message(m: &Dict, md_fl: &[Field], md_total: i128, landed: &Landed, repor
         if off != cur {
             probs.push(format!("'{}' at bit {off}, expected {cur}", f.get("name").map_or("None".to_string(), PyValue::py_str)));
         }
-        cur = int_or(f, "offset", 0)?.saturating_add(int_or(f, "width", 0)?.saturating_mul(mult));
+        cur = checked::add(int_or(f, "offset", 0)?, checked::mul(int_or(f, "width", 0)?, mult));
     }
     let ms = m.get("max_size");
     let ok = tiles(ms, cur, &probs, landed)?;
