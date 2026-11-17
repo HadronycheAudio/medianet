@@ -26,6 +26,8 @@
 //! per-change suite. `cargo run --release -p hadronyche-tools --bin
 //! doccheck-equiv -- <id>|--all`.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the harness runs scripts in sandboxes
+
 pub mod corpus;
 pub mod script;
 
@@ -48,17 +50,23 @@ pub struct Options {
     pub red_phase: bool,
     /// Run the denial list (d).
     pub denials: bool,
+    /// Sandboxes run in parallel for (c).
+    pub jobs: usize,
+    /// Seconds a script may run before it counts as timed out.
+    pub script_timeout_s: u32,
 }
 
 impl Default for Options {
-    /// The committed run: seeds 2026 and 7, 2 000 mutations each, (b) and
-    /// the denials.
+    /// The committed run: seeds 2026, 7, 31337 and 99, 2 000 mutations each,
+    /// (b) and the denials; four sandboxes in parallel.
     fn default() -> Options {
         Options {
-            seeds: vec![2026, 7],
+            seeds: vec![2026, 7, 31337, 99],
             limit: 2000,
             red_phase: true,
             denials: true,
+            jobs: 4,
+            script_timeout_s: script::SCRIPT_TIMEOUT_S,
         }
     }
 }
@@ -82,6 +90,8 @@ pub struct Row {
     pub case: String,
     pub script: ScriptVerdict,
     pub port_passed: bool,
+    /// The port modelled the script's crash ([`crate::doccheck::Report::crash`]).
+    pub port_crash: bool,
     pub port_criteria: BTreeSet<String>,
     pub status: Status,
 }
@@ -128,8 +138,13 @@ impl Outcome {
     /// The reasons the run fails, empty when it passes.
     pub fn problems(&self) -> Vec<String> {
         let mut out = Vec::new();
-        if !(self.current.script.passed() && self.current.port_passed) {
+        if !(self.current.script.passed() && self.current.port_passed)
+            || self.current.script.anomaly
+        {
             out.push("(a) the current tree is not green for both".to_string());
+        }
+        if self.red.as_ref().is_some_and(|r| r.script.anomaly) {
+            out.push("(b) the script printed FAIL but exited 0 on the red-phase tree".to_string());
         }
         if let Some(red) = &self.red
             && (red.script.outcome != ScriptOutcome::Red
@@ -150,9 +165,20 @@ impl Outcome {
 pub fn diff_kind(
     script: &ScriptVerdict,
     port_passed: bool,
+    port_crash: bool,
     port: &BTreeSet<String>,
 ) -> Option<DiffKind> {
+    if port_crash {
+        return match script.outcome {
+            ScriptOutcome::Crash => None,
+            ScriptOutcome::Pass => Some(DiffKind::ScriptPassPortRed),
+            ScriptOutcome::Red => Some(DiffKind::PortMissingCriteria),
+            ScriptOutcome::TimedOut => Some(DiffKind::ScriptTimedOutPortRed),
+        };
+    }
     match (script.outcome, port_passed) {
+        (ScriptOutcome::TimedOut, true) => Some(DiffKind::ScriptTimedOutPortPass),
+        (ScriptOutcome::TimedOut, false) => Some(DiffKind::ScriptTimedOutPortRed),
         (ScriptOutcome::Pass, true) => None,
         (ScriptOutcome::Pass, false) => Some(DiffKind::ScriptPassPortRed),
         (ScriptOutcome::Red, true) => Some(DiffKind::ScriptRedPortPass),
@@ -166,10 +192,37 @@ pub fn diff_kind(
     }
 }
 
-fn classify(spec: &CheckSpec, label: &str, kind: Option<DiffKind>) -> Status {
+/// The reason given for every row the repertoire guard decides.
+pub const OUTSIDE_REPERTOIRE: &str = "the documents hold a character outside the repertoire \
+    (hadronyche-tools/data/repertoire.tsv): the port is red by rule (lead ruling R13), whatever the script says";
+
+/// The reason given for every row a regex engine failure decides.
+pub const REGEX_LIMIT: &str = "the port's regex engine failed (backtracking limit or a refused pattern): \
+    the port is red by rule (lead ruling R19), never \"no match\"; the script, which has no limit, \
+    is slow (or timed out) and then right";
+
+/// The reason given for every row an integer beyond `i128` decides.
+pub const INT_LIMIT: &str = "an integer beyond i128 (Python's int is unbounded): \
+    the port is red by rule (INT_LIMIT), never a wrapped or saturated comparison";
+
+fn classify(
+    spec: &CheckSpec,
+    label: &str,
+    kind: Option<DiffKind>,
+    port: &BTreeSet<String>,
+) -> Status {
     let Some(kind) = kind else {
         return Status::Same;
     };
+    if port.contains(crate::doccheck::repertoire::CRITERION) {
+        return Status::Classified(kind, DiffClass::OutsideRepertoire, OUTSIDE_REPERTOIRE);
+    }
+    if port.contains(crate::doccheck::docs::REGEX_LIMIT) && kind.excused_by(DiffClass::RegexLimit) {
+        return Status::Classified(kind, DiffClass::RegexLimit, REGEX_LIMIT);
+    }
+    if port.contains(crate::doccheck::pynum::INT_LIMIT) && kind.excused_by(DiffClass::IntLimit) {
+        return Status::Classified(kind, DiffClass::IntLimit, INT_LIMIT);
+    }
     spec.known_differences
         .iter()
         .find(|k| kind.excused_by(k.class) && rx(k.label).is_match(label))
@@ -191,18 +244,17 @@ fn row(
     timer: &mut Timer,
 ) -> Row {
     let t = Instant::now();
-    let report = (spec.run)(docs);
+    let report = spec.evaluate(docs);
     timer.port += t.elapsed();
     let port_criteria = report.failed_criteria();
-    let status = classify(
-        spec,
-        &case,
-        diff_kind(&script, report.passed(), &port_criteria),
-    );
+    let port_crash = report.crash.is_some();
+    let kind = diff_kind(&script, report.passed(), port_crash, &port_criteria);
+    let status = classify(spec, &case, kind, &port_criteria);
     Row {
         case,
         script,
         port_passed: report.passed(),
+        port_crash,
         port_criteria,
         status,
     }
@@ -219,6 +271,7 @@ fn red_phase(
     spec: &CheckSpec,
     repo: &Path,
     text: &str,
+    timeout_s: u32,
     timer: &mut Timer,
     log: &mut dyn FnMut(&str),
 ) -> Result<(Option<String>, Option<Row>), String> {
@@ -227,35 +280,90 @@ fn red_phase(
     };
     log(&format!("(b) red-phase tree {c}"));
     let old = Docs::at_commit(repo, &c)?;
-    let sb = Sandbox::new(&old, spec.id, text, spec.script_env).map_err(|e| e.to_string())?;
+    let sb = Sandbox::new(&old, spec.id, text, spec.script_env)
+        .map_err(|e| e.to_string())?
+        .with_reader(spec.fail_reader);
+    let sb = sb.with_timeout(timeout_s);
     let v = timed(timer, || sb.run());
     let r = row(spec, format!("tree at {}", &c[..10]), v, &old, timer);
     Ok((Some(c), Some(r)))
 }
 
+/// What one harness thread returns: its (index, row) pairs and its times.
+type ThreadResult = Result<(Vec<(usize, Row)>, Timer), String>;
+
+/// One seed's mutations, run on `jobs` sandboxes in parallel.
+fn one_corpus(
+    spec: &CheckSpec,
+    docs: &Docs,
+    boxes: &[Sandbox],
+    mutations: &[crate::doccheck::mutate::Mutation],
+    seed: u64,
+) -> Result<(Vec<Row>, Timer), String> {
+    let jobs = boxes.len();
+    let results: Vec<ThreadResult> = std::thread::scope(|s| {
+        let handles: Vec<_> = boxes
+            .iter()
+            .enumerate()
+            .map(|(k, sb)| {
+                s.spawn(move || {
+                    let mut timer = Timer {
+                        script: Duration::ZERO,
+                        port: Duration::ZERO,
+                    };
+                    let mut rows = Vec::new();
+                    for (i, m) in mutations.iter().enumerate().filter(|(i, _)| i % jobs == k) {
+                        if k == 0 && i % 500 == 0 {
+                            eprintln!(
+                                "{}: (c) seed {seed}: mutation {}/{}",
+                                spec.id,
+                                i + 1,
+                                mutations.len()
+                            );
+                        }
+                        let v = timed(&mut timer, || sb.run_mutated(docs, m))?;
+                        rows.push((i, row(spec, m.label.clone(), v, &m.apply(docs), &mut timer)));
+                    }
+                    Ok((rows, timer))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err("a harness thread panicked".into()))
+            })
+            .collect()
+    });
+    let mut all = Vec::new();
+    let mut timer = Timer {
+        script: Duration::ZERO,
+        port: Duration::ZERO,
+    };
+    for r in results {
+        let (rows, t) = r?;
+        all.extend(rows);
+        timer.script += t.script;
+        timer.port += t.port;
+    }
+    all.sort_by_key(|(i, _)| *i);
+    Ok((all.into_iter().map(|(_, r)| r).collect(), timer))
+}
+
 fn corpora(
     spec: &CheckSpec,
     docs: &Docs,
-    sb: &Sandbox,
+    boxes: &[Sandbox],
     opts: &Options,
     timer: &mut Timer,
-    log: &mut dyn FnMut(&str),
 ) -> Result<Vec<Corpus>, String> {
     let mut out = Vec::new();
     for &seed in &opts.seeds {
         let mutations = corpus::corpus(docs, spec.targets, spec.keywords, seed, opts.limit);
-        let mut rows = Vec::new();
-        for (i, m) in mutations.iter().enumerate() {
-            if i % 250 == 0 {
-                log(&format!(
-                    "(c) seed {seed}: mutation {}/{}",
-                    i + 1,
-                    mutations.len()
-                ));
-            }
-            let v = timed(timer, || sb.run_mutated(docs, m))?;
-            rows.push(row(spec, m.label.clone(), v, &m.apply(docs), timer));
-        }
+        let (rows, t) = one_corpus(spec, docs, boxes, &mutations, seed)?;
+        timer.script += t.script;
+        timer.port += t.port;
         out.push(Corpus { seed, rows });
     }
     Ok(out)
@@ -273,7 +381,7 @@ fn denials(
         let v = timed(timer, || sb.run_edited(d.file, edited.as_deref()))?;
         let mutated = d.apply(docs)?;
         let mut r = row(spec, format!("denial {}", d.name), v, &mutated, timer);
-        let unmet = d.unmet(&(spec.run)(&mutated));
+        let unmet = d.unmet(&spec.evaluate(&mutated));
         if !unmet.is_empty() {
             r.status = Status::Unmet(unmet.join("; "));
         }
@@ -295,27 +403,39 @@ pub fn run(
         script: Duration::ZERO,
         port: Duration::ZERO,
     };
+    // the tree as it was when the run started (not when it ended)
+    let tree = script::head_commit(repo).unwrap_or_else(|| "unknown".into());
     let docs = Docs::dir(repo);
-    let sb = Sandbox::new(&docs, spec.id, &text, spec.script_env).map_err(|e| e.to_string())?;
+    let boxes = (0..opts.jobs.max(1))
+        .map(|_| {
+            Sandbox::new(&docs, spec.id, &text, spec.script_env)
+                .map(|sb| {
+                    sb.with_timeout(opts.script_timeout_s)
+                        .with_reader(spec.fail_reader)
+                })
+                .map_err(|e| e.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let sb = &boxes[0];
     log("(a) current tree");
     let v = timed(&mut timer, || sb.run());
     let current = row(spec, "current tree".into(), v, &docs, &mut timer);
     let (red_commit, red) = if opts.red_phase {
-        red_phase(spec, repo, &text, &mut timer, log)?
+        red_phase(spec, repo, &text, opts.script_timeout_s, &mut timer, log)?
     } else {
         (None, None)
     };
-    let corpora = corpora(spec, &docs, &sb, opts, &mut timer, log)?;
+    let corpora = corpora(spec, &docs, &boxes, opts, &mut timer)?;
     let denials = if opts.denials {
         log(&format!("(d) {} denials", spec.denials.len()));
-        denials(spec, &docs, &sb, &mut timer)?
+        denials(spec, &docs, sb, &mut timer)?
     } else {
         Vec::new()
     };
     Ok(Outcome {
         id: spec.id.to_string(),
         script_from,
-        tree: script::head_commit(repo).unwrap_or_else(|| "unknown".into()),
+        tree,
         limit: opts.limit,
         current,
         red_commit,
@@ -345,6 +465,7 @@ fn verdict_word(passed: bool, criteria: &BTreeSet<String>) -> String {
 fn script_word(v: &ScriptVerdict) -> String {
     match v.outcome {
         ScriptOutcome::Crash => format!("CRASH ({})", v.tail.replace('|', "/")),
+        ScriptOutcome::TimedOut => format!("TIMED OUT ({})", v.tail),
         _ if v.anomaly => format!(
             "{} (FAIL printed, exit 0)",
             verdict_word(false, &v.criteria)
@@ -487,6 +608,7 @@ mod tests {
         known_differences: KNOWN,
         denials: &[],
         toml: TomlReader::Tomllib,
+        fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
     };
 
     fn set(xs: &[&str]) -> BTreeSet<String> {
@@ -496,22 +618,22 @@ mod tests {
     #[test]
     fn criteria_are_compared_not_only_exit_status() {
         let red = script::verdict(false, "FAIL AC1: x\nFAIL AC2: y");
-        assert_eq!(diff_kind(&red, false, &set(&["AC1", "AC2"])), None);
+        assert_eq!(diff_kind(&red, false, false, &set(&["AC1", "AC2"])), None);
         assert_eq!(
-            diff_kind(&red, false, &set(&["AC1", "AC2", "AC4"])),
+            diff_kind(&red, false, false, &set(&["AC1", "AC2", "AC4"])),
             Some(DiffKind::PortMoreCriteria)
         );
         assert_eq!(
-            diff_kind(&red, false, &set(&["AC1", "AC4"])),
+            diff_kind(&red, false, false, &set(&["AC1", "AC4"])),
             Some(DiffKind::PortMissingCriteria)
         );
         assert_eq!(
-            diff_kind(&red, true, &set(&[])),
+            diff_kind(&red, true, false, &set(&[])),
             Some(DiffKind::ScriptRedPortPass)
         );
         let crash = script::verdict(false, "Traceback (most recent call last):");
         assert_eq!(
-            diff_kind(&crash, false, &set(&["AC4"])),
+            diff_kind(&crash, false, false, &set(&["AC4"])),
             Some(DiffKind::ScriptCrashPortRed)
         );
     }
@@ -520,21 +642,71 @@ mod tests {
     fn classes_excuse_only_their_direction() {
         let k = Some(DiffKind::ScriptPassPortRed);
         assert!(matches!(
-            classify(&SPEC, "x typed", k),
+            classify(&SPEC, "x typed", k, &BTreeSet::new()),
             Status::Classified(..)
         ));
         assert_eq!(
-            classify(&SPEC, "x other", k),
+            classify(&SPEC, "x other", k, &BTreeSet::new()),
             Status::Unexcused(DiffKind::ScriptPassPortRed)
         );
         let weaker = Some(DiffKind::ScriptRedPortPass);
         assert_eq!(
-            classify(&SPEC, "x typed", weaker),
+            classify(&SPEC, "x typed", weaker, &BTreeSet::new()),
             Status::Unexcused(DiffKind::ScriptRedPortPass)
         );
         assert!(DiffKind::ScriptRedPortPass.weaker() && !DiffKind::ScriptPassPortRed.weaker());
         assert!(DiffKind::ScriptRedPortPass.excused_by(DiffClass::SubsetTomlReader));
+        let rep: BTreeSet<String> = ["REPERTOIRE".to_string()].into();
+        assert!(matches!(
+            classify(&SPEC, "x", Some(DiffKind::ScriptPassPortRed), &rep),
+            Status::Classified(_, DiffClass::OutsideRepertoire, _)
+        ));
+        let crash = script::verdict(false, "Traceback (most recent call last):");
+        assert_eq!(
+            diff_kind(&crash, false, true, &BTreeSet::new()),
+            None,
+            "a modelled crash matches the script's"
+        );
         assert!(!DiffKind::ScriptRedPortPass.excused_by(DiffClass::ScriptWrong));
+    }
+
+    #[test]
+    fn a_regex_limit_is_port_stricter_and_a_timeout_is_never_same() {
+        let limit: BTreeSet<String> = ["REGEX_LIMIT".to_string()].into();
+        let red = script::verdict(false, "FAIL AC3: BadMagik");
+        let timed_out = ScriptVerdict {
+            outcome: ScriptOutcome::TimedOut,
+            criteria: BTreeSet::new(),
+            anomaly: false,
+            tail: String::new(),
+        };
+        for script in [&red, &timed_out] {
+            let kind = diff_kind(script, false, false, &limit);
+            assert!(kind.is_some());
+            assert!(matches!(
+                classify(&SPEC, "x", kind, &limit),
+                Status::Classified(_, DiffClass::RegexLimit, _)
+            ));
+        }
+        let ints: BTreeSet<String> = ["INT_LIMIT".to_string()].into();
+        assert!(matches!(
+            classify(&SPEC, "x", diff_kind(&red, false, false, &ints), &ints),
+            Status::Classified(_, DiffClass::IntLimit, _)
+        ));
+        // the port passing where the script timed out is never excused
+        let kind = diff_kind(&timed_out, true, false, &BTreeSet::new());
+        assert_eq!(kind, Some(DiffKind::ScriptTimedOutPortPass));
+        assert!(kind.is_some_and(DiffKind::weaker));
+        assert_eq!(
+            classify(&SPEC, "x", kind, &limit),
+            Status::Unexcused(DiffKind::ScriptTimedOutPortPass)
+        );
+        // a timeout against an ordinary port red is unclassified
+        let ac3: BTreeSet<String> = ["AC3".to_string()].into();
+        assert_eq!(
+            classify(&SPEC, "x", diff_kind(&timed_out, false, false, &ac3), &ac3),
+            Status::Unexcused(DiffKind::ScriptTimedOutPortRed)
+        );
     }
 
     #[test]
@@ -543,6 +715,7 @@ mod tests {
             case: case.into(),
             script: script::verdict(out.is_empty(), out),
             port_passed: port,
+            port_crash: false,
             port_criteria: if port { BTreeSet::new() } else { set(&["AC1"]) },
             status,
         };

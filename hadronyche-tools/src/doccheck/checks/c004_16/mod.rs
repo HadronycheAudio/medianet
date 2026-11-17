@@ -27,7 +27,7 @@
 //! exactly 12 passed, 0 failed, 0 ignored) are in
 //! `scripts/repo-state.d/004-16.sh`.
 //!
-//! [`rejection_members`]: crate::doccheck::rejection_members
+//! [`rejection_members`]: crate::doccheck::wp7::rejection_members
 
 pub(crate) mod ac1;
 pub(crate) mod ac2;
@@ -40,7 +40,7 @@ pub(crate) mod dod;
 pub mod denials;
 use super::{CheckSpec, DiffClass, KnownDifference, Target};
 use crate::doccheck::policy::TomlReader;
-use crate::doccheck::rejection_members::Enumeration;
+use crate::doccheck::wp7::rejection_members::Enumeration;
 use crate::doccheck::ticket::CONSTANTS_MD;
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
@@ -85,7 +85,8 @@ pub const SPEC: CheckSpec = CheckSpec {
     keywords: &["fits", "falsified", "rejection", "counted", "ignored", "stale", "proposal", "reuse"],
     known_differences: KNOWN,
     denials: denials::DENIALS,
-    toml: TomlReader::SubsetReader,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.

@@ -12,6 +12,9 @@
 use super::Docs;
 use super::report::Report;
 
+/// The pseudo-criterion of an expected crash.
+pub const CRASH: &str = "CRASH";
+
 /// How a denial changes its file.
 #[derive(Debug, Clone, Copy)]
 pub enum DenialEdit {
@@ -29,8 +32,13 @@ pub struct Denial {
     /// The repository-relative file it edits.
     pub file: &'static str,
     pub edit: DenialEdit,
-    /// What the port must report: (criterion, a substring of the message).
-    /// The script must at least fail the same criteria.
+    /// What the port must report, exactly: its failed criteria are the
+    /// criteria named here (each pair is a criterion and a substring one of
+    /// its messages must contain; `""` matches any). Empty: the port passes.
+    /// The pseudo-criterion `CRASH` means the port models the script's
+    /// crash ([`crate::doccheck::Report::crash`]). The criteria are the old
+    /// script's verdict on the same documents, or `REPERTOIRE` when the edit
+    /// brings in a character outside the repertoire.
     pub expect: &'static [(&'static str, &'static str)],
 }
 
@@ -64,15 +72,39 @@ impl Denial {
 
     /// The expectations the report does not meet, as messages.
     pub fn unmet(&self, report: &Report) -> Vec<String> {
-        self.expect
+        let mut out = Vec::new();
+        let want = self.criteria();
+        let got = report.failed_criteria();
+        if got != want {
+            out.push(format!(
+                "expected the failed criteria {want:?}, got {got:?}"
+            ));
+        }
+        let want_crash = self.expect.iter().any(|(c, _)| *c == CRASH);
+        if report.crash.is_some() != want_crash {
+            out.push(format!(
+                "expected a crash: {want_crash}, got {:?}",
+                report.crash
+            ));
+        }
+        for (c, needle) in self
+            .expect
             .iter()
-            .filter(|(c, needle)| !report.of(c).iter().any(|f| f.message.contains(needle)))
-            .map(|(c, needle)| format!("expected a failure of {c} containing {needle:?}"))
-            .collect()
+            .filter(|(c, n)| *c != CRASH && !n.is_empty())
+        {
+            if !report.of(c).iter().any(|f| f.message.contains(needle)) {
+                out.push(format!("expected a failure of {c} containing {needle:?}"));
+            }
+        }
+        out
     }
 
-    /// The criteria the denial expects.
+    /// The criteria the denial expects (without `CRASH`).
     pub fn criteria(&self) -> std::collections::BTreeSet<String> {
-        self.expect.iter().map(|(c, _)| c.to_string()).collect()
+        self.expect
+            .iter()
+            .filter(|(c, _)| *c != CRASH)
+            .map(|(c, _)| c.to_string())
+            .collect()
     }
 }

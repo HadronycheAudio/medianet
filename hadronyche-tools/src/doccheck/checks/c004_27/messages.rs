@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use super::landed::Landed;
-use super::{Ctx, Field, fields_of, first_field_table, subsections};
+use crate::doccheck::family004::{Ctx, Field, fields_of, first_field_table, subsections};
 use crate::doccheck::Report;
 use crate::doccheck::pycompat::parse_int;
 use crate::doccheck::text::{first_int, has_i, rx};

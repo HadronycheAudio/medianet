@@ -72,7 +72,7 @@ fn req_toml(t: &str, from: &str, to: &str) -> String {
 
 /// `re.sub` with a regex for the fixtures.
 fn regex_replace(text: &str, pattern: &str, to: &str) -> String {
-    rx(pattern).replace_all(text, to).into_owned()
+    rx(pattern).replace_all(text, to)
 }
 
 /// `pattern` replaced on the table rows only.

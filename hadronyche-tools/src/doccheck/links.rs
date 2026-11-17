@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn resolution_across_files() {
-        let docs = Docs::repo();
+        let docs = crate::doccheck::testing::repo().clone();
         let wire = Markdown::parse(&docs.read("doc/design/spec/wire.md").unwrap());
         let slugs = wire.slugs();
         let base = "doc/design/spec";

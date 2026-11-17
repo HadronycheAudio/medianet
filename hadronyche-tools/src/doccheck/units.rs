@@ -196,7 +196,7 @@ pub fn prose_blocks(text: &str) -> Vec<Block> {
 /// A unit's text with leading markup (`*`, `_`, `` ` ``, `>`, `-`, spaces)
 /// removed, as the scripts' `clean_start`.
 pub fn clean_start(text: &str) -> String {
-    rx(r"^[\s*_`>-]+").replace(text, "").into_owned()
+    rx(r"^[\s*_`>-]+").replace(text, "")
 }
 
 #[cfg(test)]

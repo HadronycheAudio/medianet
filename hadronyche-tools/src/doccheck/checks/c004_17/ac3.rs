@@ -18,7 +18,7 @@ fn row_in<'a>(fl: &'a [Field], pat: &str, bits: Option<i128>) -> Option<&'a Fiel
 /// `{int(x) for x in re.findall(r"(?<![\w.])(\d{1,3})\s*=", text)}`.
 pub(crate) fn stated_values(text: &str) -> BTreeSet<i128> {
     let chars: Vec<char> = text.chars().collect();
-    let digit = |c: char| crate::doccheck::rejection_members::digit_value(c).is_some();
+    let digit = |c: char| crate::doccheck::wp7::rejection_members::digit_value(c).is_some();
     let mut out = BTreeSet::new();
     let mut p = 0;
     while p < chars.len() {

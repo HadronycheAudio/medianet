@@ -2,17 +2,15 @@
 //! C-13, C-17), the hello's common control header and type-code block, the
 //! admission request's intended packet size, the refusal and rejection
 //! enumerations, and wire.toml (read as the script's subset reader and
-//! Python saw it: [`TomlReader::SubsetReader`](crate::doccheck::policy::TomlReader)).
+//! Python saw it: [`TomlReader::Subset004_18`](crate::doccheck::policy::TomlReader)).
 
 use std::collections::BTreeMap;
 
-use toml::{Table as TomlTable, Value};
-
-use super::{Ctx, Field, fields_of, find_sub, first_field_table, subsections, tables};
+use crate::doccheck::family004::{Ctx, Field, fields_of, find_sub, first_field_table, subsections, tables};
+use crate::doccheck::pyvalue::{Dict, PyValue};
 use crate::doccheck::Report;
-use crate::doccheck::pycompat::{PyStr, parse_int, py_dicts, py_eq_int};
+use crate::doccheck::pycompat::{PyStr, parse_int};
 use crate::doccheck::text::{first_int, full, has_i, ints, rx};
-use crate::doccheck::wire_toml::WireToml;
 
 /// What the later criteria read.
 pub(crate) struct Landed {
@@ -27,7 +25,7 @@ pub(crate) struct Landed {
     pub refusals: BTreeMap<String, i128>,
     pub members: BTreeMap<String, i128>,
     pub layers: BTreeMap<String, String>,
-    pub tmsgs: Vec<TomlTable>,
+    pub tmsgs: Vec<Dict>,
 }
 
 impl Landed {
@@ -138,42 +136,44 @@ fn rejection(ctx: &Ctx, report: &mut Report) -> (BTreeMap<String, i128>, BTreeMa
     (members, layers)
 }
 
-/// `TREF == REF`: the refusal entries of wire.toml as a Python dict
-/// (`{r["name"]: r["value"]}`) equal to wire.md's, values compared with
-/// Python's `==`.
-fn refusals_equal(entries: &[&TomlTable], md: &BTreeMap<String, i128>) -> Result<bool, String> {
-    let mut tref: BTreeMap<String, Value> = BTreeMap::new();
-    let mut other_keys = false;
+/// `TREF == REF`: `{r["name"]: r["value"] for r in TOML.get("refusal", [])
+/// if isinstance(r, dict) and "name" in r and "value" in r} == REF`, with
+/// Python's `==`; `Err` where the script crashes (an unhashable name, a
+/// "refusal" that cannot be iterated).
+fn refusals_equal(toml: &Dict, md: &BTreeMap<String, i128>) -> Result<bool, String> {
+    let entries = match toml.get("refusal") {
+        Some(v) => v.py_dicts()?,
+        None => Vec::new(),
+    };
+    let mut tref: Vec<(PyValue, PyValue)> = Vec::new();
     for r in entries {
         let (Some(name), Some(value)) = (r.get("name"), r.get("value")) else { continue };
-        match name {
-            Value::String(n) => {
-                tref.insert(n.clone(), value.clone());
-            }
-            Value::Array(_) | Value::Table(_) => return Err(format!("a refusal name is a {} (unhashable)", name.type_str())),
-            _ => other_keys = true,
+        if matches!(name, PyValue::List(_) | PyValue::Dict(_)) {
+            return Err(format!("TypeError: unhashable type: '{}'", name.type_name()));
+        }
+        match tref.iter_mut().find(|(k, _)| k.py_eq(name)) {
+            Some(slot) => slot.1 = value.clone(),
+            None => tref.push((name.clone(), value.clone())),
         }
     }
-    let same_keys = !other_keys && tref.len() == md.len() && md.keys().all(|k| tref.contains_key(k));
-    Ok(same_keys && md.iter().all(|(k, v)| tref.get(k).is_some_and(|t| py_eq_int(t, *v))))
+    Ok(tref.len() == md.len()
+        && md.iter().all(|(k, v)| tref.iter().any(|(n, t)| n.eq_str(k) && t.eq_int(*v))))
 }
 
-fn toml_side(ctx: &Ctx, refusals: &BTreeMap<String, i128>, report: &mut Report) -> Vec<TomlTable> {
-    let parsed = match WireToml::parse(ctx.toml_text.as_deref().unwrap_or("")) {
-        Ok(t) => Some(t),
-        Err(e) => {
-            report.fail("AC4", format!("wire.toml does not parse: {e}"));
-            None
-        }
-    };
-    let root = parsed.as_ref().map(|t| t.root.clone()).unwrap_or_default();
-    let read = py_dicts(root.get("message"))
-        .and_then(|m| py_dicts(root.get("refusal")).map(|r| (m, r)))
-        .and_then(|(m, r)| refusals_equal(&r, refusals).map(|eq| (m, eq)));
+/// `TMSGS = [m for m in TOML.get("message", []) if isinstance(m, dict)]`.
+fn messages(toml: &Dict) -> Result<Vec<Dict>, String> {
+    Ok(match toml.get("message") {
+        Some(v) => v.py_dicts()?.into_iter().cloned().collect(),
+        None => Vec::new(),
+    })
+}
+
+fn toml_side(toml: &Dict, refusals: &BTreeMap<String, i128>, report: &mut Report) -> Vec<Dict> {
+    let read = messages(toml).and_then(|m| refusals_equal(toml, refusals).map(|eq| (m, eq)));
     let (tmsgs, equal) = match read {
-        Ok((m, eq)) => (m.into_iter().cloned().collect(), eq),
+        Ok(x) => x,
         Err(e) => {
-            report.fail("AC4", format!("wire.toml: the script's reader crashes here: {e}"));
+            report.crash(format!("wire.toml: {e}"));
             (Vec::new(), false)
         }
     };
@@ -183,12 +183,12 @@ fn toml_side(ctx: &Ctx, refusals: &BTreeMap<String, i128>, report: &mut Report) 
 }
 
 /// Reads the landed sections, checking what the script checks of them.
-pub(crate) fn landed(ctx: &Ctx, report: &mut Report) -> Landed {
+pub(crate) fn landed(ctx: &Ctx, toml: &Dict, report: &mut Report) -> Landed {
     let (fallback, bound, dscp) = constants(ctx, report);
     let (hdr_sig, block) = hello(ctx, report);
     let (req_intended, refusals) = admission(ctx, report);
     let (members, layers) = rejection(ctx, report);
-    let tmsgs = toml_side(ctx, &refusals, report);
+    let tmsgs = toml_side(toml, &refusals, report);
     Landed {
         fallback,
         bound,

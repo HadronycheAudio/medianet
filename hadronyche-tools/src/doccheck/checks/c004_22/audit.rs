@@ -51,7 +51,8 @@ fn audit_rows(inp: &Inputs) -> (bool, String, Vec<AuditRow>) {
     let mut rows = Vec::new();
     for span in &spans {
         for t in inp.wire.tables_with(*span, TableRules::T004_22) {
-            let k = t.head_norm().iter().position(|h| rx(r"\bfield\b").is_match(h)).unwrap_or(0);
+            let k = t.head_norm().iter().position(|h| rx(r"\bfield\b").is_match(h))
+                .unwrap_or_default(); // field_col: the first column when no header says "field"
             for r in &t.rows {
                 if r.cells.len() > k {
                     rows.push((names_in_field_cell(&r.cells[k]), r.cells.clone(), r.line + 1));

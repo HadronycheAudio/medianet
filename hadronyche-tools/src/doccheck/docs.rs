@@ -8,6 +8,16 @@
 //! lives in `/tmp` and no override variable exists.
 //!
 //! Paths are repository-relative with `/` separators (`doc/design/spec/wire.md`).
+//!
+//! The repertoire guard is a property of `Docs` (lead ruling R20): a check
+//! runs only through [`CheckSpec::evaluate`], which hands it a logged view;
+//! every text the check obtains from [`Docs::read`] (whatever the path:
+//! a ticket, a separate review record, a link target outside `doc/`) is
+//! logged and guarded, and one character outside the repertoire makes the
+//! verdict `REPERTOIRE`. No list of inputs is kept by any check. The same
+//! entry point turns a regex engine failure into `REGEX_LIMIT` (R19).
+
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the document sources themselves
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -15,7 +25,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use super::checks::CheckSpec;
 use super::pycompat::{PyStr, normpath};
+use super::pynum::{INT_LIMIT, restore_int_limits, take_int_limits};
+use super::repertoire::guard_text;
+use super::report::Report;
+use super::rx::{RxFailure, restore_failures, take_failures};
+
+/// The criterion of a regex engine failure (R19).
+pub const REGEX_LIMIT: &str = "REGEX_LIMIT";
 
 /// Where the unmodified documents come from.
 #[derive(Debug, Clone)]
@@ -33,7 +51,12 @@ pub struct Docs {
     overrides: BTreeMap<String, Option<Arc<str>>>,
     cache: Arc<Mutex<HashMap<String, Option<Arc<str>>>>>,
     tree: Arc<Mutex<Option<Arc<BTreeSet<String>>>>>,
+    /// Set inside [`CheckSpec::evaluate`]: every text read, in order.
+    log: Option<Arc<Mutex<ReadLog>>>,
 }
+
+/// The texts a check read, by normalised path, first read first.
+type ReadLog = Vec<(String, Arc<str>)>;
 
 impl Docs {
     /// The working tree of this repository (the crate's parent directory).
@@ -74,6 +97,7 @@ impl Docs {
             overrides: BTreeMap::new(),
             cache: Arc::new(Mutex::new(HashMap::new())),
             tree: Arc::new(Mutex::new(None)),
+            log: None,
         }
     }
 
@@ -115,6 +139,18 @@ impl Docs {
 
     /// The text of `path`, or `None` when it does not exist or is not UTF-8.
     pub fn read(&self, path: &str) -> Option<Arc<str>> {
+        let text = self.read_unlogged(path);
+        if let (Some(log), Some(t)) = (&self.log, &text) {
+            let key = norm(path);
+            let mut log = log.lock().expect("docs log poisoned");
+            if !log.iter().any(|(k, _)| *k == key) {
+                log.push((key, t.clone()));
+            }
+        }
+        text
+    }
+
+    fn read_unlogged(&self, path: &str) -> Option<Arc<str>> {
         let key = norm(path);
         if outside(&key) {
             return None;
@@ -238,6 +274,119 @@ impl Docs {
         }
         Ok(())
     }
+}
+
+impl CheckSpec {
+    /// The only way to run a check (its `run` is called nowhere else; a
+    /// source test holds this). The check gets a logged view of `docs`;
+    /// afterwards:
+    ///
+    /// * a text it read that holds a character outside the repertoire makes
+    ///   the verdict red under `REPERTOIRE` alone, one failure per such file
+    ///   (R13, R20): inside the repertoire the port equals its script, and
+    ///   outside it nothing else it found is meaningful;
+    /// * otherwise, after the regex rule below, an integer beyond `i128`
+    ///   met during the run (`pycompat::parse_int`, `PyValue::py_int`,
+    ///   `pynum::eval_arith`, `pynum::Fraction`) makes the verdict
+    ///   `INT_LIMIT` alone, located where the number is written;
+    /// * otherwise a regex engine failure during the run (backtracking
+    ///   limit, a pattern that does not compile) makes the verdict red
+    ///   under `REGEX_LIMIT` alone, with the pattern and the file:line of
+    ///   the text it was matching (R19): an engine failure is never "no
+    ///   match", and the rest of the verdict cannot be trusted.
+    pub fn evaluate(&self, docs: &Docs) -> Report {
+        let outer = take_failures();
+        let outer_ints = take_int_limits();
+        let log = Arc::new(Mutex::new(ReadLog::new()));
+        let mut view = docs.clone();
+        view.log = Some(log.clone());
+        let report = (self.run)(&view);
+        let failures = take_failures();
+        let ints = take_int_limits();
+        restore_failures(outer);
+        restore_int_limits(outer_ints);
+        let read = std::mem::take(&mut *log.lock().expect("docs log poisoned"));
+        let mut guarded = Report::default();
+        for (path, text) in &read {
+            guard_text(path, text, &mut guarded);
+        }
+        if !guarded.failures.is_empty() {
+            return guarded;
+        }
+        if failures.is_empty() {
+            return if ints.is_empty() {
+                report
+            } else {
+                int_limited(&read, ints)
+            };
+        }
+        let mut limited = Report::default();
+        for f in dedup(failures) {
+            let (file, line) = locate(&read, &f.hay);
+            let pattern: String = f.pattern.chars().take(160).collect();
+            let what = format!(
+                "the regex engine failed on pattern {pattern:?} ({}); the check cannot \
+                 tell match from no match, so it is red by rule (R19)",
+                f.what
+            );
+            match file {
+                Some(file) => limited.fail_at(REGEX_LIMIT, &file, line, what),
+                None => limited.fail(
+                    REGEX_LIMIT,
+                    format!("{what}; the text begins {:?}", head(&f.hay)),
+                ),
+            }
+        }
+        limited
+    }
+}
+
+/// The verdict when an integer beyond `i128` appeared: `INT_LIMIT` alone,
+/// located where the number's text is found in a document read.
+fn int_limited(read: &ReadLog, ints: Vec<String>) -> Report {
+    let mut out = Report::default();
+    let mut seen = BTreeSet::new();
+    for n in ints.into_iter().filter(|n| seen.insert(n.clone())) {
+        let what = format!(
+            "the integer {} is beyond i128: Python would carry on with it, the check cannot \
+             compare it, so it is red by rule (INT_LIMIT)",
+            head(&n)
+        );
+        match locate(read, &n) {
+            (Some(file), line) => out.fail_at(INT_LIMIT, &file, line, what),
+            (None, _) => out.fail(INT_LIMIT, what),
+        }
+    }
+    out
+}
+
+fn dedup(failures: Vec<RxFailure>) -> Vec<RxFailure> {
+    let mut out: Vec<RxFailure> = Vec::new();
+    for f in failures {
+        if !out.iter().any(|o| o.pattern == f.pattern && o.hay == f.hay) {
+            out.push(f);
+        }
+    }
+    out
+}
+
+fn head(text: &str) -> String {
+    text.chars().take(60).collect()
+}
+
+/// The first document read whose text contains the start of `hay`, and
+/// the 1-based line where it starts (the unit being matched).
+fn locate(read: &ReadLog, hay: &str) -> (Option<String>, usize) {
+    let probe: String = hay.trim_start().chars().take(60).collect();
+    if probe.is_empty() {
+        return (None, 0);
+    }
+    for (path, text) in read {
+        if let Some(at) = text.find(probe.as_str()) {
+            return (Some(path.clone()), text[..at].matches('\n').count() + 1);
+        }
+    }
+    (None, 0)
 }
 
 fn git_archive(repo: &Path, commit: &str, prefixes: &[&str], dest: &Path) -> std::io::Result<()> {
@@ -409,6 +558,122 @@ fn git_show(repo: &Path, commit: &str, path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::doccheck::policy::TomlReader;
+
+    fn spec(run: fn(&Docs) -> Report) -> CheckSpec {
+        CheckSpec {
+            id: "000-00",
+            run,
+            script_env: &[],
+            targets: &[],
+            keywords: &[],
+            known_differences: &[],
+            denials: &[],
+            toml: TomlReader::Tomllib,
+            fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
+        }
+    }
+
+    /// Reads wire.md, then the file its first link names (wherever it
+    /// lies), and fails AC1 when the link target lacks "ok".
+    fn follows_a_link(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let target = docs.read("doc/design/spec/wire.md").and_then(|t| {
+            let link = t.split_once("](")?.1.split_once(')')?.0;
+            let rel = link.split('#').next()?.to_string();
+            docs.read(&join("doc/design/spec", &rel))
+        });
+        r.check("AC1", target.is_some_and(|t| t.contains("ok")), "target");
+        r
+    }
+
+    #[test]
+    fn every_text_a_check_reads_is_guarded() {
+        let base = Docs::dir("/nonexistent-doccheck-tree")
+            .with("doc/design/spec/wire.md", "see [r](../../../README.md#x)\n")
+            .with("README.md", "ok\n")
+            .with("doc/other.md", "caf\u{e9} never read\n");
+        let s = spec(follows_a_link);
+        assert!(
+            s.evaluate(&base).passed(),
+            "a file the check does not read is not its input"
+        );
+        let bad = base.with("README.md", "ok\nna\u{ef}ve\n");
+        let r = s.evaluate(&bad);
+        assert_eq!(r.failed_criteria(), ["REPERTOIRE".to_string()].into());
+        assert!(
+            r.render().contains("README.md:2:3: U+00EF"),
+            "{}",
+            r.render()
+        );
+        // with the character, the check's own verdict is not reported
+        let both = bad.with("README.md", "na\u{ef}ve\n");
+        assert_eq!(
+            s.evaluate(&both).failed_criteria(),
+            ["REPERTOIRE".to_string()].into()
+        );
+    }
+
+    fn reads_an_int(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let text = docs.read("doc/x.md").unwrap_or_default();
+        let n = crate::doccheck::text::first_int(&text);
+        r.check("AC1", n.is_ok_and(|n| n == Some(7)), "seven");
+        r
+    }
+
+    #[test]
+    fn an_integer_beyond_i128_is_red_with_its_place() {
+        let s = spec(reads_an_int);
+        let ok = Docs::dir("/nonexistent-doccheck-tree").with("doc/x.md", "intro\n7\n");
+        assert!(s.evaluate(&ok).passed());
+        let big = "9".repeat(45);
+        let r = s.evaluate(&ok.with("doc/x.md", format!("intro\nsize {big} bytes\n")));
+        assert_eq!(
+            r.failed_criteria(),
+            [INT_LIMIT.to_string()].into(),
+            "{}",
+            r.render()
+        );
+        assert_eq!(r.failures[0].location.as_ref().map(|l| l.line), Some(2));
+    }
+
+    fn backtracks(docs: &Docs) -> Report {
+        let mut r = Report::default();
+        let text = docs.read("doc/x.md").unwrap_or_default();
+        let line = text.lines().nth(1).unwrap_or_default();
+        let found = crate::doccheck::text::has(r"\b[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+\b", line);
+        r.check("AC3", !found, "no CamelCase word");
+        r
+    }
+
+    #[test]
+    fn a_regex_engine_failure_is_red_with_pattern_and_place() {
+        let s = spec(backtracks);
+        let ok = Docs::dir("/nonexistent-doccheck-tree").with("doc/x.md", "intro\nplain words\n");
+        assert!(s.evaluate(&ok).passed());
+        let hay = format!("intro\nAa{}_ x\n", "B".repeat(26));
+        let r = s.evaluate(&ok.with("doc/x.md", hay));
+        assert_eq!(
+            r.failed_criteria(),
+            [REGEX_LIMIT.to_string()].into(),
+            "{}",
+            r.render()
+        );
+        let f = &r.failures[0];
+        assert_eq!(
+            f.location,
+            Some(crate::doccheck::report::Loc {
+                file: "doc/x.md".into(),
+                line: 2
+            })
+        );
+        assert!(f.message.contains("[A-Z][a-z0-9]+"), "{}", f.message);
+        assert!(
+            crate::doccheck::rx::take_failures().is_empty(),
+            "evaluate leaves no record behind"
+        );
+    }
 
     #[test]
     fn paths_normalise_like_os_path() {

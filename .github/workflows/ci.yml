@@ -27,6 +27,8 @@ jobs:
         run: cargo test --workspace --all-targets --quiet
       - name: Red-phase trees of the ported document checks (shows EXECUTED lines)
         run: cargo test -p hadronyche-tools --test 'doc_*' red_phase_tree_fails_every_criterion
+      - name: Slow denials (backtracking inputs, REGEX_LIMIT; release build)
+        run: cargo test --release -p hadronyche-tools --test 'doc_*' -- --ignored
       - name: Unit tests (probes)
         run: |
           for d in probes/*/; do

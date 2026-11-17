@@ -8,7 +8,7 @@ use crate::doccheck::wp7::common::named_reasons;
 use crate::doccheck::wp7::py;
 use super::Ctx;
 use crate::doccheck::Report;
-use crate::doccheck::rejection_members::Enumeration;
+use crate::doccheck::wp7::rejection_members::Enumeration;
 
 /// 004-17's `NON_REJECTION` (textually the same as 004-16's).
 pub(crate) const NON_REJECTION: &str = r"not\s+a\s+(?:parse\s+)?rejection|never\s+a\s+rejection|is\s+not\s+counted|cannot\s+occur|ignored";

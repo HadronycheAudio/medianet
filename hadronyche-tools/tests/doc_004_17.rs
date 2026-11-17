@@ -128,7 +128,7 @@ fn behaviour_denial_c34_cited_without_its_bound() {
             })
         });
     assert_fails(
-        &(SPEC.run)(&docs),
+        &SPEC.evaluate(&docs),
         "Behaviour",
         "C-34 is cited but its bound is not restated",
     );

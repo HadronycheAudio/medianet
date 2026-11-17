@@ -40,6 +40,11 @@ pub struct Report {
     pub failures: Vec<Failure>,
     /// The assertions that held, as (criterion, message), for the log.
     pub passes: Vec<(String, String)>,
+    /// Set when the script, on these documents, would have stopped with an
+    /// uncaught exception (a traceback, no FAIL line, exit 1): the port
+    /// models the crash as an outcome of its own, so the harness can match
+    /// it to the script's crash (lead ruling R14). A crashed report is red.
+    pub crash: Option<String>,
 }
 
 impl Report {
@@ -83,7 +88,46 @@ impl Report {
 
     /// True when nothing failed.
     pub fn passed(&self) -> bool {
-        self.failures.is_empty()
+        self.failures.is_empty() && self.crash.is_none()
+    }
+
+    /// Records that the script would crash here (the first crash wins: the
+    /// script stops at it).
+    pub fn crash(&mut self, why: impl Into<String>) {
+        if self.crash.is_none() {
+            self.crash = Some(why.into());
+        }
+    }
+
+    /// Applies how the script stopped early ([`Stop`]): an uncaught
+    /// exception is [`Report::crash`]; `sys.exit` after a FAIL line is that
+    /// failure, alone when the script had printed nothing before
+    /// ([`Earlier::Dropped`]: it collected its failures to print them at the
+    /// end) or after the failures already printed ([`Earlier::Kept`]).
+    pub fn stop(&mut self, stop: Stop) {
+        match stop {
+            Stop::Crash(why) => self.crash(why),
+            Stop::Exit {
+                criterion,
+                message,
+                earlier,
+            } => {
+                if earlier == Earlier::Dropped {
+                    self.failures.clear();
+                    self.passes.clear();
+                }
+                self.fail(&criterion, message);
+            }
+        }
+    }
+
+    /// The report of a check whose body returns a [`Flow`]: `Err(stop)` is
+    /// applied with [`Report::stop`].
+    pub fn finish(mut self, flow: Flow<()>) -> Report {
+        if let Err(stop) = flow {
+            self.stop(stop);
+        }
+        self
     }
 
     /// The criteria with at least one failure.
@@ -101,12 +145,57 @@ impl Report {
 
     /// Every failure, one per line.
     pub fn render(&self) -> String {
-        self.failures
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n")
+        let mut lines: Vec<String> = self.failures.iter().map(ToString::to_string).collect();
+        if let Some(why) = &self.crash {
+            lines.push(format!(
+                "CRASH (the script stops with an uncaught exception): {why}"
+            ));
+        }
+        lines.join("\n")
     }
+}
+
+/// How a script ends before its last check: the one type for every port
+/// (it replaces 004-24's `Stop(String)` and 004-14's `util::Stop`, and the
+/// `"CRASH"` failures of 004-16 to 004-20). A check body returns
+/// [`Flow<T>`] and propagates a stop with `?`; [`Report::finish`] applies it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stop {
+    /// An uncaught Python exception (a traceback, exit 1): the harness's
+    /// script outcome "crash", matched only by a port's [`Report::crash`].
+    Crash(String),
+    /// `print("FAIL <criterion>: <message>")` then `sys.exit(1)`.
+    Exit {
+        criterion: String,
+        message: String,
+        earlier: Earlier,
+    },
+}
+
+/// What happens to the failures found before a [`Stop::Exit`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Earlier {
+    /// Already printed (the script's `fail` prints at once): they stay.
+    Kept,
+    /// Collected for a final print the exit skips (004-14): they go.
+    Dropped,
+}
+
+/// The result of a check step that may stop the script.
+pub type Flow<T> = Result<T, Stop>;
+
+/// `Err(Stop::Crash(why))`.
+pub fn crash<T>(why: impl Into<String>) -> Flow<T> {
+    Err(Stop::Crash(why.into()))
+}
+
+/// `Err(Stop::Exit { … })`.
+pub fn exit<T>(criterion: &str, message: impl Into<String>, earlier: Earlier) -> Flow<T> {
+    Err(Stop::Exit {
+        criterion: criterion.to_string(),
+        message: message.into(),
+        earlier,
+    })
 }
 
 /// Panics, printing every failure of `criterion`, when it has any.
@@ -151,6 +240,42 @@ pub fn assert_fails(report: &Report, criterion: &str, needle: &str) {
             report.render()
         };
         panic!("expected a failure of {criterion} containing {needle:?}; the report:\n{all}");
+    }
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use super::*;
+
+    fn body(stop: Option<Stop>) -> Flow<()> {
+        stop.map_or(Ok(()), Err)
+    }
+
+    #[test]
+    fn a_stop_is_a_crash_or_a_fail_line_before_exit() {
+        let mut r = Report::default();
+        r.fail("AC1", "earlier");
+        let r = r.finish(crash("KeyError: 'width'"));
+        assert!(r.crash.is_some() && r.failed_criteria().contains("AC1") && !r.passed());
+        let mut r = Report::default();
+        r.fail("AC1", "earlier");
+        let kept = r.clone().finish(exit("AC5", "no table", Earlier::Kept));
+        assert_eq!(
+            kept.failed_criteria(),
+            ["AC1".to_string(), "AC5".to_string()].into()
+        );
+        let dropped = r.finish(exit("AC5", "no table", Earlier::Dropped));
+        assert_eq!(dropped.failed_criteria(), ["AC5".to_string()].into());
+        assert!(dropped.crash.is_none());
+        assert!(Report::default().finish(body(None)).passed());
+        let mut first = Report::default();
+        first.stop(Stop::Crash("one".into()));
+        first.stop(Stop::Crash("two".into()));
+        assert_eq!(
+            first.crash.as_deref(),
+            Some("one"),
+            "the script stops at the first"
+        );
     }
 }
 

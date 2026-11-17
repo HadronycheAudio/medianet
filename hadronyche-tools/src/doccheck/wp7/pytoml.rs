@@ -17,7 +17,7 @@
 //! where Python raises anything else (the script dies with a traceback).
 
 use super::py::{self, HUGE, int, strip};
-use crate::doccheck::rejection_members::digit_value;
+use crate::doccheck::wp7::rejection_members::digit_value;
 
 /// A Python value read from the TOML text.
 #[derive(Debug, Clone)]

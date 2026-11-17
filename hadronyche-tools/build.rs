@@ -5,6 +5,8 @@
 //! `pub const SPEC: CheckSpec`. The registry is generated from the directory
 //! listing so that porters working in parallel never edit a shared file.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the registry generator
+
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -22,8 +24,15 @@ fn main() {
     {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with('c') || !name[1..].starts_with(|c: char| c.is_ascii_digit()) {
+        if name == "mod.rs" {
             continue;
+        }
+        if !name.starts_with('c') || !name[1..].starts_with(|c: char| c.is_ascii_digit()) {
+            panic!(
+                "src/doccheck/checks/{name}: only port modules (c<id>/ or c<id>.rs) live under checks/; \
+                 shared code belongs in the library (src/doccheck/), where the add-only and \
+                 `doccheck-equiv --all` rules apply (lead ruling R16)"
+            );
         }
         let (module, file) = if path.is_dir() {
             (name.clone(), path.join("mod.rs"))

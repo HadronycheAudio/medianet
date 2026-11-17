@@ -5,6 +5,8 @@
 //! tickets can self-check their table additions locally; CI runs the same
 //! check through `cargo test` in `hadronyche-tools`.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: a command-line tool
+
 use std::path::PathBuf;
 
 use hadronyche_tools::wire_tables::check_file;

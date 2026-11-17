@@ -20,9 +20,18 @@ pub enum FencePolicy {
     Backticks,
     /// `` ``` `` or `~~~` toggles, any length, no matching (003-02).
     BackticksOrTildes,
-    /// An opener of 3 or more backticks or tildes closes only on the same
-    /// character with at least its length (006-01, CommonMark).
+    /// 006-01's `scan_fences_and_headings`: a line `^[ \t]*(`{3,}|~{3,})`
+    /// opens a fence; inside, only a marker of the same character, at least
+    /// as long, with nothing after it closes it (```` ``` js ```` does not).
+    /// Proven on `data/markdown_corpus.txt` (`fence_006_01`).
     Matching,
+    /// 006-02's `visible_lines`: a line `^\s*(`{3,}|~{3,})` opens a fence;
+    /// inside, a marker of the same character closes it, whatever its
+    /// length or what follows (`fence_006_02`).
+    SameChar,
+    /// No fence is recognised: every line is text (006-02's `find_section`,
+    /// which looks for its heading over all lines, code included).
+    NoFences,
 }
 
 /// How a heading is found by a pattern (inventory 4d).
@@ -65,6 +74,12 @@ pub enum RowSplit {
     Escaped,
     /// Plain `split("|")`: an escaped pipe breaks the cell (004-22).
     Plain,
+    /// The 006 family's character walk (006-01, 006-02 `split_row`): the
+    /// final `|` is dropped unless escaped, `\|` is a pipe in the cell
+    /// (also at the end: `| a \|` is one cell `a |`), cells stripped. A line
+    /// that does not start with `|` is no row
+    /// ([`super::tables::split_row_char_walk`] gives `None`).
+    CharWalk,
 }
 
 /// How a document's text becomes lines (inventory 4f; review finding 1c).
@@ -102,8 +117,13 @@ pub enum SeparatorRule {
     #[default]
     CellWise,
     /// The line matches `^\s*\|?[\s:|-]+\|?\s*$` and holds a `-` (the 004
-    /// family's `parse_tables`, 23 scripts).
+    /// family's `parse_tables`, 23 scripts; 004-14's `section_tables`;
+    /// 006-01's `is_separator`, proven equal on the corpus).
     LineRegex,
+    /// 006-02's `is_separator(cells)`: the second line has cells and each,
+    /// spaces removed, is `:?-{2,}:?` (an empty cell fails); and the table
+    /// needs a data row after it (`len(block) >= 3`).
+    DashCells,
 }
 
 /// What a run of `|` lines without a separator row is (review finding 2).
@@ -131,10 +151,27 @@ impl TableRules {
         separator: SeparatorRule::CellWise,
         headerless: HeaderlessRuns::Keep,
     };
-    /// The 004 family's `parse_tables` (004-01, 03-06, 08-13, 16-21, 24-29).
+    /// The 004 family's `parse_tables` (004-01, 03-06, 08-13, 16-21, 24-29;
+    /// the two textual variants of the family compute the same tables, and
+    /// 004-14's `section_tables` the same with captions,
+    /// [`super::tables::caption_above`]).
     pub const FAMILY_004: TableRules = TableRules {
         split: RowSplit::Escaped,
         separator: SeparatorRule::LineRegex,
+        headerless: HeaderlessRuns::Drop,
+    };
+    /// 006-01's `parse_tables` (with [`FencePolicy::Matching`]). The script
+    /// keeps the header and separator lines in its block: they are
+    /// `Table::line` and the line after it.
+    pub const T006_01: TableRules = TableRules {
+        split: RowSplit::CharWalk,
+        separator: SeparatorRule::LineRegex,
+        headerless: HeaderlessRuns::Drop,
+    };
+    /// 006-02's `parse_tables` (with [`FencePolicy::SameChar`]).
+    pub const T006_02: TableRules = TableRules {
+        split: RowSplit::CharWalk,
+        separator: SeparatorRule::DashCells,
         headerless: HeaderlessRuns::Drop,
     };
 }
@@ -149,23 +186,39 @@ pub enum PathNorm {
     PyNormpath,
 }
 
-/// Which TOML reader the script used (review finding 1f, lead ruling R3).
-/// Ports read wire.toml with the crate's parser either way; the policy names
-/// what the harness must expect and how differences are classified.
+/// Which TOML reader the script used (lead ruling R14). A port reads
+/// `wire.toml` through a faithful port of ITS script's reader, so the
+/// script's verdict on any input is reproduced, not excused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TomlReader {
-    /// `tomllib` (004-22): a full TOML parser, the same language.
+    /// `tomllib` (004-22): the crate's TOML parser, values as Python's
+    /// ([`super::tomllib`]); its differences from `tomllib` on the corpus are
+    /// listed in `tomllib::KNOWN_DIFFERENCES`.
     Tomllib,
-    /// The hand-written subset reader of the 004 family (004-03, 06, 08-13,
-    /// 16-20, 24-29). It rejects valid TOML (`"""` strings) and accepts
-    /// invalid TOML (bare keys with spaces, integers beyond 64 bits).
-    /// Values are read through [`super::pycompat`] (`py_int`, `py_iter`,
-    /// `py_eq_int`) so type errors the script caught still fail. Where only
-    /// the readers differ, the difference is classified
-    /// `DiffClass::SubsetTomlReader` (the subset reader rejected valid TOML)
-    /// or `DiffClass::PortStricterTyped` (the typed parser rejects what the
-    /// subset reader let through).
-    SubsetReader,
+    /// The statement-scanner subset reader of 004-03, 05, 06, 08-13, 16-20
+    /// and 24-29, ported in [`super::tomlsubset`]. The corpus generator runs
+    /// all twenty scripts' copies and they give the same result on every
+    /// snippet (004-03 and 004-05 differ only in formatting: a dict literal
+    /// on several lines, `%`-formatted messages that print the same).
+    Subset004_18,
+    /// The line reader of 004-14 ([`super::tomlline`], `Variant::V004_14`):
+    /// `(messages, others)`, strings unescaped (`\"`, `\\`).
+    Line004_14,
+    /// The line reader of 004-15 ([`super::tomlline`], `Variant::V004_15`):
+    /// strings kept as written; a field before any message is an
+    /// `IndexError`, a `[[x]]` after `[x]` an uncaught `AttributeError`.
+    Line004_15,
+}
+
+impl TomlReader {
+    /// The [`super::tomlline::Variant`] of a line reader.
+    pub fn line_variant(self) -> Option<super::tomlline::Variant> {
+        match self {
+            TomlReader::Line004_14 => Some(super::tomlline::Variant::V004_14),
+            TomlReader::Line004_15 => Some(super::tomlline::Variant::V004_15),
+            TomlReader::Tomllib | TomlReader::Subset004_18 => None,
+        }
+    }
 }
 
 /// The regex word class (lead ruling R1). Not a parameter: every pattern

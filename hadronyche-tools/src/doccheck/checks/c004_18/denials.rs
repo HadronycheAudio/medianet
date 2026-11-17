@@ -77,7 +77,7 @@ fn prose_only(t: &str, pattern: &str, to: &str) -> String {
     let re = rx(pattern);
     let out: Vec<String> = t
         .split('\n')
-        .map(|l| if l.trim_start().starts_with('|') { l.to_string() } else { re.replace_all(l, to).into_owned() })
+        .map(|l| if l.trim_start().starts_with('|') { l.to_string() } else { re.replace_all(l, to) })
         .collect();
     out.join("\n")
 }
@@ -87,7 +87,7 @@ fn rows_only(t: &str, pattern: &str, to: &str) -> String {
     let re = rx(pattern);
     let out: Vec<String> = t
         .split('\n')
-        .map(|l| if l.trim_start().starts_with('|') { re.replace_all(l, to).into_owned() } else { l.to_string() })
+        .map(|l| if l.trim_start().starts_with('|') { re.replace_all(l, to) } else { l.to_string() })
         .collect();
     out.join("\n")
 }
@@ -101,7 +101,7 @@ fn on_line(t: &str, line: &str, pattern: &str, to: &str) -> String {
         .map(|l| {
             if !hit && lre.is_match(l) {
                 hit = true;
-                re.replace_all(l, to).into_owned()
+                re.replace_all(l, to)
             } else {
                 l.to_string()
             }

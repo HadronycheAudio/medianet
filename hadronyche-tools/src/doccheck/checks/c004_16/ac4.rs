@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use crate::doccheck::wp7::md::parse_tables;
 use super::{Ctx, py};
 use crate::doccheck::Report;
-use crate::doccheck::rejection_members::Enumeration;
+use crate::doccheck::wp7::rejection_members::Enumeration;
 
 /// 004-16's `NON_REJECTION` (it differs in each script).
 pub(crate) const NON_REJECTION: &str = r"not\s+a\s+(?:parse\s+)?rejection|never\s+a\s+rejection|is\s+not\s+counted|cannot\s+occur|ignored";

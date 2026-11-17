@@ -181,7 +181,8 @@ fn red_phase_tree_fails_every_criterion() {
 // One test per entry of the check's denial list
 // (`src/doccheck/checks/c004_22/denials.rs`), the same list the harness runs
 // against the old script (`doccheck-equiv 004-22 --denials-only`).
-hadronyche_tools::denial_tests!(SPEC;
+hadronyche_tools::denial_tests!(
+    SPEC;
     ac1_denial_a_missing_rule_row,
     ac1_denial_a_rule_with_two_rows,
     ac1_denial_an_empty_mapping,
@@ -223,4 +224,130 @@ hadronyche_tools::denial_tests!(SPEC;
     denial_wire_md_missing,
     review_1a_a_link_climbing_above_the_repository,
     review_1b_a_superscript_in_the_traceability_heading,
+    review_r001_ac1_delete_the_rule_7_row,
+    review_r002_ac1_duplicate_rule_20_rule_21_renumbered,
+    review_r003_ac1_break_one_anchor_copy_index_c_07_c_7,
+    review_r004_ac1_link_escaping_the_repo_root_doc_design_spec_wire_md,
+    review_r005_ac1_cite_a_non_field_snake_case_name,
+    review_r006_ac2_change_one_width_frames_16_8_bits,
+    review_r007_ac2_drop_one_unit_structural_latency,
+    review_r008_ac2_drop_one_constant_row_id_c_122_c_922,
+    review_r009_ac3_one_verdict_per_receiver_magic,
+    review_r010_ac3_one_verdict_emptied_version,
+    review_r011_ac3_conclusion_negated,
+    review_r012_ac3_one_field_dropped_from_the_audit_bar_origin,
+    review_r013_ac4_date_removed,
+    review_r014_ac4_reviewer_tbd,
+    review_r015_ac4_resolution_column_renamed,
+    review_r016_ac4_retransmi_wording_dropped_from_r_14,
+    review_r017_ac4_over_claim_every_known_difference,
+    review_r018_ac4_placement_claim_004_22_allows,
+    review_r019_dod_strip_one_tag_purpose,
+    review_r020_dod_tag_case_decision,
+    review_r021_dod_main_ref,
+    review_r022_dod_open_item_without_falsifier,
+    review_r023_dod_paragraph_split_by_a_fence_3_3_words,
+    review_r024_slug_superscript_in_the_traceability_heading,
+    review_r025_slug_duplicate_slug_interplay_heading_traceability_table_1_b,
+    review_r045_crlf_line_ends_in_wire_md,
+    review_r049_r2_b_before_a_combining_mark_main_branch_u_0301,
+    review_r050_r2_b_before_superscript_main_branch_python_no_boundary,
+    review_r051_r2_s_with_x1f_separators_untagged_5_word_paragraph,
+    review_r052_r2_s_in_rule_re_rule_x1c7,
+    review_r053_r2_strip_duplicate_rule_7_row_prefixed_by_x1c,
+    review_r054_r2_universal_newlines_lone_r_starts_other_inside_the_record,
+    review_r055_r2_u_2028_is_not_a_line_break_for_split_n,
+    review_r056_r2_re_i_with_dotted_capital_i_open_i_tem_without_owner,
+    review_r057_r2_re_i_dotted_i_on_a_required_word_revi_ewer_line,
+    review_r058_r2_d_non_ascii_rule,
+    review_r059_r2_d_non_ascii_constant_id_c,
+    review_r060_r2_normpath_absolute_link_doc_design_spec_wire_md,
+    review_r061_r2_normpath_link_to_a_directory,
+    review_r062_r2_normpath_a_inside_the_path,
+    review_r063_r2_tablerules_keep_headerless_duplicate_rule_run,
+    review_r064_r2_tablerules_cellwise_separator_on_the_constants_table,
+    review_r065_r2_slug_combining_mark_in_heading_python_drops_it,
+    review_r066_r2_tomllib_width_as_float_16_0_frames,
+    review_r067_r2_tomllib_duplicate_key_invalid_toml,
+    review_r100_r2_d_non_ascii_duplicate_extra_row_rule,
+    review_r3_003_lone_r_in_the_ticket_s_constants_line_adds_c_999_after_it,
+    review_r3_004_crlf_ticket,
+    review_r3_005_lone_r_starts_3_8_extra_in_the_architecture_s_section_3,
+    review_r3_006_lone_r_inside_a_rule_row_row_breaks,
+    review_r3_007_tab_after_the_heading_hashes_ttraceability_table,
+    review_r3_008_closing_hashes_traceability_table,
+    review_r3_009_seven_hashes_are_not_a_heading_review_record,
+    review_r3_010_indented_heading_review_record,
+    review_r3_011_indented_fence_opens_code_before_the_audit_table,
+    review_r3_012_tilde_fence_is_not_a_fence_for_004_22,
+    review_r3_013_escaped_bracket_x_nope_still_a_link_to_the_regex,
+    review_r3_014_nested_brackets_a_b_traceability_table,
+    review_r3_015_upper_case_anchor_traceability_table,
+    review_r3_016_s_unit_for_residence_time_in_a_wire_visible_row,
+    review_r3_017_superscript_glued_to_a_unit_samples,
+    review_r3_018_en_dash_range_c_20_c_22_in_a_constants_cell,
+    review_r3_019_minus_sign_range_c_20_c_22_not_a_range,
+    review_r3_020_final_sigma_in_a_heading_and_its_reference_copy_index,
+    review_r3_021_greek_heading_referenced_in_upper_case_notes_notes,
+    review_r3_022_empty_match_verdict_cell_none_with_tabs,
+    review_r3_023_date_as_16_nov_2026_month_date,
+    review_r3_024_date_as_16_november_2026,
+    review_r3_025_main_branch_split_by_a_tab_b_and_s,
+    review_r3_059_control_zzz_32_bits_samples_at_the_end_of_the_c_105_row_no_l,
+    ; slow:
+    review_r3_001_backtracking_4000_backticked_names_then_zzz_32_bits_samples,
+    review_r3_002_backtracking_6000_backticked_names_then_zzz_32_bits_samples,
+    review_r3_057_backtracking_list_of_4000_then_zzz_32_bits_samples_at_the_en,
+    review_r3_058_backtracking_list_of_6000_then_zzz_32_bits_samples_at_the_en,
 );
+
+/// Review round 4, item 4: the repertoire guard covers what the check
+/// READS, wherever it lies (R20), with no list in the port.
+mod read_log_coverage {
+    use hadronyche_tools::doccheck::Docs;
+    use hadronyche_tools::doccheck::checks::c004_22::SPEC;
+    use hadronyche_tools::doccheck::testing::repo;
+
+    const WIRE: &str = "doc/design/spec/wire.md";
+
+    fn with_link(link: &str, anchor: &str) -> Docs {
+        let wire = repo().read(WIRE).expect("wire.md");
+        let at = wire.find(anchor).expect("anchor") + anchor.len();
+        let text = format!("{}\n\nSee {link}.\n{}", &wire[..at], &wire[at..]);
+        repo().with(WIRE, text)
+    }
+
+    fn repertoire(docs: &Docs) -> Vec<String> {
+        let r = SPEC.evaluate(docs);
+        r.of("REPERTOIRE").iter().map(|f| f.to_string()).collect()
+    }
+
+    #[test]
+    fn a_separate_review_record_is_guarded() {
+        let rec = "doc/design/reports/r4-review-record.md";
+        let docs = with_link(
+            "[the record](../reports/r4-review-record.md)",
+            "## Traceability table",
+        );
+        let clean = docs.with(rec, "# Review record\n\nReviewer: x\n");
+        assert!(repertoire(&clean).is_empty());
+        let bad = docs.with(rec, "# Review record\n\nReviewer: Ren\u{e9}e\n");
+        let hits = repertoire(&bad);
+        assert!(
+            hits.iter().any(|h| h.contains("r4-review-record.md:3")),
+            "{hits:?}"
+        );
+    }
+
+    #[test]
+    fn a_link_target_outside_doc_is_guarded() {
+        // a file at the repository root, outside doc/ (in memory: the
+        // guard sees what the check reads, not what the disk holds)
+        let docs = with_link("[readme](../../../README.md#x)", "## Review record")
+            .with("README.md", "# Readme\n\n## X\n");
+        assert!(repertoire(&docs).is_empty());
+        let bad = docs.with("README.md", "# Readme\n\n## X\n\nna\u{ef}ve\n");
+        let hits = repertoire(&bad);
+        assert!(hits.iter().any(|h| h.contains("README.md:")), "{hits:?}");
+    }
+}

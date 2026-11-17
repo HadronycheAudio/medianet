@@ -27,7 +27,7 @@
 //! [`py`]: crate::doccheck::wp7::py
 //! [`md`]: crate::doccheck::wp7::md
 //! [`pytoml`]: crate::doccheck::wp7::pytoml
-//! [`rejection_members`]: crate::doccheck::rejection_members
+//! [`rejection_members`]: crate::doccheck::wp7::rejection_members
 
 mod ac1;
 mod ac4;
@@ -41,7 +41,7 @@ use crate::doccheck::wp7::py;
 use crate::doccheck::wp7::common::{block_kind, section_blocks};
 use super::{CheckSpec, DiffClass, KnownDifference, Target};
 use crate::doccheck::policy::TomlReader;
-use crate::doccheck::rejection_members::Enumeration;
+use crate::doccheck::wp7::rejection_members::Enumeration;
 use crate::doccheck::ticket::CONSTANTS_MD;
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
@@ -87,7 +87,8 @@ pub const SPEC: CheckSpec = CheckSpec {
     keywords: &["unicast", "multicast", "query", "wraps", "saturates", "events", "monotonic", "same"],
     known_differences: KNOWN,
     denials: denials::DENIALS,
-    toml: TomlReader::SubsetReader,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.

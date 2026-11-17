@@ -6,6 +6,8 @@
 //! reproduces the script's variant of every shared rule, named where it is
 //! used:
 //!
+//! * the repertoire guard (R13) on every text it reads, by construction
+//!   (R20: [`CheckSpec::evaluate`] guards each [`Docs::read`]);
 //! * text read as `open()` does, split with `split("\n")`
 //!   ([`LineSplit::Nl`], [`LINES`]);
 //! * tables by [`TableRules::T004_22`] (plain `split("|")`, cell-wise
@@ -17,8 +19,9 @@
 //!   section number), links by GitHub anchor with Python's `\w`, link paths
 //!   by [`PathNorm::PyNormpath`] (a leading `..` is kept);
 //! * wire.toml as `tomllib` read it ([`TomlReader::Tomllib`]), widths
-//!   compared with Python's `==`, the script's crashes (a field without a
-//!   name, a message that is not a table) reported under `WIRE`.
+//!   compared with Python's `==`; where the script crashes (`tomllib` raises,
+//!   a field without a name, a message that is not a table) the port
+//!   models the crash (`Report::crash`).
 //!
 //! Its repository-level assertions (`cargo run --bin wire-check` exits 0;
 //! `cargo test -p hadronyche-tools --test wire_tables` reports at least 12
@@ -41,13 +44,13 @@ mod work3;
 
 use std::collections::BTreeMap;
 
-use super::{CheckSpec, DiffClass, KnownDifference, Target};
+use super::{CheckSpec, KnownDifference, Target};
 use crate::doccheck::markdown::{Markdown, Span, norm_title};
 use crate::doccheck::policy::{LineSplit, TableRules, TomlReader};
 use crate::doccheck::tables::Row;
 use crate::doccheck::ticket::Ticket;
-use crate::doccheck::wire_toml::{WireToml, display};
-use toml::Value;
+use crate::doccheck::pyvalue::{Dict, PyValue};
+use crate::doccheck::tomllib;
 use crate::doccheck::{Docs, Report};
 
 /// The specification.
@@ -90,16 +93,12 @@ pub const SPEC: CheckSpec = CheckSpec {
     known_differences: KNOWN,
     denials: denials::DENIALS,
     toml: TomlReader::Tomllib,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.
-const KNOWN: &[KnownDifference] = &[KnownDifference {
-    label: r"^wire\.toml:",
-    class: DiffClass::ScriptCrashed,
-    reason: "a mutation that makes wire.toml invalid TOML: the script's tomllib.load raises TOMLDecodeError, which it \
-             does not catch, so it crashes with a traceback and no FAIL line; the port reports WIRE \
-             'wire.toml does not parse (tomllib raises)'",
-}];
+const KNOWN: &[KnownDifference] = &[];
+
 
 /// Everything the check reads, parsed once.
 pub(crate) struct Inputs {
@@ -108,7 +107,7 @@ pub(crate) struct Inputs {
     /// wire.toml field names (fields of every message, then reserved
     /// entries) with their `width` values (`None` when an entry has none);
     /// compared to a stated width with Python's `==` (`16.0 == 16`).
-    pub widths: BTreeMap<String, Vec<Option<Value>>>,
+    pub widths: BTreeMap<String, Vec<Option<PyValue>>>,
     /// The media-layer messages: (name, field names); a field name that is
     /// not a string is kept as a name no backticked token can equal.
     pub media: Vec<(String, Vec<String>)>,
@@ -116,41 +115,41 @@ pub(crate) struct Inputs {
     pub ticket: String,
 }
 
-/// `for x in v` over a TOML value whose items the script then indexes as
-/// dicts: an array's tables; an empty table or string iterates nothing;
-/// anything else is the script's crash (`AttributeError`, `TypeError`).
-fn py_items<'a>(v: Option<&'a Value>, what: &str) -> Result<Vec<&'a toml::Table>, String> {
-    let items: Vec<&Value> = match v {
+/// `for x in v` over a value whose items the script then indexes as dicts:
+/// a list's dicts; an empty dict or string iterates nothing; anything else is
+/// the script's crash (`AttributeError`, `TypeError`).
+fn py_items<'a>(v: Option<&'a PyValue>, what: &str) -> Result<Vec<&'a Dict>, String> {
+    let items: Vec<&PyValue> = match v {
         None => return Ok(Vec::new()),
-        Some(Value::Array(a)) => a.iter().collect(),
-        Some(Value::Table(t)) if t.is_empty() => return Ok(Vec::new()),
-        Some(Value::String(s)) if s.is_empty() => return Ok(Vec::new()),
-        Some(other) => return Err(format!("{what} is a {}, which the script iterates and indexes", other.type_str())),
+        Some(PyValue::List(a)) => a.iter().collect(),
+        Some(PyValue::Dict(d)) if d.is_empty() => return Ok(Vec::new()),
+        Some(PyValue::Str(s)) if s.is_empty() => return Ok(Vec::new()),
+        Some(other) => return Err(format!("{what} is a {}, which the script iterates and indexes", other.type_name())),
     };
     items
         .into_iter()
-        .map(|x| x.as_table().ok_or_else(|| format!("an item of {what} is a {}, not a table", x.type_str())))
+        .map(|x| x.as_dict().ok_or_else(|| format!("an item of {what} is a {}, not a dict", x.type_name())))
         .collect()
 }
 
 /// `f["name"]` as a dict key: missing or unhashable is the script's crash;
 /// a string is the key; another scalar is a key no string equals.
-fn py_name(f: &toml::Table, what: &str) -> Result<String, String> {
+fn py_name(f: &Dict, what: &str) -> Result<String, String> {
     match f.get("name") {
-        None => Err(format!("an entry of {what} has no name (KeyError)")),
-        Some(Value::String(s)) => Ok(s.clone()),
-        Some(v @ (Value::Array(_) | Value::Table(_))) => Err(format!("a name of {what} is a {} (unhashable)", v.type_str())),
-        Some(v) => Ok(format!("\u{0}{}", display(v))),
+        None => Err(format!("KeyError: an entry of {what} has no name")),
+        Some(PyValue::Str(s)) => Ok(s.clone()),
+        Some(v @ (PyValue::List(_) | PyValue::Dict(_))) => Err(format!("TypeError: a name of {what} is a {} (unhashable)", v.type_name())),
+        Some(v) => Ok(format!("\u{0}{}", v.py_repr())),
     }
 }
 
+/// What the script read from wire.toml: (widths by field name, media messages).
+type TomlRead = (BTreeMap<String, Vec<Option<PyValue>>>, Vec<(String, Vec<String>)>);
+
 /// The script's reading of wire.toml (`FIELD_INFO`, `MEDIA_MSGS`,
 /// `EXPECTED`); `Err` where its Python crashed.
-/// What the script read from wire.toml: (widths by field name, media messages).
-type TomlRead = (BTreeMap<String, Vec<Option<Value>>>, Vec<(String, Vec<String>)>);
-
-fn read_toml(root: &toml::Table) -> Result<TomlRead, String> {
-    let mut widths: BTreeMap<String, Vec<Option<Value>>> = BTreeMap::new();
+fn read_toml(root: &Dict) -> Result<TomlRead, String> {
+    let mut widths: BTreeMap<String, Vec<Option<PyValue>>> = BTreeMap::new();
     let messages = py_items(root.get("message"), "message")?;
     for m in &messages {
         for f in py_items(m.get("field"), "a message's field")? {
@@ -163,12 +162,11 @@ fn read_toml(root: &toml::Table) -> Result<TomlRead, String> {
     let pick = crate::doccheck::text::rx(r"content|audio message|dense controller|sparse keyed|transport state");
     let mut media = Vec::new();
     for m in messages {
-        let name = m.get("name").ok_or("a message has no name (KeyError)")?;
-        let is_packet = matches!(name, Value::String(n) if n == "media packet");
-        let section = matches!(m.get("section_of"), Some(Value::String(s)) if s == "media packet");
-        if !is_packet && !section {
-            let Value::String(n) = name else {
-                return Err(format!("a message name is a {} (re.search needs a string)", name.type_str()));
+        let name = m.get("name").ok_or("KeyError: a message has no name")?;
+        let section = m.get("section_of").is_some_and(|v| v.eq_str("media packet"));
+        if !name.eq_str("media packet") && !section {
+            let Some(n) = name.as_str() else {
+                return Err(format!("TypeError: a message name is a {} (re.search needs a string)", name.type_name()));
             };
             if !pick.is_match(n) {
                 continue;
@@ -178,7 +176,7 @@ fn read_toml(root: &toml::Table) -> Result<TomlRead, String> {
             .into_iter()
             .map(|f| py_name(f, "field"))
             .collect::<Result<Vec<_>, _>>()?;
-        media.push((display(name), fields));
+        media.push((name.py_str(), fields));
     }
     Ok((widths, media))
 }
@@ -203,17 +201,18 @@ fn load(docs: &Docs, report: &mut Report) -> Option<Inputs> {
         report.fail("WIRE", "cannot read the ticket at ''");
         return None;
     };
-    let toml = match WireToml::parse(&LINES.normalize(&docs.read(WIRE_TOML)?)) {
+    // tomllib.load raises on invalid TOML and the script does not catch it
+    let toml = match tomllib::parse(&LINES.normalize(&docs.read(WIRE_TOML)?)) {
         Ok(t) => t,
         Err(e) => {
-            report.fail("WIRE", format!("wire.toml does not parse (tomllib raises): {e}"));
+            report.crash(format!("wire.toml: {e}"));
             return None;
         }
     };
-    let (widths, media) = match read_toml(&toml.root) {
+    let (widths, media) = match read_toml(&toml) {
         Ok(x) => x,
         Err(e) => {
-            report.fail("WIRE", format!("wire.toml: the script's reader crashes here: {e}"));
+            report.crash(format!("wire.toml: {e}"));
             return None;
         }
     };

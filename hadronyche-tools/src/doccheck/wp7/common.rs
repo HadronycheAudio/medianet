@@ -9,7 +9,7 @@ use super::md::{clean_start, parse_tables};
 use super::py;
 use super::pytoml::{self, Fail, PyDict, PyVal};
 use crate::doccheck::Report;
-use crate::doccheck::rejection_members::Enumeration;
+use crate::doccheck::wp7::rejection_members::Enumeration;
 use crate::doccheck::wire_toml::WIRE_TOML;
 
 /// `NUM`: a number with optional digit groups (space or no-break space).

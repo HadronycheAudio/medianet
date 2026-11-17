@@ -25,10 +25,13 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::doccheck::rejection_members::digit_value;
+use crate::doccheck::wp7::rejection_members::digit_value;
 use std::sync::Arc;
 
-use crate::doccheck::text::rx_raw as rx;
+/// Transitional: the regex crate directly (this module goes with the ports).
+fn rx(p: &str) -> Arc<regex::Regex> {
+    Arc::new(regex::Regex::new(p).expect("a valid pattern"))
+}
 
 /// Python's `open()` text mode: `\r\n` and a lone `\r` read as `\n`.
 pub(crate) fn universal(text: &str) -> String {

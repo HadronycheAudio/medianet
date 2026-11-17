@@ -87,7 +87,7 @@ fn preq_toml(t: &str, from: &str, to: &str) -> String {
 fn on_rows(t: &str, rows: bool, pattern: &str, to: &str) -> String {
     let re = rx(pattern);
     t.split('\n')
-        .map(|l| if l.trim_start().starts_with('|') == rows { re.replace_all(l, to).into_owned() } else { l.to_string() })
+        .map(|l| if l.trim_start().starts_with('|') == rows { re.replace_all(l, to) } else { l.to_string() })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -529,7 +529,7 @@ pub const DENIALS: &[Denial] = &[
     Denial {
         name: "ac1_denial_no_toml_probe",
         file: WIRE_TOML,
-        edit: DenialEdit::Text(|b| toml(b, |t| rx(r#"(name = "[^"\n]*)probe"#).replace_all(t, "${1}check").into_owned())),
+        edit: DenialEdit::Text(|b| toml(b, |t| rx(r#"(name = "[^"\n]*)probe"#).replace_all(t, "${1}check"))),
         expect: &[("AC1", "declares no [[message]] for the one-way probe")],
     },
     Denial {

@@ -21,7 +21,7 @@ fn duration_stated(num: &str, unit: &str, text: &str) -> bool {
         let Some(h) = py::search(&pat, &text[from..], false) else { return false };
         let start = from + h.start;
         let prev = text[..start].chars().next_back();
-        if !prev.is_some_and(|c| c == '.' || crate::doccheck::rejection_members::digit_value(c).is_some()) {
+        if !prev.is_some_and(|c| c == '.' || crate::doccheck::wp7::rejection_members::digit_value(c).is_some()) {
             return true;
         }
         from = start + text[start..].chars().next().map_or(1, char::len_utf8);

@@ -39,7 +39,7 @@ use crate::doccheck::wp7::md::{self, PyTable, is_field_table, parse_tables};
 use crate::doccheck::wp7::py;
 use super::{CheckSpec, DiffClass, KnownDifference, Target};
 use crate::doccheck::policy::TomlReader;
-use crate::doccheck::rejection_members::Enumeration;
+use crate::doccheck::wp7::rejection_members::Enumeration;
 use crate::doccheck::ticket::CONSTANTS_MD;
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
@@ -77,7 +77,8 @@ pub const SPEC: CheckSpec = CheckSpec {
     keywords: &["stateless", "echo", "carries", "monotonic", "unicast", "zero", "rejection"],
     known_differences: KNOWN,
     denials: denials::DENIALS,
-    toml: TomlReader::SubsetReader,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
 
 /// The differences the harness found and a reviewer accepted.
