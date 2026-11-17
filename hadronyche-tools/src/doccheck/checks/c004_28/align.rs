@@ -4,8 +4,8 @@
 use super::Consts;
 use super::analyse::{Analysis, statements};
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_25::review::sentences;
-use crate::doccheck::checks::c004_27::Field;
+use crate::doccheck::family004::Field;
+use crate::doccheck::sentences::{SentenceSplit, split};
 use crate::doccheck::text::{has, has_i, rx};
 
 const UNIT: &str = r"(?i)nanosecond|microsecond|millisecond|\bns\b|µs|\bus\b|\bms\b|slice|sample|packet|second";
@@ -49,7 +49,7 @@ fn figures(g: &Analysis, ent: &[&Field], consts: &Consts, report: &mut Report) {
     report.check("AC3", a, "the reclaimable latency's valid range is bounded by A (C-53, C-96)");
     if let Some(&f) = g.lists().first()
         && g.stmts.iter().any(|s| s.1 == f) {
-            let with_c = sentences(&g.text).iter().filter(|s| !statements(s).is_empty()).any(|s| has(r"C-\d+", s));
+            let with_c = split(&g.text, SentenceSplit::BLOCKS_004_25).iter().filter(|s| !statements(s).is_empty()).any(|s| has(r"C-\d+", s));
             report.check("AC3", with_c, "the maximum alignment entry count is stated with the constant it derives from (C-nn in the same sentence)");
         }
     report.check("AC3", has_i("split|several sections|each section", &g.text), "the split of the alignment type over several sections is stated (Work 2)");
@@ -80,19 +80,15 @@ fn no_sample_values(nos: &[&Field]) -> Vec<String> {
     vals
 }
 
-/// True when `v` occurs in `text` not after a word character, `^` or `-`,
-/// and not before a word character or `^` (`(?<![\w^-])v(?![\w^])`); with
-/// `after_other_than`, only right after "other than" and optional spaces.
+/// `re.search(r"(?<![\w^-])" + re.escape(v) + r"(?![\w^])", text)`; with
+/// `after_other_than`, `re.search(r"other than\s*" + re.escape(v) +
+/// r"(?![\w^])", text)`.
 fn occurs(text: &str, v: &str, after_other_than: bool) -> bool {
-    let w = |c: char| rx(r"^\w$").is_match(&c.to_string());
-    text.match_indices(v).any(|(at, _)| {
-        let next_ok = !text[at + v.len()..].chars().next().is_some_and(|c| w(c) || c == '^');
-        if after_other_than {
-            return next_ok && rx(r"other than\s*$").is_match(&text[..at]);
-        }
-        let prev_ok = !text[..at].chars().next_back().is_some_and(|c| w(c) || c == '^' || c == '-');
-        prev_ok && next_ok
-    })
+    let v = regex::escape(v);
+    if after_other_than {
+        return has(&format!(r"other than\s*{v}(?![\w^])"), text);
+    }
+    has(&format!(r"(?<![\w^-]){v}(?![\w^])"), text)
 }
 
 /// Review C1; `rows` are the invalid forms of the alignment section.
@@ -109,7 +105,7 @@ pub(crate) fn c1(g: Option<&Analysis>, rows: &[(String, String)], report: &mut R
     let excluded = nos.iter().any(|f| vals.iter().any(|v| occurs(&f.valid, v, true)));
     let listed_first = has_i("first live sample", &g.text);
     report.check("AC3", !nos.is_empty() && ((!vals.is_empty() && !excluded) || listed_first), "the no-sample value of the maximum since live is admitted by its own valid range, or entries are listed only from the first live sample (C1)");
-    let pct: Vec<String> = sentences(&g.text).into_iter().filter(|x| has_i("non-decreasing", x)).collect();
+    let pct: Vec<String> = split(&g.text, SentenceSplit::BLOCKS_004_25).into_iter().filter(|x| has_i("non-decreasing", x)).collect();
     let exempt = pct.iter().any(|x| has_i(r"exempt|holds? for|no (live |lateness )?sample|no-sample|first live sample|-2\^63", x));
     report.check("AC3", exempt, "the percentile order rule is stated to hold or be exempt for the no-sample encoding (C1)");
     for (form, _) in rows.iter().filter(|(f, _)| has_i("since", f)) {

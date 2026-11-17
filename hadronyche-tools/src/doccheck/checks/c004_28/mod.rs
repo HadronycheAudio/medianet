@@ -3,54 +3,60 @@
 //! 004-28).
 //!
 //! The acceptance-criterion map, with the ticket sentences, is on the tests
-//! in `tests/doc_004_28.rs`. The script shares 004-25's conventions, and the
-//! port reuses 004-25's port for them: wire.md read with U+2212 turned into
-//! `-` and digit groups joined; `span_of` at an exact level; the
-//! Rejection reasons anchored and pinned by name and value
-//! ([`crate::doccheck::checks::c004_25::merged::REJ_FIXED`]); the
-//! arithmetic tree ([`crate::doccheck::checks::c004_25::tree`]); its
-//! `sentences`; the reason rules of an invalid form
-//! ([`crate::doccheck::checks::c004_25::validity::row_rules`], with "no
-//! reason" in the non-rejection pattern); the untagged-claim rule per prose
-//! block of each new subsection ([`TagPolicy::PROSE_004_29`]); open items as
-//! any block of the Regime stamp section that mentions "open item"
-//! ([`MENTION_BLOCKS_004_24`]). Its own variants: a sum Python cannot
-//! evaluate is "not exact" rather than a stop
-//! ([`crate::doccheck::checks::c004_25::tree::bad_arithmetic_lenient`]);
-//! `has_num2` ([`analyse::has_num2`]); the toml message of a new type must
-//! name at least one reason.
+//! in `tests/doc/c004_28.rs`. Built on the library: wire.md read with U+2212
+//! turned into `-` and digit groups joined; `span_of` at an exact level
+//! ([`Ctx::span_of`]); the constants by `const_row` ([`const_int`] under
+//! [`ConstInt::Exact004_28`]); the Rejection reasons
+//! ([`REJECTION_004_25`](crate::doccheck::rejection_members::REJECTION_004_25),
+//! pinned by `REJ_FIXED`); `sentences` ([`SentenceSplit::BLOCKS_004_25`]);
+//! the untagged-claim rule per prose block ([`TagPolicy::PROSE_004_29`]);
+//! open items as any block of the Regime stamp section that mentions "open
+//! item" ([`OpenItemPolicy::MentionBlocks`]); every `int()` through
+//! [`parse_int`] (a value beyond `i128` is `INT_LIMIT`); every exception
+//! the script does not catch a [`crate::doccheck::report::Stop::Crash`].
+//!
+//! Private to this port (the library has no equivalent): the arithmetic
+//! tree ([`tree`]; 004-25 carries the same functions), with 004-28's
+//! variant that a sum Python cannot evaluate is "not exact" rather than a
+//! stop; the merged-text checks ([`merged`]) and the reason rules of an
+//! invalid form ([`reasons`]), shared in substance with 004-25; the strict
+//! TOML item helpers ([`toml_side`]); `has_num2` and
+//! `exact_product_results` ([`analyse`]); `ACCEPT_HI`, which reads group 2
+//! of its pattern (the library's [`const_int`] reads group 1); the toml
+//! message of a new type must name at least one reason.
 //!
 //! Its repository-level assertions (`cargo run --bin wire-check` reports
 //! "checks clean"; `cargo test -p hadronyche-tools --test wire_tables` has 0
-//! failed and at least 12 passed, the count at the merged text; the checker
-//! names no ref containing main and runs no other check) are in
-//! `scripts/repo-state.d/004-28.sh`.
-//!
-//! [`TagPolicy::PROSE_004_29`]: crate::doccheck::evidence::TagPolicy::PROSE_004_29
-//! [`MENTION_BLOCKS_004_24`]: crate::doccheck::checks::c004_24::dod::MENTION_BLOCKS_004_24
+//! failed and at least 12 passed, the count at the merged text) are in
+//! `scripts/repo-state.d/004-28.sh`; "the checker names no ref containing
+//! main and runs no other check" is the library-wide rule.
 
 mod align;
 mod analyse;
 mod budget;
+mod denials;
 mod dscp;
+mod merged;
+mod reasons;
 mod toml_side;
+mod tree;
 
 use super::{CheckSpec, KnownDifference, Target};
-use crate::doccheck::checks::c004_24::dod::{MENTION_BLOCKS_004_24, block_items};
-use crate::doccheck::checks::c004_24::Stop;
-use crate::doccheck::checks::c004_24::py::{py_text, stopped, tables};
-use crate::doccheck::checks::c004_25::merged::{code_block, merged};
-use crate::doccheck::checks::c004_25::review::sentences;
-use crate::doccheck::checks::c004_25::validity::row_rules;
-use crate::doccheck::checks::c004_25::Stamp;
-use crate::doccheck::checks::c004_27::{Ctx, subsections};
 use crate::doccheck::evidence::{TagPolicy, has_tag, untagged};
+use crate::doccheck::family004::{ConstInt, Ctx, const_cell, const_int, subsections, tables};
+use crate::doccheck::items::{OpenItemPolicy, open_items, unowned_items};
 use crate::doccheck::markdown::Markdown;
+use crate::doccheck::policy::{LineSplit, TomlReader};
+use crate::doccheck::pycompat::{parse_int, universal_newlines};
+use crate::doccheck::report::Flow;
+use crate::doccheck::sentences::{SentenceSplit, split};
 use crate::doccheck::text::{has, has_i, head, join_digit_groups, rx};
 use crate::doccheck::ticket::{CONSTANTS_MD, Constants};
-use crate::doccheck::units::prose_blocks;
+use crate::doccheck::units::{Block, prose_blocks};
 use crate::doccheck::wire_toml::WIRE_TOML;
 use crate::doccheck::{Docs, Report};
+use merged::{Merged, code_block};
+use reasons::row_rules;
 
 /// The specification.
 pub const WIRE_MD: &str = "doc/design/spec/wire.md";
@@ -72,30 +78,49 @@ pub const SPEC: CheckSpec = CheckSpec {
     ],
     keywords: &["exceed", "cap", "holder", "rolling", "reserved"],
     known_differences: KNOWN,
+    denials: denials::DENIALS,
+    toml: TomlReader::Subset004_18,
+    fail_reader: crate::doccheck::equiv::script::DEFAULT_READER,
 };
+
+/// How the script splits its texts (`splitlines()`).
+const LINES: LineSplit = LineSplit::PySplitlines;
+
+/// The Regime stamp section: its text, its subsections, its blocks.
+pub(crate) struct Stamp {
+    pub text: String,
+    pub subs: Vec<(String, String)>,
+    pub prose: Vec<Block>,
+}
 
 /// The differences the harness found and a reviewer accepted.
 const KNOWN: &[KnownDifference] = &[];
 
 /// The numbers the constants give.
 pub(crate) struct Consts {
-    pub ctrl_bound: Option<i64>,
-    pub max_peers: Option<i64>,
-    pub dscp: Option<i64>,
-    pub accept_hi: Option<i64>,
-    pub window_s: Option<i64>,
+    pub ctrl_bound: Option<i128>,
+    pub max_peers: Option<i128>,
+    pub dscp: Option<i128>,
+    pub accept_hi: Option<i128>,
+    pub window_s: Option<i128>,
 }
 
-fn consts(c: &Constants, report: &mut Report) -> Consts {
-    let int = |id: &str, pat: &str, g: usize| rx(pat).captures(c.value(id)).and_then(|m| m[g].parse::<i64>().ok());
-    let ctrl_bound = int("C-17", r"at most (\d+) bytes", 1);
-    let modules = int("C-34", r"at most (\d+)", 1);
-    let followers = int("C-114", r"holder has at most (\d+) real followers", 1);
-    let max_peers = int("C-217", r"(\d+) peers", 1);
-    let dscp = int("C-13", r"control CS5 \((\d+)\)", 1);
-    let accept_hi = int("C-112", r"(\d+) to (\d+) per second", 2);
-    let window_s = int("C-182", r"rolling (\d+) s window", 1);
-    let peer_max = modules.map(|m| m - 1);
+/// `const_int(cid, pattern)`: `None` where it does not match (a value
+/// beyond `i128` is `INT_LIMIT`).
+fn grab(text: &str, cid: &str, pat: &str) -> Option<i128> {
+    const_int(text, cid, pat, ConstInt::Exact004_28).ok().flatten()
+}
+
+fn consts(text: &str, report: &mut Report) -> Consts {
+    let ctrl_bound = grab(text, "C-17", r"at most (\d+) bytes");
+    let modules = grab(text, "C-34", r"at most (\d+)");
+    let followers = grab(text, "C-114", r"holder has at most (\d+) real followers");
+    let max_peers = grab(text, "C-217", r"(\d+) peers");
+    let dscp = grab(text, "C-13", r"control CS5 \((\d+)\)");
+    // `const_int("C-112", r"(\d+) to (\d+) per second", 2)`: group 2
+    let accept_hi = rx(r"(\d+) to (\d+) per second").captures(&const_cell(text, "C-112")).and_then(|m| parse_int(&m[2]).ok());
+    let window_s = grab(text, "C-182", r"rolling (\d+) s window");
+    let peer_max = modules.map(|m| m.saturating_sub(1));
     report.check("AC1", ctrl_bound == Some(1252), format!("the constants table gives the control bound C-17 as 1 252 bytes (read {ctrl_bound:?})"));
     report.check("AC2", peer_max.is_some() && peer_max == max_peers && max_peers == followers, format!("the constants give 63 peers and 63 followers: 64 modules (C-34) less the module itself (C-217), and at most 63 real followers (C-114) (read {modules:?}, {max_peers:?}, {followers:?})"));
     report.check("AC2", dscp == Some(40), format!("the constants give control CS5 as 40 (C-13) (read {dscp:?})"));
@@ -105,7 +130,7 @@ fn consts(c: &Constants, report: &mut Report) -> Consts {
 }
 
 /// The invalid forms of the new subsections, by type.
-fn forms(t: &budget::Types, m: &crate::doccheck::checks::c004_25::merged::Merged, wide: bool, report: &mut Report) -> Vec<(String, String)> {
+fn forms(t: &budget::Types, m: &Merged, wide: bool, report: &mut Report) -> Vec<(String, String)> {
     let mut rows: Vec<(&str, String, String)> = Vec::new();
     for (key, a) in &t.new {
         for tb in tables(&a.text) {
@@ -135,15 +160,16 @@ fn forms(t: &budget::Types, m: &crate::doccheck::checks::c004_25::merged::Merged
     rows.into_iter().filter(|(k, _, _)| *k == "alignment").map(|(_, f, o)| (f, o)).collect()
 }
 
-fn dod(st: &Stamp, t: &budget::Types, m: &crate::doccheck::checks::c004_25::merged::Merged, report: &mut Report) {
+fn dod(st: &Stamp, t: &budget::Types, m: &Merged, report: &mut Report) {
     for (key, a) in &t.new {
         report.check("DoD", has_tag(&a.text), format!("the {key} subsection carries an evidence tag"));
         let bad: Vec<String> = untagged(&a.text, &TagPolicy::PROSE_004_29).iter().map(|u| head(&u.text, 50)).collect();
         report.check("DoD", bad.is_empty(), format!("every prose paragraph of 5 or more words in the {key} subsection carries an evidence tag; untagged: {bad:?}"));
     }
-    let share: Vec<String> = sentences(&st.text).into_iter().filter(|x| x.contains("share") && x.contains("address") && x.contains("host")).collect();
+    let share: Vec<String> = split(&st.text, SentenceSplit::BLOCKS_004_25).into_iter().filter(|x| x.contains("share") && x.contains("address") && x.contains("host")).collect();
     report.check("DoD", share.iter().all(|x| has("Admission|Receiver report", x)), "review C4: the sentence on two modules on one host sharing an address cites the merged wire text (Admission or Receiver report), not 01-architecture § 2.6 alone");
-    let (n, unowned) = block_items(&st.text, &MENTION_BLOCKS_004_24);
+    let n = open_items(&st.text, OpenItemPolicy::MentionBlocks).len();
+    let unowned = unowned_items(&st.text, OpenItemPolicy::MentionBlocks);
     report.check("DoD", unowned.is_empty(), format!("every Open item paragraph of the regime stamp section names an owner and a falsifier ({n} found)"));
     let n_res_new = t.new.values().flat_map(|a| a.fl_all.iter()).filter(|f| has_i(r"\breserved\b", &f.meaning)).count();
     let res = m.res_rows.iter().filter(|r| r.cells.len() > 1 && r.cell(1).to_lowercase().contains("regime stamp")).count();
@@ -153,41 +179,36 @@ fn dod(st: &Stamp, t: &budget::Types, m: &crate::doccheck::checks::c004_25::merg
 /// The check.
 pub fn run(docs: &Docs) -> Report {
     let mut report = Report::default();
-    let raw = match docs.read(WIRE_MD) {
-        Some(t) => t.to_string(),
+    // norm(WIRE_RAW.replace("−", "-")), then splitlines()
+    let wire = match docs.read(WIRE_MD) {
+        Some(t) => LINES.normalize(&join_digit_groups(&universal_newlines(&t).replace('\u{2212}', "-"))),
         None => {
             report.fail("AC1", format!("{WIRE_MD} does not exist"));
             String::new()
         }
     };
-    let wire = join_digit_groups(&py_text(&raw.replace('\u{2212}', "-")));
-    let toml_text = docs.read(WIRE_TOML).map(|t| t.to_string());
+    let toml_text = docs.read(WIRE_TOML).map(|t| universal_newlines(&t));
     if toml_text.is_none() {
         report.fail("AC5", format!("{WIRE_TOML} does not exist"));
     }
-    let constants = Constants::parse(&join_digit_groups(&py_text(&docs.read(CONSTANTS_MD).map(|t| t.to_string()).unwrap_or_default())));
-    let c = consts(&constants, &mut report);
-    let ctx = Ctx { md: Markdown::parse(&wire), consts: constants, toml_text };
+    let constants = docs.read(CONSTANTS_MD).map(|t| t.to_string()).unwrap_or_default();
+    let const_text = LINES.normalize(&join_digit_groups(&universal_newlines(&constants)));
+    let c = consts(&const_text, &mut report);
+    let ctx = Ctx { md: Markdown::parse(&wire), consts: Constants::parse(&const_text) };
     let span = ctx.span_of(r"^regime\s+stamp$", 2);
     let text = ctx.body(span);
     report.check("AC1", span.is_some() && !text.to_lowercase().contains("to be filled"), "wire.md has a Regime stamp section with its placeholder replaced");
     let st = Stamp { subs: subsections(&text), prose: prose_blocks(&text), text };
-    if let Err(Stop(e)) = checks(&ctx, &st, &wire, &c, &mut report) {
-        stopped(&mut report, "AC1", &e);
-    }
-    report
+    let flow = checks(&st, &wire, toml_text.as_deref(), &c, &mut report);
+    report.finish(flow)
 }
 
-fn checks(ctx: &Ctx, st: &Stamp, wire: &str, c: &Consts, report: &mut Report) -> Result<(), Stop> {
-    let m = merged(ctx, wire, &st.text, report, |_| {})?;
+fn checks(st: &Stamp, wire: &str, toml_text: Option<&str>, c: &Consts, report: &mut Report) -> Flow<()> {
+    let m = merged::merged(wire, &st.text, report)?;
     let res = m.res_rows.iter().filter(|r| r.cells.len() > 1 && r.cell(1).to_lowercase().contains("regime stamp")).count();
     report.check("DoD", res >= 4, "the merged Reserved fields table keeps its four regime stamp rows (the new types add rows, none is removed)");
     let block = code_block(wire, "004-28");
     report.check("AC1", block.is_some(), format!("the merged section type codes give 004-28 a block (read {block:?})"));
-    rest(ctx, st, &m, c, block, report).map_err(Stop)
-}
-
-fn rest(ctx: &Ctx, st: &Stamp, m: &crate::doccheck::checks::c004_25::merged::Merged, c: &Consts, block: Option<(i64, i64)>, report: &mut Report) -> Result<(), String> {
     let (merged_types, s_other, f_h) = budget::merged(st, report)?;
     let new = budget::new_types(st, report);
     let t = budget::Types { merged: merged_types, s_other, f_h, new };
@@ -195,9 +216,8 @@ fn rest(ctx: &Ctx, st: &Stamp, m: &crate::doccheck::checks::c004_25::merged::Mer
     budget::budget(st, &t, m.section_max, report)?;
     let wide = dscp::ac2(t.new.get("dscp"), c, report);
     align::ac3(t.new.get("alignment"), t.health(), c, report);
-    let align_rows = forms(&t, m, wide, report);
+    let align_rows = forms(&t, &m, wide, report);
     align::c1(t.new.get("alignment"), &align_rows, report);
-    dod(st, &t, m, report);
-    toml_side::ac5(ctx.toml_text.as_deref(), &t, m, c.dscp, report)?;
-    Ok(())
+    dod(st, &t, &m, report);
+    toml_side::ac5(toml_text, &t, &m, c.dscp, report)
 }

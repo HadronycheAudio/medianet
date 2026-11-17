@@ -3,12 +3,13 @@
 use super::Consts;
 use super::analyse::Analysis;
 use crate::doccheck::Report;
-use crate::doccheck::checks::c004_27::Field;
+use crate::doccheck::family004::Field;
+use crate::doccheck::pycompat::parse_int;
 use crate::doccheck::text::{has, has_i, rx};
 
-fn not_observed_codes(valid: &str) -> Vec<i64> {
+fn not_observed_codes(valid: &str) -> Vec<i128> {
     let v = rx(r"C-\d+").replace_all(valid, "");
-    v.split(';').filter(|cl| has_i("not observed", cl)).flat_map(|cl| rx(r"\b\d+\b").find_iter(cl).filter_map(|m| m.as_str().parse().ok()).collect::<Vec<i64>>()).collect()
+    v.split(';').filter(|cl| has_i("not observed", cl)).flat_map(|cl| rx(r"\b\d+\b").find_iter(cl).filter_map(|m| parse_int(m.as_str()).ok()).collect::<Vec<i128>>()).collect()
 }
 
 fn encoding(ent: &[&Field], report: &mut Report) -> bool {
@@ -21,11 +22,11 @@ fn encoding(ent: &[&Field], report: &mut Report) -> bool {
     let flag = ent.iter().any(|f| has_i("observed", &f.meaning) && f.bits == 1 && has(r"\b0 or 1\b|\b0 to 1\b|\b0/1\b", &f.valid));
     let state: Vec<&&Field> = ent.iter().filter(|f| has("C-129", &f.meaning) && has_i(r"\bstate", &f.meaning)).collect();
     for f in &state {
-        let counts: Vec<i64> = rx(r"(\d+) to (\d+)")
+        let counts: Vec<i128> = rx(r"(\d+) to (\d+)")
             .captures_iter(&f.valid)
-            .filter_map(|c| Some((c[1].parse::<i64>().ok()?, c[2].parse::<i64>().ok()?)))
+            .filter_map(|c| Some((parse_int(&c[1]).ok()?, parse_int(&c[2]).ok()?)))
             .filter(|(a, _)| *a >= 1)
-            .map(|(a, b)| b - a + 1)
+            .map(|(a, b)| b.saturating_sub(a).saturating_add(1))
             .collect();
         report.check("AC2", counts == [4], format!("the C-129 state field enumerates four states (C-129), found {counts:?}"));
     }
