@@ -189,6 +189,12 @@ pub const DENIALS: &[Denial] = &[
         expect: &[("AC3", "the hello layout has no election epoch row")],
     },
     Denial {
+        name: "ac3_denial_the_election_epoch_row_not_leading",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| wire(b, |t| within_section(t, "^Hello$", |s| lit(s, "| 52 | 4 | u32 | Election epoch:", "| 52 | 4 | u32 | The election epoch:")))),
+        expect: &[("AC3", "the hello layout has no election epoch row")],
+    },
+    Denial {
         name: "ac2_denial_c185_not_eighteen",
         file: CONSTANTS_MD,
         edit: DenialEdit::Text(|b| consts(b, |t| replace_in_line(t, r"^\| C-185 \|", r" and NoSkewBudget \(", " and ("))),
@@ -525,6 +531,12 @@ pub const DENIALS: &[Denial] = &[
         expect: &[("Settled", "C-103 is not cited")],
     },
     Denial {
+        name: "settled_denial_c209_not_cited",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| replace_all(t, "C-209", "C-999"))),
+        expect: &[("Settled", "C-209 is not cited")],
+    },
+    Denial {
         name: "ac6_denial_no_request_message",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| ad(b, |t| rename_heading(t, "^Admission request$", "Admission ask"))),
@@ -556,6 +568,12 @@ pub const DENIALS: &[Denial] = &[
         name: "hand_off_denial_no_012_01",
         file: WIRE_MD,
         edit: DenialEdit::Text(|b| ad(b, |t| replace_all(t, "012-01", "012-99"))),
+        expect: &[("Hand-off", "does not mention 012-01")],
+    },
+    Denial {
+        name: "hand_off_denial_012_02_for_012_01",
+        file: WIRE_MD,
+        edit: DenialEdit::Text(|b| ad(b, |t| replace_all(t, "012-01", "012-02"))),
         expect: &[("Hand-off", "does not mention 012-01")],
     },
     Denial {
