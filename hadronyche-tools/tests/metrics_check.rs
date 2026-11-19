@@ -33,6 +33,8 @@
 //! and `fuzz_corpus_is_kept_with_the_checker`, mirroring ticket 001-01's
 //! fixed-duration fuzz target.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: the metrics checker's own tests
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;

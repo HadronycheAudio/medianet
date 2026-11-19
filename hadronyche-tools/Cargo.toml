@@ -2,8 +2,20 @@
 name = "hadronyche-tools"
 version.workspace = true
 edition.workspace = true
+# Generates the registry of ported document checks from src/doccheck/checks/
+# (one file per port, so porters working in parallel never edit a shared list).
+build = "build.rs"
 
 [dependencies]
+# Document checks (src/doccheck): the scripts being ported are written in
+# Python regular expressions; the standard regex crate keeps each pattern
+# readable and reviewable one for one, instead of hand-written matchers.
+regex = "1"
+# Python's `\b` is a boundary between Python word characters (`²` is one,
+# a combining mark is not); the regex crate's `\b` uses Rust's class and
+# has no look-around to express another. fancy-regex (on top of regex)
+# compiles only the patterns that contain `\b`/`\B` (review round 2, R13).
+fancy-regex = "0.14"
 # Ticket 004-02: the standard TOML library (the ticket's default), so the
 # checker's file parser is not hand-written and needs no fuzzing under C-95.
 toml = "0.9"

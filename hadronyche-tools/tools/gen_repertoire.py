@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""Generate hadronyche-tools/data/repertoire.tsv (lead ruling R13).
+
+The repertoire is the set of characters a ported document check accepts in
+its inputs: ASCII printable, tab, newline, carriage return, and every other
+character that occurs in doc/ at the given commit. Outside it a port is red
+by rule (criterion REPERTOIRE), so the port only has to equal its script on
+characters whose Python facts are recorded here and proven by the Rust test
+`doccheck::repertoire::tests` (which does not run Python).
+
+Carriage return is in the base set: every script read its inputs with
+open() in text mode (universal newlines), so a "\\r" or "\\r\\n" reached the
+script's code as "\\n"; the ports reproduce that (pycompat::universal_newlines),
+and the facts below are of the character as written.
+
+Per character, with each interpreter the scripts ran on (python3 = 3.10 for
+the 004 family, python3.13 for 004-22, which needs tomllib), the facts must
+agree; both versions are recorded in the header:
+  w, d, s       re.fullmatch(r"\\w" / r"\\d" / r"\\s", c) (1 or 0)
+  split         c is a str.splitlines() boundary (1 or 0)
+  fold          the other repertoire characters x with
+                re.fullmatch(re.escape(c), x, re.IGNORECASE)
+  lower, upper   c.lower(), c.upper()
+  nfkc           unicodedata.normalize("NFKC", c) (006-01, 006-02)
+Strings are written as space-separated hex code points ("-" when empty).
+casefold is not recorded: no port uses it, and a column no test proves is
+not kept (a port that needs one adds it with its proof).
+
+Usage (from the repository root):
+  python3 hadronyche-tools/tools/gen_repertoire.py [--python PY]... [--commit C] > hadronyche-tools/data/repertoire.tsv
+  python3 hadronyche-tools/tools/gen_repertoire.py [--python PY]... --check hadronyche-tools/data/repertoire.tsv
+
+The interpreters default to python3.10 and python3.13 found on PATH (the
+versions the scripts ran on); with --python, exactly those given. --commit
+defaults to HEAD: commit the document with the new character first. --check
+regenerates the table and compares its rows (not the version comment) with
+the file, exit status 1 on a difference: a hand-edited row is caught with
+whichever interpreters are available.
+"""
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+
+DEFAULT_INTERPRETERS = ["python3.10", "python3.13"]
+
+FACTS = r'''
+import json, re, sys, unicodedata
+chars = json.loads(sys.stdin.read())
+rep = set(chars)
+def hexs(s):
+    return " ".join(f"{ord(x):04X}" for x in s) or "-"
+out = {}
+for c in chars:
+    fold = sorted(x for x in rep if x != c and re.fullmatch(re.escape(c), x, re.IGNORECASE))
+    out[c] = {
+        "name": unicodedata.name(c, "<control>"),
+        "w": int(bool(re.fullmatch(r"\w", c))),
+        "d": int(bool(re.fullmatch(r"\d", c))),
+        "s": int(bool(re.fullmatch(r"\s", c))),
+        "split": int(len(("a" + c + "b").splitlines()) > 1),
+        "fold": hexs("".join(fold)),
+        "lower": hexs(c.lower()),
+        "upper": hexs(c.upper()),
+        "nfkc": hexs(unicodedata.normalize("NFKC", c)),
+    }
+print(json.dumps({"version": sys.version.split()[0], "unicode": unicodedata.unidata_version, "facts": out}))
+'''
+
+
+def doc_chars(commit):
+    files = subprocess.run(
+        ["git", "--no-optional-locks", "ls-tree", "-r", "--name-only", commit, "doc"],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    found = set()
+    for f in files:
+        data = subprocess.run(["git", "--no-optional-locks", "show", f"{commit}:{f}"], capture_output=True, check=True).stdout
+        found.update(data.decode("utf-8"))
+    return found
+
+
+def interpreters(given):
+    names = given or DEFAULT_INTERPRETERS
+    found = []
+    for name in names:
+        path = shutil.which(name)
+        if path is None:
+            sys.exit(f"interpreter {name!r} not found on PATH; pass --python PATH (one per interpreter)")
+        found.append(path)
+    return found
+
+
+def table(commit, pythons):
+    commit = subprocess.run(["git", "--no-optional-locks", "rev-parse", "--short", commit],
+                            capture_output=True, text=True, check=True).stdout.strip()
+    base = {chr(c) for c in range(0x20, 0x7F)} | {"\t", "\n", "\r"}
+    chars = sorted(base | doc_chars(commit))
+    runs = []
+    for py in pythons:
+        res = subprocess.run([py, "-c", FACTS], input=json.dumps(chars), capture_output=True, text=True, check=True)
+        runs.append(json.loads(res.stdout))
+    for r in runs[1:]:
+        if r["facts"] != runs[0]["facts"]:
+            diff = [c for c in chars if r["facts"][c] != runs[0]["facts"][c]]
+            sys.exit(f"the interpreters disagree on {[hex(ord(c)) for c in diff]}: record both and decide")
+    lines = [
+        f"# repertoire of the ported document checks: ASCII printable, \\t, \\n, \\r, and the characters of doc/ at {commit}",
+        "# generated by hadronyche-tools/tools/gen_repertoire.py with " + ", ".join(
+            f"Python {r['version']} (Unicode {r['unicode']})" for r in runs) + "; the interpreters agree on every row",
+        "# cp\tname\tw\td\ts\tsplit\tfold\tlower\tupper\tnfkc",
+    ]
+    for c in chars:
+        f = runs[0]["facts"][c]
+        lines.append("\t".join([f"{ord(c):04X}", f["name"], str(f["w"]), str(f["d"]), str(f["s"]), str(f["split"]),
+                                f["fold"], f["lower"], f["upper"], f["nfkc"]]))
+    return lines
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--python", action="append", default=[], help="an interpreter (repeatable); default python3.10 and python3.13 on PATH")
+    ap.add_argument("--commit", default="HEAD", help="the commit whose doc/ is read (default HEAD)")
+    ap.add_argument("--check", metavar="TSV", help="compare the rows with this file instead of printing")
+    args = ap.parse_args()
+    lines = table(args.commit, interpreters(args.python))
+    if args.check is None:
+        print("\n".join(lines))
+        return
+    rows = lambda ls: [l for l in ls if not l.startswith("#")]
+    with open(args.check, encoding="utf-8") as fh:
+        have = rows(fh.read().splitlines())
+    want = rows(lines)
+    if have != want:
+        extra = sorted(set(have) - set(want))
+        missing = sorted(set(want) - set(have))
+        sys.exit(f"{args.check} differs from the generated table: {len(missing)} rows missing or changed, "
+                 f"{len(extra)} rows not generated\n" + "\n".join(["- " + l for l in missing] + ["+ " + l for l in extra]))
+    print(f"{args.check}: {len(want)} rows agree")
+
+
+if __name__ == "__main__":
+    main()

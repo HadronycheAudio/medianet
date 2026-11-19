@@ -28,6 +28,8 @@
 //! This is not a wire decoder: decoding wire bytes is the implementation's
 //! job (epic 009 onward), fuzzed through `UnderTest::decode` by 007a-15.
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)] // clippy.toml allow-list: a command-line tool
+
 use std::path::{Path, PathBuf};
 
 use hadronyche_vectors::reader::{self, Outcome, Reason, Value, Vector};
